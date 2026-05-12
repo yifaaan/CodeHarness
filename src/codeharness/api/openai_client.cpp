@@ -141,6 +141,41 @@ namespace {
             return nlohmann::json::object();
         }
     }
+
+    // {
+    //     "choices": [
+    //         {
+    //              "message": {
+    //                  "role": "assistant",
+    //                  "content": "我来查一下天气。",
+    //                  "tool_calls": [
+    //                       {
+    //                           "id": "call_123",
+    //                           "type": "function",
+    //                           "function": {
+    //                           "name": "get_weather",
+    //                           "arguments": "{\"city\":\"Shanghai\"}"
+    //                           }
+    //                       }
+    //                  ]
+    //              },
+    //              "finish_reason": "tool_calls"
+    //         }
+    //     ],
+    //     "usage": {
+    //         "prompt_tokens": 20,
+    //         "completion_tokens": 15
+    //     }
+    // }
+    // 把 OpenAI 返回的完整响应 body 解析成 MessageComplete
+    auto parse_message_complete(const nlohmann::json& body) -> api::MessageComplete {
+        const auto& choice = body.at("choice").at(0);
+        const auto& message = choice.at("message");
+
+        std::vector<engine::ContentBlock> content;
+        const auto text = message.value("content", "");
+        // TODO:
+    }
 }  // namespace
 
 namespace codeharness::api {}
