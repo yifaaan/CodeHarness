@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "absl/strings/str_cat.h"
 #include "message.h"
 #include "stream_event.h"
 
@@ -90,4 +91,51 @@ namespace codeharness::engine {
         throw std::runtime_error{"exceeded maximum turn limit"};
     }
 
+    auto QueryEngine::execute_tool_call(const ToolUseBlock& call) -> ToolResultBlock {
+        auto selected_tool = tools_.find(call.name);
+        if (!selected_tool) {
+            return ToolResultBlock{
+                .tool_use_id = call.id,
+                .content = absl::StrCat("Unknown tool :", call.name),
+                .is_error = true,
+            };
+        }
+        // 权限检查
+        const auto decision = permissions_.evaluate(
+            selected_tool->name(), selected_tool->is_read_only(call.input), call.input);
+        if (!decision.allowed) {
+            return ToolResultBlock{
+                .tool_use_id = call.id,
+                .content = decision.reason.empty()
+                               ? absl::StrCat("Permission denied for ", selected_tool->name())
+                               : decision.reason,
+                .is_error = true,
+            };
+        }
+
+        const auto result = selected_tool->execute(call.input, ToolExecutionContext{.cwd = cwd_});
+
+        return ToolResultBlock{
+            .tool_use_id = selected_tool->name(),
+            .content = result.output,
+            .is_error = result.is_error,
+        };
+    }
+
+    auto QueryEngine::messages() const noexcept -> absl::Span<const ConversationMessage> {
+        return messages_;
+    }
+
+    auto QueryEngine::total_usage() const noexcept -> UsageSnapshot { return total_usage_; }
+
+    auto QueryEngine::clear() noexcept -> void {
+        messages_.clear();
+        total_usage_ = UsageSnapshot{};
+    }
+
+    auto QueryEngine::set_model(std::string model) noexcept -> void { model_ = std::move(model); }
+
+    void QueryEngine::set_system_prompt(std::string system_prompt) noexcept {
+        system_prompt_ = std::move(system_prompt);
+    }
 }  // namespace codeharness::engine

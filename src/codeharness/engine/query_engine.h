@@ -121,9 +121,9 @@ namespace codeharness::engine {
 
         [[nodiscard]] auto total_usage() const noexcept -> UsageSnapshot;
 
-        auto clear() -> void;
-        auto set_model(std::string model) -> void;
-        auto set_system_prompt(std::string system_prompt) -> void;
+        auto clear() noexcept -> void;
+        auto set_model(std::string model) noexcept -> void;
+        auto set_system_prompt(std::string system_prompt) noexcept -> void;
 
         ApiClient& api_;
         const ToolRegistry& tools_;
