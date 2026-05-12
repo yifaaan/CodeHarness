@@ -7,7 +7,6 @@
 #include "absl/strings/str_cat.h"
 #include "base.h"
 
-
 namespace codeharness::tools {
 
     auto ReadFileTool::name() const -> absl::string_view { return "read_file"; }
@@ -37,7 +36,8 @@ namespace codeharness::tools {
         return true;
     }
 
-    auto execute(const nlohmann::json& input, const ToolExecutionContext& ctx) -> ToolResult {
+    auto ReadFileTool::execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
+        -> ToolResult {
         if (!input.contains("path") || !input["path"].is_string()) {
             return ToolResult{
                 .output = "read_file requires a string field: path",

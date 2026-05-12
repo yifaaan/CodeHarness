@@ -10,7 +10,7 @@
 #include "codeharness/tools/base.h"
 
 namespace codeharness::engine {
-    QueryEngine::QueryEngine(Client& api, const tools::ToolRegistry& tools,
+    QueryEngine::QueryEngine(api::Client& api, const tools::ToolRegistry& tools,
                              const permissions::PerssionChecker& permissions,
                              std::filesystem::path cwd, std::string model,
                              std::string system_prompt)
@@ -21,7 +21,7 @@ namespace codeharness::engine {
           model_{std::move(model)},
           system_prompt_{std::move(system_prompt)} {}
 
-    auto QueryEngine::submit_message(std::string prompt, const api::StreamSink& sink) {
+    auto QueryEngine::submit_message(std::string prompt, const api::StreamSink& sink) -> void {
         messages_.push_back(ConversationMessage::from_user_text(std::move(prompt)));
 
         for (int turn = 0; turn < max_turns_; turn++) {

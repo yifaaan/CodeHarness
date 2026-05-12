@@ -29,16 +29,18 @@ TEST_CASE("abseil dependency is available") {
 
 TEST_CASE("mock client streams text and records requests") {
     auto client = codeharness::api::MockClient{
-        std::deque<codeharness::api::MockClient::response>{
-            codeharness::api::MockClient::response{
-                .message = codeharness::engine::ConversationMessage{
-                    .role = codeharness::engine::MessageRole::assistent,
-                    .content = {codeharness::engine::TextBlock{.text = "hello from mock"}},
-                },
-                .usage = codeharness::engine::UsageSnapshot{
-                    .input_tokens = 2,
-                    .output_tokens = 3,
-                },
+        std::deque<codeharness::api::MockClient::Response>{
+            codeharness::api::MockClient::Response{
+                .message =
+                    codeharness::engine::ConversationMessage{
+                        .role = codeharness::engine::MessageRole::assistent,
+                        .content = {codeharness::engine::TextBlock{.text = "hello from mock"}},
+                    },
+                .usage =
+                    codeharness::engine::UsageSnapshot{
+                        .input_tokens = 2,
+                        .output_tokens = 3,
+                    },
                 .stop_reason = "end_turn",
             },
         },
@@ -53,9 +55,7 @@ TEST_CASE("mock client streams text and records requests") {
             .max_tokens = 128,
             .tools = nlohmann::json::array(),
         },
-        [&](const codeharness::api::ApiStreamEvent& event) {
-            events.push_back(event);
-        });
+        [&](const codeharness::api::ApiStreamEvent& event) { events.push_back(event); });
 
     REQUIRE(events.size() == 2);
 

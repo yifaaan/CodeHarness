@@ -11,20 +11,20 @@
 namespace codeharness::api {
     class MockClient final : public Client {
     public:
-        struct response {
+        struct Response {
             engine::ConversationMessage message;
             engine::UsageSnapshot usage;
             std::string stop_reason{"end_turn"};
         };
 
-        explicit MockClient(std::deque<response> responses);
+        explicit MockClient(std::deque<Response> responses);
 
         auto stream_message(const MessageRequest& request, ApiStreamSink sink) -> void override;
 
         [[nodiscard]] auto requests() -> absl::Span<const MessageRequest> const;
 
     private:
-        std::deque<response> responses_;
+        std::deque<Response> responses_;
         std::vector<MessageRequest> requests_;
     };
 

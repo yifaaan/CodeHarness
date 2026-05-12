@@ -35,7 +35,7 @@ namespace codeharness::engine {
         bool is_error{};
     };
 
-    // query_engine 对外层的事件
+    // query_engine 对外层 UI 的事件
     using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete, ToolExecutionStared,
                                      ToolExecutionComplete>;
 }  // namespace codeharness::engine

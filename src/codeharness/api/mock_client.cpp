@@ -5,7 +5,7 @@
 
 namespace codeharness::api {
 
-    MockClient::MockClient(std::deque<response> responses) : responses_{std::move(responses)} {}
+    MockClient::MockClient(std::deque<Response> responses) : responses_{std::move(responses)} {}
 
     auto MockClient::stream_message(const MessageRequest& request, ApiStreamSink sink) -> void {
         requests_.push_back(request);
