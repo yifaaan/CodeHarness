@@ -3,7 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <variant>
 
-#include "message.h"
+#include "codeharness/engine/message.h"
 
 namespace codeharness::engine {
     struct UsageSnapshot {

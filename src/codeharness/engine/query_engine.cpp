@@ -4,14 +4,16 @@
 
 #include <utility>
 
+#include "codeharness/api/client.h"
 #include "codeharness/engine/message.h"
 #include "codeharness/engine/stream_event.h"
 #include "codeharness/tools/base.h"
 
 namespace codeharness::engine {
-    QueryEngine::QueryEngine(ApiClient& api, const tools::ToolRegistry& tools,
-                             const PerssionChecker& permissions, std::filesystem::path cwd,
-                             std::string model, std::string system_prompt)
+    QueryEngine::QueryEngine(Client& api, const tools::ToolRegistry& tools,
+                             const permissions::PerssionChecker& permissions,
+                             std::filesystem::path cwd, std::string model,
+                             std::string system_prompt)
         : api_{api},
           tools_{tools},
           permissions_{permissions},
@@ -19,14 +21,14 @@ namespace codeharness::engine {
           model_{std::move(model)},
           system_prompt_{std::move(system_prompt)} {}
 
-    auto QueryEngine::submit_message(std::string prompt, const StreamSink& sink) {
+    auto QueryEngine::submit_message(std::string prompt, const api::StreamSink& sink) {
         messages_.push_back(ConversationMessage::from_user_text(std::move(prompt)));
 
         for (int turn = 0; turn < max_turns_; turn++) {
-            ApiMessageComplete final_message;
+            api::MessageComplete final_message;
             bool has_final_message{};
 
-            const auto request = ApiMessageRequest{
+            const auto request = api::MessageRequest{
                 .model = model_,
                 .messages = messages_,
                 .system_prompt = system_prompt_,
@@ -34,12 +36,12 @@ namespace codeharness::engine {
                 .tools = tools_.api_schema(),
             };
 
-            api_.stream_message(request, [&](const ApiStreamEvent& event) {
+            api_.stream_message(request, [&](const api::ApiStreamEvent& event) {
                 if (auto delta = std::get_if<AssistantTextDelta>(&event)) {
                     sink(*delta);
                     return;
                 }
-                if (auto complete = std::get_if<ApiMessageComplete>(&event)) {
+                if (auto complete = std::get_if<api::MessageComplete>(&event)) {
                     final_message = *complete;
                     has_final_message = true;
                 }
