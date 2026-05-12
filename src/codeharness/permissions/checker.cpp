@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "absl/types/span.h"
+#include "models.h"
 
 namespace {
     [[nodiscard]] bool contains_name(absl::Span<const std::string> values, absl::string_view name) {
@@ -42,7 +43,58 @@ namespace codeharness::permissions {
         : settings_{std::move(settings)} {}
 
     auto PerssionChecker::evaluate(absl::string_view tool_name, bool is_read_only,
-                                   const nlohmann::json& input) const -> PermissionDecision {}
+                                   const nlohmann::json& input) const -> PermissionDecision {
+        if (is_denied_tool(tool_name)) {
+            return PermissionDecision{
+                .allowed = false,
+                .reason = std::string{tool_name} + " is explicitly denied",
+            };
+        }
+
+        if (is_allowed_tool(tool_name)) {
+            return PermissionDecision{
+                .allowed = true,
+                .reason = std::string{tool_name} + " is explicitly allowed",
+            };
+        }
+
+        const auto path_decision = evaluate_path_rules(input);
+        if (!path_decision.allowed && !path_decision.reason.empty()) {
+            return path_decision;
+        }
+
+        const auto command_decision = evaluate_command_rules(input);
+        if (!command_decision.allowed && !command_decision.reason.empty()) {
+            return command_decision;
+        }
+
+        if (settings_.mode == PermissionMode::full_auto) {
+            return PermissionDecision{
+                .allowed = true,
+                .reason = "full_auto mode allows all tools",
+            };
+        }
+
+        if (is_read_only) {
+            return PermissionDecision{
+                .allowed = true,
+                .reason = "read-only tools are allowed",
+            };
+        }
+
+        if (settings_.mode == PermissionMode::plan) {
+            return PermissionDecision{
+                .allowed = false,
+                .reason = "plan mode blocks mutating tools",
+            };
+        }
+
+        return PermissionDecision{
+            .allowed = false,
+            .requires_confirmation = true,
+            .reason = "mutating tools require confirmation in default mode",
+        };
+    }
 
     auto PerssionChecker::is_allowed_tool(absl::string_view tool_name) const -> bool {
         return contains_name(settings_.allowed_tools, tool_name);
