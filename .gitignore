@@ -1,0 +1,10 @@
+.xmake/
+build/
+compile_commands.json
+.cache/
+.vs/
+.vscode/
+*.user
+*.log
+*.tmp
+docs/

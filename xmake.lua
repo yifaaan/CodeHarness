@@ -1,0 +1,31 @@
+set_project("CodeHarness")
+set_version("0.1.0")
+set_languages("c++20")
+
+add_rules("mode.debug", "mode.release")
+add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
+
+add_requires("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "doctest")
+
+if is_mode("debug") then
+    set_symbols("debug")
+    set_optimize("none")
+end
+
+if is_plat("windows") then
+    add_cxxflags("/W4", {tools = {"cl"}})
+else
+    add_cxxflags("-Wall", "-Wextra", "-Wpedantic", {tools = {"gcc", "clang"}})
+end
+
+target("codeharness")
+    set_kind("binary")
+    add_includedirs("src")
+    add_files("src/cli/main.cpp")
+    add_packages("abseil", "cli11", "nlohmann_json", "fmt", "spdlog")
+
+target("codeharness_tests")
+    set_kind("binary")
+    add_includedirs("src", "tests/support")
+    add_files("tests/unit/*.cpp")
+    add_packages("abseil", "doctest", "nlohmann_json", "fmt")
