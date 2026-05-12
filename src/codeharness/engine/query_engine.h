@@ -46,27 +46,10 @@ namespace codeharness::engine {
                                     std::function<void(const ApiStreamEvent&)> sink) = 0;
     };
 
-    // 表示一次工具调用是否允许
-    struct PermissionDecision {
-        bool allowed{};
-        bool requires_confirmation{};
-        std::string reason;
-    };
-
-    // 调用工具前，用来执行权限检查
-    class PerssionChecker {
-    public:
-        virtual ~PerssionChecker() = default;
-
-        [[nodiscard]] virtual auto evaluate(absl::string_view tool_name, bool is_read_only,
-                                            const nlohmann::json& input) const
-            -> PermissionDecision = 0;
-    };
-
     class QueryEngine {
     public:
         QueryEngine(ApiClient& api, const tools::ToolRegistry& tools,
-                    const PerssionChecker& permissions, std::filesystem::path cwd,
+                    const permissions::PerssionChecker& permissions, std::filesystem::path cwd,
                     std::string model, std::string system_prompt);
 
         // 用户发消息入口：
