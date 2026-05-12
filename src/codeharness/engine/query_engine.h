@@ -44,7 +44,7 @@ namespace codeharness::engine {
         virtual ~ApiClient() = default;
 
         virtual void stream_message(const ApiMessageRequest,
-                                    std::function<void(const StreamEvent&)> sink) = 0;
+                                    std::function<void(const ApiStreamEvent&)> sink) = 0;
     };
 
     // 工具执行结果
@@ -107,7 +107,7 @@ namespace codeharness::engine {
         // 用户发消息入口：
         //   把用户 prompt 加入 messages_
         //   调用 api_.stream_message(...)
-        //   接收 assistant 的流式文本
+        //   接收 assistant 的流式文本, 通过 sink 回调通知外部组件
         //   如果模型返回 tool use，就执行工具
         //   把 tool result 再塞回对话
         //   继续循环，直到模型不再请求工具
@@ -132,7 +132,7 @@ namespace codeharness::engine {
         std::string model_;
         std::string system_prompt_;
         int max_tokens_{4096};
-        int max_turns_{8};
+        int max_turns_{20};
         std::vector<ConversationMessage> messages_;  // 会话历史
         UsageSnapshot total_usage_;
     };
