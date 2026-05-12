@@ -1,5 +1,7 @@
 #pragma once
 
+#include <absl/strings/string_view.h>
+
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
@@ -19,8 +21,8 @@ namespace codeharness::tools {
     public:
         virtual ~Tool() = default;
 
-        [[nodiscard]] virtual auto name() const -> std::string = 0;
-        [[nodiscard]] virtual auto description() const -> std::string = 0;
+        [[nodiscard]] virtual auto name() const -> absl::string_view = 0;
+        [[nodiscard]] virtual auto description() const -> absl::string_view = 0;
         [[nodiscard]] virtual auto input_schema() const -> nlohmann::json = 0;
         // 判断这次调用是否只读
         [[nodiscard]] virtual auto is_read_only(const nlohmann::json& input) const -> bool = 0;

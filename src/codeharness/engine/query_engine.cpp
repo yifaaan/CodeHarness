@@ -119,7 +119,7 @@ namespace codeharness::engine {
             selected_tool->execute(call.input, tools::ToolExecutionContext{.cwd = cwd_});
 
         return ToolResultBlock{
-            .tool_use_id = selected_tool->name(),
+            .tool_use_id = std::string{selected_tool->name()},
             .content = result.output,
             .is_error = result.is_error,
         };
