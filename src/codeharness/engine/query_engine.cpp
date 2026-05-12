@@ -1,13 +1,15 @@
-#include "query_engine.h"
+#include "codeharness/engine/query_engine.h"
+
+#include <absl/strings/str_cat.h>
 
 #include <utility>
 
-#include "absl/strings/str_cat.h"
-#include "message.h"
-#include "stream_event.h"
+#include "codeharness/engine/message.h"
+#include "codeharness/engine/stream_event.h"
+#include "codeharness/tools/base.h"
 
 namespace codeharness::engine {
-    QueryEngine::QueryEngine(ApiClient& api, const ToolRegistry& tools,
+    QueryEngine::QueryEngine(ApiClient& api, const tools::ToolRegistry& tools,
                              const PerssionChecker& permissions, std::filesystem::path cwd,
                              std::string model, std::string system_prompt)
         : api_{api},
@@ -113,7 +115,8 @@ namespace codeharness::engine {
             };
         }
 
-        const auto result = selected_tool->execute(call.input, ToolExecutionContext{.cwd = cwd_});
+        const auto result =
+            selected_tool->execute(call.input, tools::ToolExecutionContext{.cwd = cwd_});
 
         return ToolResultBlock{
             .tool_use_id = selected_tool->name(),
@@ -135,7 +138,7 @@ namespace codeharness::engine {
 
     auto QueryEngine::set_model(std::string model) noexcept -> void { model_ = std::move(model); }
 
-    void QueryEngine::set_system_prompt(std::string system_prompt) noexcept {
+    auto QueryEngine::set_system_prompt(std::string system_prompt) noexcept -> void {
         system_prompt_ = std::move(system_prompt);
     }
 }  // namespace codeharness::engine
