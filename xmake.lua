@@ -5,7 +5,7 @@ set_languages("c++20")
 add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
 
-add_requires("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "doctest")
+add_requires("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "doctest", "libcurl")
 
 if is_mode("debug") then
     set_symbols("debug")
@@ -26,7 +26,7 @@ target("codeharness")
     add_files("src/codeharness/engine/*.cpp")
     add_files("src/codeharness/permissions/*.cpp")
     add_files("src/codeharness/tools/*.cpp")
-    add_packages("abseil", "cli11", "nlohmann_json", "fmt", "spdlog")
+    add_packages("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "libcurl")
 
 target("codeharness_tests")
     set_kind("binary")
@@ -36,4 +36,4 @@ target("codeharness_tests")
     add_files("src/codeharness/engine/*.cpp")
     add_files("src/codeharness/permissions/*.cpp")
     add_files("src/codeharness/tools/*.cpp")
-    add_packages("abseil", "doctest", "nlohmann_json", "fmt")
+    add_packages("abseil", "doctest", "nlohmann_json", "fmt", "libcurl")
