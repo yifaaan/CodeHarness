@@ -33,6 +33,10 @@ namespace {
         bool verbose = false;
     };
 
+    [[nodiscard]] auto default_log_file_path() -> std::filesystem::path {
+        return std::filesystem::current_path() / ".codeharness" / "logs" / "codeharness.log";
+    }
+
     int run_print_mode(const CliOptions& options) {
         spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
         CH_LOG_DEBUG("run_print_mode", "model_arg={} model_provided={}", options.model,
@@ -83,27 +87,28 @@ namespace {
 
         CH_LOG_DEBUG("run_print_mode", "submitting prompt_chars={} output_format={}",
                      options.prompt.size(), options.output_format);
-        const auto status = engine.submit_message(options.prompt, [&](const engine::StreamEvent& event) {
-            // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
-            // ToolExecutionStared,  ToolExecutionComplete>;
-            if (options.output_format == "stream-json") {
-                fmt::println("{}", ui::to_stream_json(event).dump());
-                return;
-            }
-            if (auto delta = std::get_if<engine::AssistantTextDelta>(&event)) {
-                fmt::print("{}", delta->text);
-            }
-            // if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
-            //     fmt::println("\nTurn completed:\n{}", complete->message.text());
-            // }
-            // if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
-            //     fmt::println("Tool use: {}", tool_use_start->tool_name);
-            // }
-            // if (auto tool_execution_complete =
-            // std::get_if<engine::ToolExecutionComplete>(&event)) {
-            //     fmt::println("Tool result: {}", tool_execution_complete->output);
-            // }
-        });
+        const auto status =
+            engine.submit_message(options.prompt, [&](const engine::StreamEvent& event) {
+                // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
+                // ToolExecutionStared,  ToolExecutionComplete>;
+                if (options.output_format == "stream-json") {
+                    fmt::println("{}", ui::to_stream_json(event).dump());
+                    return;
+                }
+                if (auto delta = std::get_if<engine::AssistantTextDelta>(&event)) {
+                    fmt::print("{}", delta->text);
+                }
+                // if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
+                //     fmt::println("\nTurn completed:\n{}", complete->message.text());
+                // }
+                // if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
+                //     fmt::println("Tool use: {}", tool_use_start->tool_name);
+                // }
+                // if (auto tool_execution_complete =
+                // std::get_if<engine::ToolExecutionComplete>(&event)) {
+                //     fmt::println("Tool result: {}", tool_execution_complete->output);
+                // }
+            });
         if (!status.ok()) {
             fmt::println(stderr, "Request failed: {}", status.message());
             return EXIT_FAILURE;
@@ -138,7 +143,12 @@ int main(int argc, char** argv) {
     }
 
     options.model_provided = model_option->count() > 0;
-    spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
+    const auto log_level = options.verbose ? spdlog::level::debug : spdlog::level::info;
+    const auto log_path = default_log_file_path();
+    if (const auto status = logging::initialize_default_logger(log_path, log_level); !status.ok()) {
+        fmt::println(stderr, "Failed to initialize logging: {}", status.message());
+        return EXIT_FAILURE;
+    }
     CH_LOG_DEBUG("main",
                  "parsed cli options prompt_chars={} model={} output_format={} "
                  "permission_mode={} model_provided={}",

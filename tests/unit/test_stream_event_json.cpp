@@ -11,7 +11,7 @@ TEST_CASE("stream event json round trips through nlohmann conversions") {
     const auto original = engine::StreamEvent{
         engine::AssistantTurnComplete{
             .message = engine::ConversationMessage{
-                .role = engine::MessageRole::assistent,
+                .role = engine::MessageRole::assistant,
                 .content = {
                     engine::TextBlock{.text = "done"},
                 },

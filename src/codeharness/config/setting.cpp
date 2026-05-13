@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 
+#include "codeharness/config/settings_file.h"
 #include "codeharness/logging.h"
 
 namespace {
@@ -57,11 +58,9 @@ namespace {
         }
         return parsed;
     }
-}  // namespace
-namespace codeharness::config {
-    auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
-        auto settings = Settings{};
 
+    auto apply_overrides(config::Settings& settings, const config::SettingsOverrides& overrides)
+        -> void {
         if (overrides.api_key.has_value()) {
             settings.api.api_key = *overrides.api_key;
             CH_LOG_DEBUG("config::load_settings", "api_key source=override");
@@ -99,7 +98,9 @@ namespace codeharness::config {
         } else {
             auto max_tokens = env_int("OPENAI_MAX_TOKENS");
             if (!max_tokens.ok()) {
-                return max_tokens.status();
+                CH_LOG_ERROR("config::load_settings",
+                             "max_tokens source=OPENAI_MAX_TOKENS error={}",
+                             max_tokens.status().message());
             }
             if (max_tokens->has_value()) {
                 settings.api.max_tokens = **max_tokens;
@@ -112,6 +113,27 @@ namespace codeharness::config {
             settings.permissions.mode = *overrides.permission_mode;
             CH_LOG_DEBUG("config::load_settings", "permission_mode source=override");
         }
+    }
+
+    auto merge_settings(config::Settings& dst, const config::Settings& src) -> void {
+        dst.api = src.api;
+        dst.permissions = src.permissions;
+    }
+}  // namespace
+namespace codeharness::config {
+    auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
+        auto settings = Settings{};
+
+        if (const auto path = default_user_settings_path(); !path.empty()) {
+            auto file_or = config::load_settings_file(path);
+            if (!file_or.ok()) {
+                return file_or.status();
+            }
+            if (file_or->has_value()) {
+                merge_settings(settings, **file_or);
+            }
+        }
+        apply_overrides(settings, overrides);
 
         CH_LOG_DEBUG("config::load_settings",
                      "resolved base_url={} model={} max_tokens={} api_key_present={}",

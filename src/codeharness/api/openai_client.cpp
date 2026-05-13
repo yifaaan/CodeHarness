@@ -266,7 +266,7 @@ namespace {
         }
 
         return engine::ConversationMessage{
-            .role = engine::MessageRole::assistent,
+            .role = engine::MessageRole::assistant,
             .content = std::move(content),
         };
     }
@@ -301,7 +301,7 @@ namespace {
         //
         // MessageComplete{
         //     .message = ConversationMessage{
-        //         .role = MessageRole::assistent,
+        //         .role = MessageRole::assistant,
         //         .content = {
         //             TextBlock{ .text = "我来查一下天气。" },
         //             ToolUseBlock{

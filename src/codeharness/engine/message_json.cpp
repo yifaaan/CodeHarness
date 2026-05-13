@@ -13,7 +13,7 @@ namespace {
         switch (role) {
             case MessageRole::user:
                 return "user";
-            case MessageRole::assistent:
+            case MessageRole::assistant:
                 return "assistant";
         }
 
@@ -25,8 +25,8 @@ namespace {
             return MessageRole::user;
         }
 
-        if (role == "assistant" || role == "assistent") {
-            return MessageRole::assistent;
+        if (role == "assistant" || role == "assistant") {
+            return MessageRole::assistant;
         }
 
         return absl::InvalidArgumentError("unknown message role: " + role);

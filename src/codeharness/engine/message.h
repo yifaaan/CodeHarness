@@ -25,7 +25,7 @@ namespace codeharness::engine {
 
     enum class MessageRole {
         user,
-        assistent,
+        assistant,
     };
     // A single assistant or user message.
     struct ConversationMessage {

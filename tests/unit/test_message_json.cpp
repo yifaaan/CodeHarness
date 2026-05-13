@@ -10,7 +10,7 @@ using namespace codeharness;
 
 TEST_CASE("conversation message json round trips all content block types") {
     const auto original = engine::ConversationMessage{
-        .role = engine::MessageRole::assistent,
+        .role = engine::MessageRole::assistant,
         .content =
             {
                 engine::TextBlock{.text = "I will inspect the file."},
@@ -38,7 +38,7 @@ TEST_CASE("conversation message json round trips all content block types") {
     const auto parsed = engine::conversation_message_from_json(serialized);
     REQUIRE(parsed.ok());
 
-    CHECK(parsed->role == engine::MessageRole::assistent);
+    CHECK(parsed->role == engine::MessageRole::assistant);
     REQUIRE(parsed->content.size() == 3);
     CHECK(parsed->text() == "I will inspect the file.");
 
@@ -55,13 +55,13 @@ TEST_CASE("conversation message json round trips all content block types") {
     CHECK_FALSE(tool_result->is_error);
 }
 
-TEST_CASE("conversation message json accepts legacy assistent spelling") {
+TEST_CASE("conversation message json accepts legacy assistant spelling") {
     const auto parsed = engine::conversation_message_from_json(nlohmann::json{
-        {"role", "assistent"},
+        {"role", "assistant"},
         {"content", nlohmann::json::array({{{"type", "text"}, {"text", "hello"}}})},
     });
     REQUIRE(parsed.ok());
 
-    CHECK(parsed->role == engine::MessageRole::assistent);
+    CHECK(parsed->role == engine::MessageRole::assistant);
     CHECK(parsed->text() == "hello");
 }

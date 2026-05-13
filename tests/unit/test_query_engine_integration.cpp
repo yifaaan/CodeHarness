@@ -33,7 +33,7 @@ TEST_CASE("query engine executes read_file through mock api") {
                 api::MockClient::Response{
                     .message =
                         engine::ConversationMessage{
-                            .role = engine::MessageRole::assistent,
+                            .role = engine::MessageRole::assistant,
                             .content =
                                 {
                                     engine::TextBlock{.text = "I will read the file."},
@@ -53,7 +53,7 @@ TEST_CASE("query engine executes read_file through mock api") {
                 api::MockClient::Response{
                     .message =
                         engine::ConversationMessage{
-                            .role = engine::MessageRole::assistent,
+                            .role = engine::MessageRole::assistant,
                             .content =
                                 {
                                     engine::TextBlock{.text = "The file contains alpha and beta."},

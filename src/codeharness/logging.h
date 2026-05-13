@@ -1,11 +1,16 @@
 #pragma once
 
+#include <absl/status/status.h>
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 
+#include <filesystem>
 #include <utility>
 
 namespace codeharness::logging {
+    auto initialize_default_logger(const std::filesystem::path& log_file_path,
+                                   spdlog::level::level_enum level) -> absl::Status;
+
     template <typename... Args>
     inline auto trace(const char* scope, fmt::format_string<Args...> fmt_str, Args&&... args)
         -> void {

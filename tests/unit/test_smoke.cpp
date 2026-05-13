@@ -19,7 +19,7 @@ TEST_CASE("mock client streams text and records requests") {
             api::MockClient::Response{
                 .message =
                     engine::ConversationMessage{
-                        .role = engine::MessageRole::assistent,
+                        .role = engine::MessageRole::assistant,
                         .content = {engine::TextBlock{.text = "hello from mock"}},
                     },
                 .usage =

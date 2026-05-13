@@ -53,7 +53,7 @@ TEST_CASE("session storage creates saves loads and lists sessions") {
     const auto messages = std::vector<engine::ConversationMessage>{
         engine::ConversationMessage::from_user_text("hello"),
         engine::ConversationMessage{
-            .role = engine::MessageRole::assistent,
+            .role = engine::MessageRole::assistant,
             .content =
                 {
                     engine::TextBlock{.text = "I will call a tool."},
