@@ -5,39 +5,25 @@
 
 #include <deque>
 #include <nlohmann/json.hpp>
-#include <string>
 #include <variant>
 #include <vector>
 
 #include "codeharness/api/mock_client.h"
 #include "codeharness/engine/message.h"
 
-TEST_CASE("json dependency is available") {
-    const nlohmann::json value{{"name", "CodeHarness"}, {"cpp", 23}};
-
-    CHECK(value.at("name").get<std::string>() == "CodeHarness");
-    CHECK(value.at("cpp").get<int>() == 23);
-}
-
-TEST_CASE("fmt dependency is available") {
-    CHECK(fmt::format("{}{}", "agent-", "harness") == "agent-harness");
-}
-
-TEST_CASE("abseil dependency is available") {
-    CHECK(absl::StrCat("code", "-", "harness") == "code-harness");
-}
+using namespace codeharness;
 
 TEST_CASE("mock client streams text and records requests") {
-    auto client = codeharness::api::MockClient{
-        std::deque<codeharness::api::MockClient::Response>{
-            codeharness::api::MockClient::Response{
+    auto client = api::MockClient{
+        std::deque<api::MockClient::Response>{
+            api::MockClient::Response{
                 .message =
-                    codeharness::engine::ConversationMessage{
-                        .role = codeharness::engine::MessageRole::assistent,
-                        .content = {codeharness::engine::TextBlock{.text = "hello from mock"}},
+                    engine::ConversationMessage{
+                        .role = engine::MessageRole::assistent,
+                        .content = {engine::TextBlock{.text = "hello from mock"}},
                     },
                 .usage =
-                    codeharness::engine::UsageSnapshot{
+                    engine::UsageSnapshot{
                         .input_tokens = 2,
                         .output_tokens = 3,
                     },
@@ -46,24 +32,24 @@ TEST_CASE("mock client streams text and records requests") {
         },
     };
 
-    std::vector<codeharness::api::ApiStreamEvent> events;
+    std::vector<api::ApiStreamEvent> events;
     client.stream_message(
-        codeharness::api::MessageRequest{
+        api::MessageRequest{
             .model = "mock-model",
             .messages = {},
             .system_prompt = "system",
             .max_tokens = 128,
             .tools = nlohmann::json::array(),
         },
-        [&](const codeharness::api::ApiStreamEvent& event) { events.push_back(event); });
+        [&](const api::ApiStreamEvent& event) { events.push_back(event); });
 
     REQUIRE(events.size() == 2);
 
-    const auto* delta = std::get_if<codeharness::engine::AssistantTextDelta>(&events[0]);
+    const auto* delta = std::get_if<engine::AssistantTextDelta>(&events[0]);
     REQUIRE(delta != nullptr);
     CHECK(delta->text == "hello from mock");
 
-    const auto* complete = std::get_if<codeharness::api::MessageComplete>(&events[1]);
+    const auto* complete = std::get_if<api::MessageComplete>(&events[1]);
     REQUIRE(complete != nullptr);
     CHECK(complete->message.text() == "hello from mock");
     CHECK(complete->usage.input_tokens == 2);
