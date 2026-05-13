@@ -13,6 +13,6 @@ namespace codeharness::tools {
         [[nodiscard]] virtual auto is_read_only(const nlohmann::json& input) const -> bool override;
 
         auto execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
-            -> ToolResult override;
+            -> absl::StatusOr<std::string> override;
     };
 }  // namespace codeharness::tools

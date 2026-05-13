@@ -1,5 +1,6 @@
 #pragma once
 
+#include <absl/status/status.h>
 #include <functional>
 #include <string>
 #include <variant>
@@ -42,6 +43,7 @@ namespace codeharness::api {
         virtual ~Client() = default;
 
         // QueryEngine 调用client.stream_message()
-        virtual auto stream_message(const MessageRequest& request, ApiStreamSink sink) -> void = 0;
+        virtual auto stream_message(const MessageRequest& request, ApiStreamSink sink)
+            -> absl::Status = 0;
     };
 }  // namespace codeharness::api

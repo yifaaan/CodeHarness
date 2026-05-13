@@ -35,19 +35,20 @@ TEST_CASE("conversation message json round trips all content block types") {
     CHECK(serialized.at("content").at(1).at("type").get<std::string>() == "tool_use");
     CHECK(serialized.at("content").at(2).at("type").get<std::string>() == "tool_result");
 
-    const auto parsed = serialized.get<engine::ConversationMessage>();
+    const auto parsed = engine::conversation_message_from_json(serialized);
+    REQUIRE(parsed.ok());
 
-    CHECK(parsed.role == engine::MessageRole::assistent);
-    REQUIRE(parsed.content.size() == 3);
-    CHECK(parsed.text() == "I will inspect the file.");
+    CHECK(parsed->role == engine::MessageRole::assistent);
+    REQUIRE(parsed->content.size() == 3);
+    CHECK(parsed->text() == "I will inspect the file.");
 
-    const auto* tool_use = std::get_if<engine::ToolUseBlock>(&parsed.content[1]);
+    const auto* tool_use = std::get_if<engine::ToolUseBlock>(&parsed->content[1]);
     REQUIRE(tool_use != nullptr);
     CHECK(tool_use->id == "toolu_1");
     CHECK(tool_use->name == "read_file");
     CHECK(tool_use->input.at("path").get<std::string>() == "hello.txt");
 
-    const auto* tool_result = std::get_if<engine::ToolResultBlock>(&parsed.content[2]);
+    const auto* tool_result = std::get_if<engine::ToolResultBlock>(&parsed->content[2]);
     REQUIRE(tool_result != nullptr);
     CHECK(tool_result->tool_use_id == "toolu_1");
     CHECK(tool_result->content == "alpha\nbeta\n");
@@ -55,13 +56,12 @@ TEST_CASE("conversation message json round trips all content block types") {
 }
 
 TEST_CASE("conversation message json accepts legacy assistent spelling") {
-    const auto parsed = nlohmann::json(
-                            nlohmann::json{
+    const auto parsed = engine::conversation_message_from_json(nlohmann::json{
         {"role", "assistent"},
         {"content", nlohmann::json::array({{{"type", "text"}, {"text", "hello"}}})},
-    })
-                            .get<engine::ConversationMessage>();
+    });
+    REQUIRE(parsed.ok());
 
-    CHECK(parsed.role == engine::MessageRole::assistent);
-    CHECK(parsed.text() == "hello");
+    CHECK(parsed->role == engine::MessageRole::assistent);
+    CHECK(parsed->text() == "hello");
 }

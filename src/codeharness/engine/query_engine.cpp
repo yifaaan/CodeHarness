@@ -1,5 +1,7 @@
 #include "codeharness/engine/query_engine.h"
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
 #include <absl/strings/str_cat.h>
 #include <spdlog/spdlog.h>
 
@@ -22,7 +24,8 @@ namespace codeharness::engine {
           model_{std::move(model)},
           system_prompt_{std::move(system_prompt)} {}
 
-    auto QueryEngine::submit_message(std::string prompt, const api::StreamSink& sink) -> void {
+    auto QueryEngine::submit_message(std::string prompt, const api::StreamSink& sink)
+        -> absl::Status {
         spdlog::debug("query: submit message chars={} existing_messages={} model={}", prompt.size(),
                       messages_.size(), model_);
         messages_.push_back(ConversationMessage::from_user_text(std::move(prompt)));
@@ -41,7 +44,7 @@ namespace codeharness::engine {
             spdlog::debug("query: turn={} sending request messages={} tools={} max_tokens={}", turn,
                           request.messages.size(), request.tools.size(), request.max_tokens);
 
-            api_.stream_message(request, [&](const api::ApiStreamEvent& event) {
+            const auto status = api_.stream_message(request, [&](const api::ApiStreamEvent& event) {
                 if (auto delta = std::get_if<AssistantTextDelta>(&event)) {
                     spdlog::debug("query: received assistant delta chars={}", delta->text.size());
                     sink(*delta);
@@ -57,29 +60,29 @@ namespace codeharness::engine {
                     has_final_message = true;
                 }
             });
-
-            if (!has_final_message) {
-                throw std::runtime_error{"model stream finished without a final message"};
+            if (!status.ok()) {
+                return status;
             }
 
-            // 保存 assistant 回复和用量
+            if (!has_final_message) {
+                return absl::InternalError("model stream finished without a final message");
+            }
+
             messages_.push_back(final_message.message);
             total_usage_.input_tokens += final_message.usage.input_tokens;
             total_usage_.output_tokens += final_message.usage.output_tokens;
 
-            // 发一个 assistant 这一轮完成的事件
             sink(AssistantTurnComplete{
                 .message = final_message.message,
                 .usage = final_message.usage,
             });
 
-            // 检查工具调用的请求
             const auto tool_calls = final_message.message.tool_uses();
             if (tool_calls.empty()) {
                 spdlog::debug("query: turn={} completed without tool calls; total_input_tokens={} "
                               "total_output_tokens={}",
                               turn, total_usage_.input_tokens, total_usage_.output_tokens);
-                return;
+                return absl::OkStatus();
             }
             spdlog::debug("query: turn={} has {} tool call(s)", turn, tool_calls.size());
 
@@ -87,7 +90,6 @@ namespace codeharness::engine {
             tool_results.reserve(tool_calls.size());
 
             for (const auto& call : tool_calls) {
-                // 通知 UI 工具开始执行
                 sink(ToolExecutionStared{
                     .tool_name = call.name,
                     .tool_input = call.input,
@@ -95,63 +97,77 @@ namespace codeharness::engine {
                 spdlog::debug("query: executing tool name={} id={} input_bytes={}", call.name,
                               call.id, call.input.dump().size());
                 auto result = execute_tool_call(call);
+                if (!result.ok()) {
+                    return result.status();
+                }
                 spdlog::debug("query: tool finished name={} id={} is_error={} output_chars={}",
-                              call.name, call.id, result.is_error, result.content.size());
-                // 通知 UI 工具执行完成
+                              call.name, call.id, result->is_error, result->content.size());
                 sink(ToolExecutionComplete{
                     .tool_name = call.name,
-                    .output = result.content,
-                    .is_error = result.is_error,
+                    .output = result->content,
+                    .is_error = result->is_error,
                 });
-                tool_results.emplace_back(std::move(result));
+                tool_results.emplace_back(std::move(*result));
             }
-            // 将工具执行结果作为user message添加到历史消息
+
             messages_.push_back(ConversationMessage{
                 .role = MessageRole::user,
                 .content = std::move(tool_results),
             });
             spdlog::debug("query: appended tool results; messages={}", messages_.size());
         }
+
         spdlog::error("query: exceeded maximum turn limit max_turns={}", max_turns_);
-        throw std::runtime_error{"exceeded maximum turn limit"};
+        return absl::ResourceExhaustedError("exceeded maximum turn limit");
     }
 
-    auto QueryEngine::execute_tool_call(const ToolUseBlock& call) -> ToolResultBlock {
+    auto QueryEngine::execute_tool_call(const ToolUseBlock& call)
+        -> absl::StatusOr<ToolResultBlock> {
         auto selected_tool = tools_.find(call.name);
-        if (!selected_tool) {
+        if (!selected_tool.ok()) {
             spdlog::warn("query: unknown tool requested name={} id={}", call.name, call.id);
             return ToolResultBlock{
                 .tool_use_id = call.id,
-                .content = absl::StrCat("Unknown tool :", call.name),
+                .content = absl::StrCat("Unknown tool: ", call.name),
                 .is_error = true,
             };
         }
-        // 权限检查
-        const auto decision = permissions_.evaluate(
-            selected_tool->name(), selected_tool->is_read_only(call.input), call.input);
+
+        auto* tool = *selected_tool;
+        const auto decision = permissions_.evaluate(tool->name(), tool->is_read_only(call.input),
+                                                    call.input);
         spdlog::debug("query: permission decision tool={} allowed={} requires_confirmation={} "
                       "reason={}",
-                      std::string{selected_tool->name()}, decision.allowed,
+                      std::string{tool->name()}, decision.allowed,
                       decision.requires_confirmation, decision.reason);
         if (!decision.allowed) {
             return ToolResultBlock{
                 .tool_use_id = call.id,
                 .content = decision.reason.empty()
-                               ? absl::StrCat("Permission denied for ", selected_tool->name())
+                               ? absl::StrCat("Permission denied for ", tool->name())
                                : decision.reason,
                 .is_error = true,
             };
         }
 
-        const auto result =
-            selected_tool->execute(call.input, tools::ToolExecutionContext{.cwd = cwd_});
-        spdlog::debug("query: tool execution result tool={} is_error={} output_chars={}",
-                      std::string{selected_tool->name()}, result.is_error, result.output.size());
+        const auto result = tool->execute(call.input, tools::ToolExecutionContext{.cwd = cwd_});
+        if (!result.ok()) {
+            spdlog::debug("query: tool execution failed tool={} status={} message={}",
+                          std::string{tool->name()}, static_cast<int>(result.status().code()),
+                          result.status().message());
+            return ToolResultBlock{
+                .tool_use_id = call.id,
+                .content = std::string{result.status().message()},
+                .is_error = true,
+            };
+        }
+        spdlog::debug("query: tool execution result tool={} output_chars={}",
+                      std::string{tool->name()}, result->size());
 
         return ToolResultBlock{
-            .tool_use_id = std::string{selected_tool->name()},
-            .content = result.output,
-            .is_error = result.is_error,
+            .tool_use_id = call.id,
+            .content = std::move(*result),
+            .is_error = false,
         };
     }
 

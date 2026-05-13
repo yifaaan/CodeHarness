@@ -1,5 +1,7 @@
 #pragma once
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
 #include <absl/types/span.h>
 
 #include <filesystem>
@@ -30,7 +32,7 @@ namespace codeharness::engine {
         //   如果模型返回 tool use，就执行工具
         //   把 tool result 再塞回对话
         //   继续循环，直到模型不再请求工具
-        auto submit_message(std::string prompt, const api::StreamSink& sink) -> void;
+        auto submit_message(std::string prompt, const api::StreamSink& sink) -> absl::Status;
 
         [[nodiscard]] auto messages() const noexcept -> absl::Span<const ConversationMessage>;
         [[nodiscard]] auto total_usage() const noexcept -> UsageSnapshot;
@@ -40,7 +42,7 @@ namespace codeharness::engine {
 
     private:
         // 负责单次工具调用：找工具、查权限、执行工具、包装成 ToolResultBlock
-        auto execute_tool_call(const ToolUseBlock& call) -> ToolResultBlock;
+        auto execute_tool_call(const ToolUseBlock& call) -> absl::StatusOr<ToolResultBlock>;
 
         api::Client& api_;
         const tools::ToolRegistry& tools_;

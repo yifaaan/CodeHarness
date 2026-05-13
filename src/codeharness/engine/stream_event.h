@@ -1,5 +1,6 @@
 #pragma once
 
+#include <absl/status/statusor.h>
 #include <nlohmann/json.hpp>
 #include <variant>
 
@@ -51,4 +52,6 @@ namespace codeharness::engine {
     auto from_json(const nlohmann::json& value, ToolExecutionComplete& complete) -> void;
     auto to_json(nlohmann::json& value, const StreamEvent& event) -> void;
     auto from_json(const nlohmann::json& value, StreamEvent& event) -> void;
+    [[nodiscard]] auto stream_event_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<StreamEvent>;
 }  // namespace codeharness::engine

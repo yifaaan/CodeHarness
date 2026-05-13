@@ -1,17 +1,18 @@
 #include "codeharness/api/mock_client.h"
 
-#include <stdexcept>
+#include <absl/status/status.h>
 #include <utility>
 
 namespace codeharness::api {
 
     MockClient::MockClient(std::deque<Response> responses) : responses_{std::move(responses)} {}
 
-    auto MockClient::stream_message(const MessageRequest& request, ApiStreamSink sink) -> void {
+    auto MockClient::stream_message(const MessageRequest& request, ApiStreamSink sink)
+        -> absl::Status {
         requests_.push_back(request);
 
         if (responses_.empty()) {
-            throw std::runtime_error{"mock client has no queued response"};
+            return absl::FailedPreconditionError("mock client has no queued response");
         }
 
         auto response = std::move(responses_.front());
@@ -29,6 +30,7 @@ namespace codeharness::api {
             .usage = response.usage,
             .stop_reason = std::move(response.stop_reason),
         });
+        return absl::OkStatus();
     }
 
     auto MockClient::requests() -> absl::Span<const MessageRequest> const { return requests_; }

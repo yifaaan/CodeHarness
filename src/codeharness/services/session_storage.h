@@ -1,5 +1,7 @@
 #pragma once
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
 #include <absl/strings/string_view.h>
 #include <absl/types/span.h>
 
@@ -31,6 +33,9 @@ namespace codeharness::services {
     auto from_json(const nlohmann::json& value, SessionMetadata& metadata) -> void;
     auto to_json(nlohmann::json& value, const Session& session) -> void;
     auto from_json(const nlohmann::json& value, Session& session) -> void;
+    [[nodiscard]] auto session_metadata_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<SessionMetadata>;
+    [[nodiscard]] auto session_from_json(const nlohmann::json& value) -> absl::StatusOr<Session>;
 
     class SessionStorage {
     public:
@@ -38,13 +43,16 @@ namespace codeharness::services {
 
         [[nodiscard]] auto create_session(std::string name,
                                           std::string model,
-                                          std::filesystem::path cwd) -> SessionMetadata;
+                                          std::filesystem::path cwd)
+            -> absl::StatusOr<SessionMetadata>;
 
         auto save_messages(absl::string_view session_id,
-                           absl::Span<const engine::ConversationMessage> messages) -> void;
+                           absl::Span<const engine::ConversationMessage> messages)
+            -> absl::Status;
 
-        [[nodiscard]] auto load_session(absl::string_view session_id) const -> Session;
-        [[nodiscard]] auto list_sessions() const -> std::vector<SessionMetadata>;
+        [[nodiscard]] auto load_session(absl::string_view session_id) const
+            -> absl::StatusOr<Session>;
+        [[nodiscard]] auto list_sessions() const -> absl::StatusOr<std::vector<SessionMetadata>>;
 
     private:
         [[nodiscard]] auto session_path(absl::string_view session_id) const

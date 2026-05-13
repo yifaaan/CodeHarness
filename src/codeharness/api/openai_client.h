@@ -1,5 +1,6 @@
 #pragma once
 
+#include <absl/status/status.h>
 #include <chrono>
 #include <string>
 
@@ -17,7 +18,8 @@ namespace codeharness::api {
     public:
         explicit OpenAIClient(OpenAIClientOptions options);
 
-        auto stream_message(const MessageRequest& request, ApiStreamSink sink) -> void override;
+        auto stream_message(const MessageRequest& request, ApiStreamSink sink)
+            -> absl::Status override;
 
     private:
         OpenAIClientOptions options_;

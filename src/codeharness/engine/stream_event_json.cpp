@@ -1,17 +1,96 @@
 #include "codeharness/engine/stream_event.h"
 
-#include <stdexcept>
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
+
 #include <string>
+
+#include "codeharness/engine/message_json.h"
 
 namespace codeharness::engine {
 namespace {
 
-    [[nodiscard]] auto require_type(const nlohmann::json& value) -> std::string {
+    [[nodiscard]] auto require_type(const nlohmann::json& value) -> absl::StatusOr<std::string> {
         if (!value.is_object()) {
-            throw std::invalid_argument{"stream event must be a JSON object"};
+            return absl::InvalidArgumentError("stream event must be a JSON object");
+        }
+        if (!value.contains("type") || !value.at("type").is_string()) {
+            return absl::InvalidArgumentError("stream event is missing string field: type");
         }
 
         return value.at("type").get<std::string>();
+    }
+
+    [[nodiscard]] auto assistant_text_delta_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<AssistantTextDelta> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "assistant_delta") {
+            return absl::InvalidArgumentError("stream event is not assistant_delta");
+        }
+
+        return AssistantTextDelta{
+            .text = value.value("text", ""),
+        };
+    }
+
+    [[nodiscard]] auto assistant_turn_complete_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<AssistantTurnComplete> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "assistant_complete") {
+            return absl::InvalidArgumentError("stream event is not assistant_complete");
+        }
+        if (!value.contains("message")) {
+            return absl::InvalidArgumentError("assistant_complete is missing message");
+        }
+
+        auto message = conversation_message_from_json(value.at("message"));
+        if (!message.ok()) {
+            return message.status();
+        }
+
+        return AssistantTurnComplete{
+            .message = std::move(*message),
+            .usage = value.value("usage", nlohmann::json::object()).get<UsageSnapshot>(),
+        };
+    }
+
+    [[nodiscard]] auto tool_execution_started_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<ToolExecutionStared> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "tool_start") {
+            return absl::InvalidArgumentError("stream event is not tool_start");
+        }
+
+        return ToolExecutionStared{
+            .tool_name = value.value("tool_name", ""),
+            .tool_input = value.value("tool_input", nlohmann::json::object()),
+        };
+    }
+
+    [[nodiscard]] auto tool_execution_complete_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<ToolExecutionComplete> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "tool_complete") {
+            return absl::InvalidArgumentError("stream event is not tool_complete");
+        }
+
+        return ToolExecutionComplete{
+            .tool_name = value.value("tool_name", ""),
+            .output = value.value("output", ""),
+            .is_error = value.value("is_error", false),
+        };
     }
 
 }  // namespace
@@ -38,13 +117,8 @@ namespace {
     }
 
     auto from_json(const nlohmann::json& value, AssistantTextDelta& delta) -> void {
-        if (require_type(value) != "assistant_delta") {
-            throw std::invalid_argument{"stream event is not assistant_delta"};
-        }
-
-        delta = AssistantTextDelta{
-            .text = value.value("text", ""),
-        };
+        auto parsed = assistant_text_delta_from_json(value);
+        delta = parsed.ok() ? std::move(*parsed) : AssistantTextDelta{};
     }
 
     auto to_json(nlohmann::json& value, const AssistantTurnComplete& complete) -> void {
@@ -57,14 +131,8 @@ namespace {
     }
 
     auto from_json(const nlohmann::json& value, AssistantTurnComplete& complete) -> void {
-        if (require_type(value) != "assistant_complete") {
-            throw std::invalid_argument{"stream event is not assistant_complete"};
-        }
-
-        complete = AssistantTurnComplete{
-            .message = value.at("message").get<ConversationMessage>(),
-            .usage = value.value("usage", nlohmann::json::object()).get<UsageSnapshot>(),
-        };
+        auto parsed = assistant_turn_complete_from_json(value);
+        complete = parsed.ok() ? std::move(*parsed) : AssistantTurnComplete{};
     }
 
     auto to_json(nlohmann::json& value, const ToolExecutionStared& started) -> void {
@@ -76,14 +144,8 @@ namespace {
     }
 
     auto from_json(const nlohmann::json& value, ToolExecutionStared& started) -> void {
-        if (require_type(value) != "tool_start") {
-            throw std::invalid_argument{"stream event is not tool_start"};
-        }
-
-        started = ToolExecutionStared{
-            .tool_name = value.value("tool_name", ""),
-            .tool_input = value.value("tool_input", nlohmann::json::object()),
-        };
+        auto parsed = tool_execution_started_from_json(value);
+        started = parsed.ok() ? std::move(*parsed) : ToolExecutionStared{};
     }
 
     auto to_json(nlohmann::json& value, const ToolExecutionComplete& complete) -> void {
@@ -96,15 +158,8 @@ namespace {
     }
 
     auto from_json(const nlohmann::json& value, ToolExecutionComplete& complete) -> void {
-        if (require_type(value) != "tool_complete") {
-            throw std::invalid_argument{"stream event is not tool_complete"};
-        }
-
-        complete = ToolExecutionComplete{
-            .tool_name = value.value("tool_name", ""),
-            .output = value.value("output", ""),
-            .is_error = value.value("is_error", false),
-        };
+        auto parsed = tool_execution_complete_from_json(value);
+        complete = parsed.ok() ? std::move(*parsed) : ToolExecutionComplete{};
     }
 
     auto to_json(nlohmann::json& value, const StreamEvent& event) -> void {
@@ -112,29 +167,49 @@ namespace {
     }
 
     auto from_json(const nlohmann::json& value, StreamEvent& event) -> void {
-        const auto type = require_type(value);
+        auto parsed = stream_event_from_json(value);
+        event = parsed.ok() ? std::move(*parsed) : StreamEvent{AssistantTextDelta{}};
+    }
 
-        if (type == "assistant_delta") {
-            event = value.get<AssistantTextDelta>();
-            return;
+    auto stream_event_from_json(const nlohmann::json& value) -> absl::StatusOr<StreamEvent> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
         }
 
-        if (type == "assistant_complete") {
-            event = value.get<AssistantTurnComplete>();
-            return;
+        if (*type == "assistant_delta") {
+            auto parsed = assistant_text_delta_from_json(value);
+            if (!parsed.ok()) {
+                return parsed.status();
+            }
+            return StreamEvent{std::move(*parsed)};
         }
 
-        if (type == "tool_start") {
-            event = value.get<ToolExecutionStared>();
-            return;
+        if (*type == "assistant_complete") {
+            auto parsed = assistant_turn_complete_from_json(value);
+            if (!parsed.ok()) {
+                return parsed.status();
+            }
+            return StreamEvent{std::move(*parsed)};
         }
 
-        if (type == "tool_complete") {
-            event = value.get<ToolExecutionComplete>();
-            return;
+        if (*type == "tool_start") {
+            auto parsed = tool_execution_started_from_json(value);
+            if (!parsed.ok()) {
+                return parsed.status();
+            }
+            return StreamEvent{std::move(*parsed)};
         }
 
-        throw std::invalid_argument{"unknown stream event type: " + type};
+        if (*type == "tool_complete") {
+            auto parsed = tool_execution_complete_from_json(value);
+            if (!parsed.ok()) {
+                return parsed.status();
+            }
+            return StreamEvent{std::move(*parsed)};
+        }
+
+        return absl::InvalidArgumentError("unknown stream event type: " + *type);
     }
 
 }  // namespace codeharness::engine

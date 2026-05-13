@@ -1,6 +1,9 @@
 #include "codeharness/config/setting.h"
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
 #include <absl/strings/numbers.h>
+#include <absl/strings/str_cat.h>
 #include <absl/strings/string_view.h>
 
 #include <cstdlib>
@@ -41,22 +44,22 @@ namespace {
         return value;
     }
 
-    [[nodiscard]] auto env_int(const char* name) -> std::optional<int> {
+    [[nodiscard]] auto env_int(const char* name) -> absl::StatusOr<std::optional<int>> {
         const auto value = env_string(name);
         if (!value.has_value()) {
-            return std::nullopt;
+            return std::optional<int>{};
         }
 
         auto parsed = int{};
         if (!absl::SimpleAtoi(*value, &parsed)) {
-            spdlog::warn("config: environment variable {} is not a valid integer", name);
-            return std::nullopt;
+            return absl::InvalidArgumentError(
+                absl::StrCat("environment variable ", name, " is not a valid integer"));
         }
         return parsed;
     }
 }  // namespace
 namespace codeharness::config {
-    auto load_settings(const SettingsOverrides& overrides) -> Settings {
+    auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
         auto settings = Settings{};
 
         if (overrides.api_key.has_value()) {
@@ -88,9 +91,15 @@ namespace codeharness::config {
         if (overrides.max_tokens.has_value()) {
             settings.api.max_tokens = *overrides.max_tokens;
             spdlog::debug("config: max_tokens provided by override");
-        } else if (const auto max_tokens = env_int("OPENAI_MAX_TOKENS")) {
-            settings.api.max_tokens = *max_tokens;
-            spdlog::debug("config: max_tokens loaded from OPENAI_MAX_TOKENS");
+        } else {
+            auto max_tokens = env_int("OPENAI_MAX_TOKENS");
+            if (!max_tokens.ok()) {
+                return max_tokens.status();
+            }
+            if (max_tokens->has_value()) {
+                settings.api.max_tokens = **max_tokens;
+                spdlog::debug("config: max_tokens loaded from OPENAI_MAX_TOKENS");
+            }
         }
         if (overrides.permission_mode.has_value()) {
             settings.permissions.mode = *overrides.permission_mode;

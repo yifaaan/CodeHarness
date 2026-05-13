@@ -29,8 +29,9 @@ TEST_CASE("stream event json round trips through nlohmann conversions") {
     CHECK(serialized.at("usage").at("input_tokens").get<int>() == 12);
     CHECK(serialized.at("text").get<std::string>() == "done");
 
-    const auto parsed = serialized.get<engine::StreamEvent>();
-    const auto* complete = std::get_if<engine::AssistantTurnComplete>(&parsed);
+    const auto parsed = engine::stream_event_from_json(serialized);
+    REQUIRE(parsed.ok());
+    const auto* complete = std::get_if<engine::AssistantTurnComplete>(&*parsed);
     REQUIRE(complete != nullptr);
     CHECK(complete->message.text() == "done");
     CHECK(complete->usage.input_tokens == 12);

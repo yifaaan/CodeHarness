@@ -1,5 +1,6 @@
 #pragma once
 
+#include <absl/status/status.h>
 #include <deque>
 #include <string>
 #include <vector>
@@ -19,7 +20,8 @@ namespace codeharness::api {
 
         explicit MockClient(std::deque<Response> responses);
 
-        auto stream_message(const MessageRequest& request, ApiStreamSink sink) -> void override;
+        auto stream_message(const MessageRequest& request, ApiStreamSink sink)
+            -> absl::Status override;
 
         [[nodiscard]] auto requests() -> absl::Span<const MessageRequest> const;
 

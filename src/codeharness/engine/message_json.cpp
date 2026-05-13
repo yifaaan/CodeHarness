@@ -1,6 +1,8 @@
 #include "codeharness/engine/message_json.h"
 
-#include <stdexcept>
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
+
 #include <string>
 #include <utility>
 
@@ -15,10 +17,10 @@ namespace {
                 return "assistant";
         }
 
-        throw std::invalid_argument{"unknown message role"};
+        return "assistant";
     }
 
-    [[nodiscard]] auto role_from_string(const std::string& role) -> MessageRole {
+    [[nodiscard]] auto role_from_string(const std::string& role) -> absl::StatusOr<MessageRole> {
         if (role == "user") {
             return MessageRole::user;
         }
@@ -27,15 +29,117 @@ namespace {
             return MessageRole::assistent;
         }
 
-        throw std::invalid_argument{"unknown message role: " + role};
+        return absl::InvalidArgumentError("unknown message role: " + role);
     }
 
-    [[nodiscard]] auto require_type(const nlohmann::json& value) -> std::string {
+    [[nodiscard]] auto require_type(const nlohmann::json& value) -> absl::StatusOr<std::string> {
         if (!value.is_object()) {
-            throw std::invalid_argument{"content block must be a JSON object"};
+            return absl::InvalidArgumentError("content block must be a JSON object");
+        }
+        if (!value.contains("type") || !value.at("type").is_string()) {
+            return absl::InvalidArgumentError("content block is missing string field: type");
         }
 
         return value.at("type").get<std::string>();
+    }
+
+    [[nodiscard]] auto text_block_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<TextBlock> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "text") {
+            return absl::InvalidArgumentError("content block is not text");
+        }
+        if (!value.contains("text") || !value.at("text").is_string()) {
+            return absl::InvalidArgumentError("text block is missing string field: text");
+        }
+
+        return TextBlock{
+            .text = value.at("text").get<std::string>(),
+        };
+    }
+
+    [[nodiscard]] auto tool_use_block_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<ToolUseBlock> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "tool_use") {
+            return absl::InvalidArgumentError("content block is not tool_use");
+        }
+        if (!value.contains("id") || !value.at("id").is_string()) {
+            return absl::InvalidArgumentError("tool_use block is missing string field: id");
+        }
+        if (!value.contains("name") || !value.at("name").is_string()) {
+            return absl::InvalidArgumentError("tool_use block is missing string field: name");
+        }
+
+        return ToolUseBlock{
+            .id = value.at("id").get<std::string>(),
+            .name = value.at("name").get<std::string>(),
+            .input = value.value("input", nlohmann::json::object()),
+        };
+    }
+
+    [[nodiscard]] auto tool_result_block_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<ToolResultBlock> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+        if (*type != "tool_result") {
+            return absl::InvalidArgumentError("content block is not tool_result");
+        }
+        if (!value.contains("tool_use_id") || !value.at("tool_use_id").is_string()) {
+            return absl::InvalidArgumentError(
+                "tool_result block is missing string field: tool_use_id");
+        }
+        if (!value.contains("content") || !value.at("content").is_string()) {
+            return absl::InvalidArgumentError("tool_result block is missing string field: content");
+        }
+
+        return ToolResultBlock{
+            .tool_use_id = value.at("tool_use_id").get<std::string>(),
+            .content = value.at("content").get<std::string>(),
+            .is_error = value.value("is_error", false),
+        };
+    }
+
+    [[nodiscard]] auto content_block_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<ContentBlock> {
+        auto type = require_type(value);
+        if (!type.ok()) {
+            return type.status();
+        }
+
+        if (*type == "text") {
+            auto block = text_block_from_json(value);
+            if (!block.ok()) {
+                return block.status();
+            }
+            return ContentBlock{std::move(*block)};
+        }
+
+        if (*type == "tool_use") {
+            auto block = tool_use_block_from_json(value);
+            if (!block.ok()) {
+                return block.status();
+            }
+            return ContentBlock{std::move(*block)};
+        }
+
+        if (*type == "tool_result") {
+            auto block = tool_result_block_from_json(value);
+            if (!block.ok()) {
+                return block.status();
+            }
+            return ContentBlock{std::move(*block)};
+        }
+
+        return absl::InvalidArgumentError("unknown content block type: " + *type);
     }
 
 }  // namespace
@@ -84,81 +188,28 @@ namespace {
     }
 
     auto from_json(const nlohmann::json& value, TextBlock& block) -> void {
-        if (require_type(value) != "text") {
-            throw std::invalid_argument{"content block is not text"};
-        }
-
-        block = TextBlock{
-            .text = value.at("text").get<std::string>(),
-        };
+        auto parsed = text_block_from_json(value);
+        block = parsed.ok() ? std::move(*parsed) : TextBlock{};
     }
 
     auto from_json(const nlohmann::json& value, ToolUseBlock& block) -> void {
-        if (require_type(value) != "tool_use") {
-            throw std::invalid_argument{"content block is not tool_use"};
-        }
-
-        block = ToolUseBlock{
-            .id = value.at("id").get<std::string>(),
-            .name = value.at("name").get<std::string>(),
-            .input = value.value("input", nlohmann::json::object()),
-        };
+        auto parsed = tool_use_block_from_json(value);
+        block = parsed.ok() ? std::move(*parsed) : ToolUseBlock{};
     }
 
     auto from_json(const nlohmann::json& value, ToolResultBlock& block) -> void {
-        if (require_type(value) != "tool_result") {
-            throw std::invalid_argument{"content block is not tool_result"};
-        }
-
-        block = ToolResultBlock{
-            .tool_use_id = value.at("tool_use_id").get<std::string>(),
-            .content = value.at("content").get<std::string>(),
-            .is_error = value.value("is_error", false),
-        };
-    }
-
-    auto content_block_from_json(const nlohmann::json& value) -> ContentBlock {
-        const auto type = require_type(value);
-
-        if (type == "text") {
-            auto block = TextBlock{};
-            from_json(value, block);
-            return block;
-        }
-
-        if (type == "tool_use") {
-            auto block = ToolUseBlock{};
-            from_json(value, block);
-            return block;
-        }
-
-        if (type == "tool_result") {
-            auto block = ToolResultBlock{};
-            from_json(value, block);
-            return block;
-        }
-
-        throw std::invalid_argument{"unknown content block type: " + type};
+        auto parsed = tool_result_block_from_json(value);
+        block = parsed.ok() ? std::move(*parsed) : ToolResultBlock{};
     }
 
     auto from_json(const nlohmann::json& value, ContentBlock& block) -> void {
-        block = content_block_from_json(value);
+        auto parsed = content_block_from_json(value);
+        block = parsed.ok() ? std::move(*parsed) : ContentBlock{TextBlock{}};
     }
 
     auto from_json(const nlohmann::json& value, ConversationMessage& message) -> void {
-        if (!value.is_object()) {
-            throw std::invalid_argument{"conversation message must be a JSON object"};
-        }
-
-        auto content = std::vector<ContentBlock>{};
-        for (const auto& block : value.at("content")) {
-            content.push_back(content_block_from_json(block));
-        }
-
-        message = ConversationMessage{
-            .role = role_from_string(value.at("role").get<std::string>()),
-            .content = std::move(content),
-        };
+        auto parsed = conversation_message_from_json(value);
+        message = parsed.ok() ? std::move(*parsed) : ConversationMessage{};
     }
 
     auto to_json(const ConversationMessage& message) -> nlohmann::json {
@@ -167,10 +218,37 @@ namespace {
         return value;
     }
 
-    auto conversation_message_from_json(const nlohmann::json& value) -> ConversationMessage {
-        ConversationMessage message;
-        from_json(value, message);
-        return message;
+    auto conversation_message_from_json(const nlohmann::json& value)
+        -> absl::StatusOr<ConversationMessage> {
+        if (!value.is_object()) {
+            return absl::InvalidArgumentError("conversation message must be a JSON object");
+        }
+        if (!value.contains("role") || !value.at("role").is_string()) {
+            return absl::InvalidArgumentError("conversation message is missing string field: role");
+        }
+        if (!value.contains("content") || !value.at("content").is_array()) {
+            return absl::InvalidArgumentError("conversation message is missing content array");
+        }
+
+        auto role = role_from_string(value.at("role").get<std::string>());
+        if (!role.ok()) {
+            return role.status();
+        }
+
+        auto content = std::vector<ContentBlock>{};
+        content.reserve(value.at("content").size());
+        for (const auto& block : value.at("content")) {
+            auto parsed_block = content_block_from_json(block);
+            if (!parsed_block.ok()) {
+                return parsed_block.status();
+            }
+            content.push_back(std::move(*parsed_block));
+        }
+
+        return ConversationMessage{
+            .role = *role,
+            .content = std::move(content),
+        };
     }
 
 }  // namespace codeharness::engine

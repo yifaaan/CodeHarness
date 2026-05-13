@@ -33,7 +33,7 @@ TEST_CASE("mock client streams text and records requests") {
     };
 
     std::vector<api::ApiStreamEvent> events;
-    client.stream_message(
+    const auto status = client.stream_message(
         api::MessageRequest{
             .model = "mock-model",
             .messages = {},
@@ -42,6 +42,7 @@ TEST_CASE("mock client streams text and records requests") {
             .tools = nlohmann::json::array(),
         },
         [&](const api::ApiStreamEvent& event) { events.push_back(event); });
+    REQUIRE(status.ok());
 
     REQUIRE(events.size() == 2);
 

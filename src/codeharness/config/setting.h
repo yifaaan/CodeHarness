@@ -1,5 +1,6 @@
 #pragma once
 
+#include <absl/status/statusor.h>
 #include <chrono>
 #include <optional>
 #include <string>
@@ -28,6 +29,7 @@ namespace codeharness::config {
         std::optional<permissions::PermissionMode> permission_mode;
     };
 
-    [[nodiscard]] auto load_settings(const SettingsOverrides& overrides = {}) -> Settings;
+    [[nodiscard]] auto load_settings(const SettingsOverrides& overrides = {})
+        -> absl::StatusOr<Settings>;
 
 }  // namespace codeharness::config

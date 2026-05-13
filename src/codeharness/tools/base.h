@@ -1,18 +1,13 @@
 #pragma once
 
+#include <absl/status/statusor.h>
 #include <absl/strings/string_view.h>
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
 namespace codeharness::tools {
-    // 工具执行结果
-    struct ToolResult {
-        std::string output;
-        bool is_error{};
-    };
-
-    // 工具执行上下文
+    // Tool execution context.
     struct ToolExecutionContext {
         std::filesystem::path cwd;
     };
@@ -24,11 +19,11 @@ namespace codeharness::tools {
         [[nodiscard]] virtual auto name() const -> absl::string_view = 0;
         [[nodiscard]] virtual auto description() const -> absl::string_view = 0;
         [[nodiscard]] virtual auto input_schema() const -> nlohmann::json = 0;
-        // 判断这次调用是否只读
+        // Whether this tool call is read-only.
         [[nodiscard]] virtual auto is_read_only(const nlohmann::json& input) const -> bool = 0;
 
         virtual auto execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
-            -> ToolResult = 0;
+            -> absl::StatusOr<std::string> = 0;
 
         [[nodiscard]] nlohmann::json api_schema() const {
             return {

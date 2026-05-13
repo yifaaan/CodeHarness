@@ -1,5 +1,6 @@
 #include "codeharness/tools/read_file_tool.h"
 
+#include <absl/status/status.h>
 #include <absl/strings/string_view.h>
 #include <spdlog/spdlog.h>
 
@@ -39,13 +40,10 @@ namespace codeharness::tools {
     }
 
     auto ReadFileTool::execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
-        -> ToolResult {
+        -> absl::StatusOr<std::string> {
         if (!input.contains("path") || !input["path"].is_string()) {
             spdlog::warn("read_file: missing or invalid path field");
-            return ToolResult{
-                .output = "read_file requires a string field: path",
-                .is_error = true,
-            };
+            return absl::InvalidArgumentError("read_file requires a string field: path");
         }
 
         const auto requested_path = input["path"].get<std::string>();
@@ -55,19 +53,14 @@ namespace codeharness::tools {
         std::ifstream file{full_path, std::ios::in};
         if (!file.is_open()) {
             spdlog::warn("read_file: failed to open path={}", full_path.string());
-            return ToolResult{
-                .output = absl::StrCat("Failed to open file: ", full_path.string()),
-                .is_error = true,
-            };
+            return absl::NotFoundError(
+                absl::StrCat("failed to open file: ", full_path.string()));
         }
 
         const auto output = std::string{std::istreambuf_iterator<char>{file},
                                         std::istreambuf_iterator<char>{}};
         spdlog::debug("read_file: read path={} bytes={}", full_path.string(), output.size());
 
-        return ToolResult{
-            .output = output,
-            .is_error = false,
-        };
+        return output;
     }
 }  // namespace codeharness::tools

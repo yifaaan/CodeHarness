@@ -44,10 +44,11 @@ TEST_CASE("session storage creates saves loads and lists sessions") {
 
     const auto metadata =
         storage.create_session("demo", "mock-model", std::filesystem::current_path());
+    REQUIRE(metadata.ok());
 
-    CHECK_FALSE(metadata.id.empty());
-    CHECK(metadata.name == "demo");
-    CHECK(metadata.model == "mock-model");
+    CHECK_FALSE(metadata->id.empty());
+    CHECK(metadata->name == "demo");
+    CHECK(metadata->model == "mock-model");
 
     const auto messages = std::vector<engine::ConversationMessage>{
         engine::ConversationMessage::from_user_text("hello"),
@@ -76,31 +77,34 @@ TEST_CASE("session storage creates saves loads and lists sessions") {
         },
     };
 
-    storage.save_messages(metadata.id, messages);
+    CHECK(storage.save_messages(metadata->id, messages).ok());
 
-    const auto loaded = storage.load_session(metadata.id);
-    CHECK(loaded.metadata.id == metadata.id);
-    CHECK(loaded.metadata.name == "demo");
-    CHECK(loaded.metadata.model == "mock-model");
-    REQUIRE(loaded.messages.size() == 3);
-    CHECK(loaded.messages[0].text() == "hello");
-    CHECK(loaded.messages[1].text() == "I will call a tool.");
+    const auto loaded = storage.load_session(metadata->id);
+    REQUIRE(loaded.ok());
+    CHECK(loaded->metadata.id == metadata->id);
+    CHECK(loaded->metadata.name == "demo");
+    CHECK(loaded->metadata.model == "mock-model");
+    REQUIRE(loaded->messages.size() == 3);
+    CHECK(loaded->messages[0].text() == "hello");
+    CHECK(loaded->messages[1].text() == "I will call a tool.");
 
-    const auto tool_uses = loaded.messages[1].tool_uses();
+    const auto tool_uses = loaded->messages[1].tool_uses();
     REQUIRE(tool_uses.size() == 1);
     CHECK(tool_uses[0].id == "toolu_1");
     CHECK(tool_uses[0].name == "read_file");
     CHECK(tool_uses[0].input.at("path").get<std::string>() == "hello.txt");
 
-    const auto* tool_result = std::get_if<engine::ToolResultBlock>(&loaded.messages[2].content[0]);
+    const auto* tool_result =
+        std::get_if<engine::ToolResultBlock>(&loaded->messages[2].content[0]);
     REQUIRE(tool_result != nullptr);
     CHECK(tool_result->tool_use_id == "toolu_1");
     CHECK(tool_result->content == "alpha\nbeta\n");
     CHECK_FALSE(tool_result->is_error);
 
     const auto sessions = storage.list_sessions();
-    REQUIRE(sessions.size() == 1);
-    CHECK(sessions[0].id == metadata.id);
+    REQUIRE(sessions.ok());
+    REQUIRE(sessions->size() == 1);
+    CHECK(sessions->at(0).id == metadata->id);
 }
 
 TEST_CASE("session json round trips through nlohmann conversions") {
@@ -121,26 +125,32 @@ TEST_CASE("session json round trips through nlohmann conversions") {
     };
 
     const auto serialized = nlohmann::json(session);
-    const auto parsed = serialized.get<services::Session>();
+    const auto parsed = services::session_from_json(serialized);
+    REQUIRE(parsed.ok());
 
-    CHECK(parsed.metadata.id == session.metadata.id);
-    CHECK(parsed.metadata.name == session.metadata.name);
-    CHECK(parsed.metadata.model == session.metadata.model);
-    CHECK(parsed.metadata.cwd == session.metadata.cwd);
-    REQUIRE(parsed.messages.size() == 1);
-    CHECK(parsed.messages[0].text() == "hello");
+    CHECK(parsed->metadata.id == session.metadata.id);
+    CHECK(parsed->metadata.name == session.metadata.name);
+    CHECK(parsed->metadata.model == session.metadata.model);
+    CHECK(parsed->metadata.cwd == session.metadata.cwd);
+    REQUIRE(parsed->messages.size() == 1);
+    CHECK(parsed->messages[0].text() == "hello");
 }
 
 TEST_CASE("session storage lists newest updated sessions first") {
     auto temp = TempDirectory{"codeharness-session-storage-order-test"};
     auto storage = services::SessionStorage{temp.path()};
 
-    const auto older = storage.create_session("older", "mock-model", std::filesystem::current_path());
+    const auto older =
+        storage.create_session("older", "mock-model", std::filesystem::current_path());
+    REQUIRE(older.ok());
     std::this_thread::sleep_for(std::chrono::seconds{1});
-    const auto newer = storage.create_session("newer", "mock-model", std::filesystem::current_path());
+    const auto newer =
+        storage.create_session("newer", "mock-model", std::filesystem::current_path());
+    REQUIRE(newer.ok());
 
     const auto sessions = storage.list_sessions();
-    REQUIRE(sessions.size() == 2);
-    CHECK(sessions[0].id == newer.id);
-    CHECK(sessions[1].id == older.id);
+    REQUIRE(sessions.ok());
+    REQUIRE(sessions->size() == 2);
+    CHECK(sessions->at(0).id == newer->id);
+    CHECK(sessions->at(1).id == older->id);
 }

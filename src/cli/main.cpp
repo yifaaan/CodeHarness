@@ -1,3 +1,4 @@
+#include <absl/status/status.h>
 #include <fmt/base.h>
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
@@ -43,21 +44,29 @@ namespace {
             overrides.model = options.model;
         }
         const auto settings = config::load_settings(overrides);
+        if (!settings.ok()) {
+            fmt::println(stderr, "Failed to load settings: {}", settings.status().message());
+            return EXIT_FAILURE;
+        }
         spdlog::debug("settings loaded: model={} base_url={} permission_mode={} api_key_present={}",
-                      settings.api.model, settings.api.base_url, options.permission_mode,
-                      !settings.api.api_key.empty());
+                      settings->api.model, settings->api.base_url, options.permission_mode,
+                      !settings->api.api_key.empty());
 
         auto api = api::OpenAIClient{
             api::OpenAIClientOptions{
-                .api_key = settings.api.api_key,
-                .base_url = settings.api.base_url,
-                .timeout = settings.api.timeout,
+                .api_key = settings->api.api_key,
+                .base_url = settings->api.base_url,
+                .timeout = settings->api.timeout,
             },
         };
 
         auto tools = tools::ToolRegistry{};
-        tools.register_tool(std::make_unique<tools::ReadFileTool>());
-        const auto permissions = permissions::PermissionChecker{settings.permissions};
+        if (const auto status = tools.register_tool(std::make_unique<tools::ReadFileTool>());
+            !status.ok()) {
+            fmt::println(stderr, "Failed to register tool: {}", status.message());
+            return EXIT_FAILURE;
+        }
+        const auto permissions = permissions::PermissionChecker{settings->permissions};
         spdlog::debug("registered {} tool(s); cwd={}", tools.list_tools().size(),
                       std::filesystem::current_path().string());
 
@@ -66,13 +75,13 @@ namespace {
             tools,
             permissions,
             std::filesystem::current_path(),
-            settings.api.model,
+            settings->api.model,
             "You are CodeHarness, a  concise coding assistant.",
         };
 
         spdlog::debug("submitting prompt: chars={} output_format={}", options.prompt.size(),
                       options.output_format);
-        engine.submit_message(options.prompt, [&](const engine::StreamEvent& event) {
+        const auto status = engine.submit_message(options.prompt, [&](const engine::StreamEvent& event) {
             // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
             // ToolExecutionStared,  ToolExecutionComplete>;
             if (options.output_format == "stream-json") {
@@ -93,6 +102,10 @@ namespace {
             //     fmt::println("Tool result: {}", tool_execution_complete->output);
             // }
         });
+        if (!status.ok()) {
+            fmt::println(stderr, "Request failed: {}", status.message());
+            return EXIT_FAILURE;
+        }
         spdlog::debug("print mode completed");
 
         return EXIT_SUCCESS;

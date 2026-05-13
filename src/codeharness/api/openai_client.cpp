@@ -1,5 +1,7 @@
 #include "codeharness/api/openai_client.h"
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
 #include <absl/strings/string_view.h>
@@ -7,10 +9,9 @@
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
-#include <variant>
-#include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace {
     using namespace codeharness;
@@ -188,7 +189,7 @@ namespace {
     }
 
     [[nodiscard]] auto message_from_openai(const nlohmann::json& message)
-        -> engine::ConversationMessage {
+        -> absl::StatusOr<engine::ConversationMessage> {
         // OpenAI message:
         //
         // {
@@ -226,6 +227,10 @@ namespace {
 
         if (message.contains("tool_calls")) {
             for (const auto& call : message.at("tool_calls")) {
+                if (!call.contains("function") || !call.at("function").is_object()) {
+                    return absl::InvalidArgumentError(
+                        "OpenAI response tool call is missing a function object");
+                }
                 const auto& function = call.at("function");
                 content.emplace_back(engine::ToolUseBlock{
                     .id = call.value("id", ""),
@@ -242,7 +247,7 @@ namespace {
     }
 
     [[nodiscard]] auto parse_message_complete(const nlohmann::json& body)
-        -> api::MessageComplete {
+        -> absl::StatusOr<api::MessageComplete> {
         // {
         //     "choices": [
         //         {
@@ -289,12 +294,25 @@ namespace {
         // }
         //
         // 把 OpenAI 返回的完整响应 body 解析成 MessageComplete
+        if (!body.contains("choices") || !body.at("choices").is_array() ||
+            body.at("choices").empty()) {
+            return absl::InvalidArgumentError("OpenAI response is missing choices[0]");
+        }
+
         const auto& choice = body.at("choices").at(0);
+        if (!choice.is_object() || !choice.contains("message") || !choice.at("message").is_object()) {
+            return absl::InvalidArgumentError("OpenAI response is missing choice.message");
+        }
+
         const auto& message = choice.at("message");
         const auto usage = body.value("usage", nlohmann::json::object());
+        auto parsed_message = message_from_openai(message);
+        if (!parsed_message.ok()) {
+            return parsed_message.status();
+        }
 
         return api::MessageComplete{
-            .message = message_from_openai(message),
+            .message = std::move(*parsed_message),
             .usage =
                 engine::UsageSnapshot{
                     .input_tokens = usage.value("prompt_tokens", 0),
@@ -312,7 +330,7 @@ namespace {
     }
 
     [[nodiscard]] auto post_json(const api::OpenAIClientOptions& options,
-                                 const nlohmann::json& payload) -> nlohmann::json {
+                                 const nlohmann::json& payload) -> absl::StatusOr<nlohmann::json> {
         const auto url = chat_completions_url(options.base_url);
         const auto body = payload.dump();
         spdlog::debug("api: POST {} request_bytes={} timeout_seconds={}", url, body.size(),
@@ -322,7 +340,7 @@ namespace {
 
         auto* curl = curl_easy_init();
         if (curl == nullptr) {
-            throw std::runtime_error{"failed to initialize curl"};
+            return absl::InternalError("failed to initialize curl");
         }
 
         curl_slist* headers{};
@@ -348,17 +366,22 @@ namespace {
 
         if (result != CURLE_OK) {
             spdlog::error("api: curl request failed: {}", curl_easy_strerror(result));
-            throw std::runtime_error{curl_easy_strerror(result)};
+            return absl::UnavailableError(curl_easy_strerror(result));
         }
 
         if (status_code < 200 || status_code >= 300) {
             spdlog::error("api: OpenAI-compatible request failed status={} response_bytes={}",
                           status_code, response.size());
-            throw std::runtime_error{
-                fmt::format("OpenAI-compatible request failed: HTTP {}", status_code)};
+            return absl::InternalError(
+                fmt::format("OpenAI-compatible request failed: HTTP {}", status_code));
         }
 
-        return nlohmann::json::parse(response);
+        try {
+            return nlohmann::json::parse(response);
+        } catch (const nlohmann::json::parse_error& error) {
+            return absl::InvalidArgumentError(
+                absl::StrCat("failed to parse OpenAI response JSON: ", error.what()));
+        }
     }
 }  // namespace
 
@@ -367,7 +390,8 @@ namespace codeharness::api {
     OpenAIClient::OpenAIClient(OpenAIClientOptions options)
         : options_{std::move(options)} {}
 
-    auto OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink) -> void {
+    auto OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink)
+        -> absl::Status {
         spdlog::debug("api: stream_message model={} messages={} tools={} max_tokens={}",
                       request.model, request.messages.size(), request.tools.size(),
                       request.max_tokens);
@@ -382,18 +406,26 @@ namespace codeharness::api {
             payload["tools"] = to_openai_tools(request.tools);
         }
 
-        const auto body = post_json(options_, payload);
-        auto complete = parse_message_complete(body);
-        spdlog::debug(
-            "api: parsed completion blocks={} input_tokens={} output_tokens={} stop_reason={}",
-            complete.message.content.size(), complete.usage.input_tokens,
-            complete.usage.output_tokens, complete.stop_reason);
-
-        if (!complete.message.text().empty()) {
-            sink(engine::AssistantTextDelta{.text = complete.message.text()});
+        auto body = post_json(options_, payload);
+        if (!body.ok()) {
+            return body.status();
         }
 
-        sink(std::move(complete));
+        auto complete = parse_message_complete(*body);
+        if (!complete.ok()) {
+            return complete.status();
+        }
+        spdlog::debug(
+            "api: parsed completion blocks={} input_tokens={} output_tokens={} stop_reason={}",
+            complete->message.content.size(), complete->usage.input_tokens,
+            complete->usage.output_tokens, complete->stop_reason);
+
+        if (!complete->message.text().empty()) {
+            sink(engine::AssistantTextDelta{.text = complete->message.text()});
+        }
+
+        sink(std::move(*complete));
+        return absl::OkStatus();
     }
 
 }  // namespace codeharness::api

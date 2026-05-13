@@ -67,7 +67,7 @@ TEST_CASE("query engine executes read_file through mock api") {
                 }};
     auto client = api::MockClient{std::move(responses)};
     auto registry = tools::ToolRegistry{};
-    registry.register_tool(std::make_unique<tools::ReadFileTool>());
+    REQUIRE(registry.register_tool(std::make_unique<tools::ReadFileTool>()).ok());
     auto perm_settings = permissions::PermissionSettings{
         .mode = permissions::PermissionMode::default_mode,
     };
@@ -78,8 +78,10 @@ TEST_CASE("query engine executes read_file through mock api") {
 
     std::vector<engine::StreamEvent> events;
 
-    engine.submit_message("read hello.text",
-                          [&](const engine::StreamEvent& event) { events.push_back(event); });
+    REQUIRE(engine
+                .submit_message("read hello.text",
+                                [&](const engine::StreamEvent& event) { events.push_back(event); })
+                .ok());
 
     // user input : read hello.txt
     // -> llm 返回 tool_use:read_file
