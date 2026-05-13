@@ -8,7 +8,6 @@
 #include <absl/time/clock.h>
 #include <absl/time/time.h>
 #include <nlohmann/json.hpp>
-#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <chrono>
@@ -21,6 +20,7 @@
 #include <vector>
 
 #include "codeharness/engine/message_json.h"
+#include "codeharness/logging.h"
 
 namespace codeharness::services {
 namespace {
@@ -270,21 +270,24 @@ namespace {
 
             auto payload = read_session_json(entry.path());
             if (!payload.ok()) {
-                spdlog::warn("session storage: skipping unreadable session file path={} status={}",
-                             entry.path().string(), payload.status().message());
+                CH_LOG_WARN("SessionStorage::list_sessions",
+                            "skipping unreadable session file path={} status={}",
+                            entry.path().string(), payload.status().message());
                 continue;
             }
 
             if (!payload->contains("metadata")) {
-                spdlog::warn("session storage: skipping session without metadata path={}",
-                             entry.path().string());
+                CH_LOG_WARN("SessionStorage::list_sessions",
+                            "skipping session without metadata path={}",
+                            entry.path().string());
                 continue;
             }
 
             auto metadata = session_metadata_from_json(payload->at("metadata"));
             if (!metadata.ok()) {
-                spdlog::warn("session storage: skipping invalid session metadata path={} status={}",
-                             entry.path().string(), metadata.status().message());
+                CH_LOG_WARN("SessionStorage::list_sessions",
+                            "skipping invalid session metadata path={} status={}",
+                            entry.path().string(), metadata.status().message());
                 continue;
             }
             result.push_back(std::move(*metadata));

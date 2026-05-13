@@ -3,10 +3,10 @@
 #include <absl/strings/match.h>
 #include <absl/strings/string_view.h>
 #include <absl/types/span.h>
-#include <spdlog/spdlog.h>
 
 #include <nlohmann/json.hpp>
 
+#include "codeharness/logging.h"
 #include "models.h"
 
 
@@ -48,10 +48,11 @@ namespace codeharness::permissions {
     auto PermissionChecker::evaluate(absl::string_view tool_name,
                                      bool is_read_only,
                                      const nlohmann::json& input) const -> PermissionDecision {
-        spdlog::debug("permissions: evaluating tool={} read_only={} input_bytes={}",
-                      std::string{tool_name}, is_read_only, input.dump().size());
+        CH_LOG_DEBUG("PermissionChecker::evaluate", "tool={} read_only={} input_bytes={}",
+                     std::string{tool_name}, is_read_only, input.dump().size());
         if (is_denied_tool(tool_name)) {
-            spdlog::debug("permissions: tool denied explicitly tool={}", std::string{tool_name});
+            CH_LOG_DEBUG("PermissionChecker::evaluate", "tool denied explicitly tool={}",
+                         std::string{tool_name});
             return PermissionDecision{
                 .allowed = false,
                 .reason = std::string{tool_name} + " is explicitly denied",
@@ -59,7 +60,8 @@ namespace codeharness::permissions {
         }
 
         if (is_allowed_tool(tool_name)) {
-            spdlog::debug("permissions: tool allowed explicitly tool={}", std::string{tool_name});
+            CH_LOG_DEBUG("PermissionChecker::evaluate", "tool allowed explicitly tool={}",
+                         std::string{tool_name});
             return PermissionDecision{
                 .allowed = true,
                 .reason = std::string{tool_name} + " is explicitly allowed",
@@ -68,20 +70,22 @@ namespace codeharness::permissions {
 
         const auto path_decision = evaluate_path_rules(input);
         if (!path_decision.allowed && !path_decision.reason.empty()) {
-            spdlog::debug("permissions: path rule blocked tool={} reason={}",
-                          std::string{tool_name}, path_decision.reason);
+            CH_LOG_DEBUG("PermissionChecker::evaluate", "path rule blocked tool={} reason={}",
+                         std::string{tool_name}, path_decision.reason);
             return path_decision;
         }
 
         const auto command_decision = evaluate_command_rules(input);
         if (!command_decision.allowed && !command_decision.reason.empty()) {
-            spdlog::debug("permissions: command rule blocked tool={} reason={}",
-                          std::string{tool_name}, command_decision.reason);
+            CH_LOG_DEBUG("PermissionChecker::evaluate",
+                         "command rule blocked tool={} reason={}", std::string{tool_name},
+                         command_decision.reason);
             return command_decision;
         }
 
         if (settings_.mode == PermissionMode::full_auto) {
-            spdlog::debug("permissions: full_auto allows tool={}", std::string{tool_name});
+            CH_LOG_DEBUG("PermissionChecker::evaluate", "mode=full_auto allows tool={}",
+                         std::string{tool_name});
             return PermissionDecision{
                 .allowed = true,
                 .reason = "full_auto mode allows all tools",
@@ -89,7 +93,8 @@ namespace codeharness::permissions {
         }
 
         if (is_read_only) {
-            spdlog::debug("permissions: read-only tool allowed tool={}", std::string{tool_name});
+            CH_LOG_DEBUG("PermissionChecker::evaluate", "read-only tool allowed tool={}",
+                         std::string{tool_name});
             return PermissionDecision{
                 .allowed = true,
                 .reason = "read-only tools are allowed",
@@ -97,15 +102,16 @@ namespace codeharness::permissions {
         }
 
         if (settings_.mode == PermissionMode::plan) {
-            spdlog::debug("permissions: plan mode blocks mutating tool={}", std::string{tool_name});
+            CH_LOG_DEBUG("PermissionChecker::evaluate", "mode=plan blocks mutating tool={}",
+                         std::string{tool_name});
             return PermissionDecision{
                 .allowed = false,
                 .reason = "plan mode blocks mutating tools",
             };
         }
 
-        spdlog::debug("permissions: default mode requires confirmation tool={}",
-                      std::string{tool_name});
+        CH_LOG_DEBUG("PermissionChecker::evaluate",
+                     "mode=default requires confirmation tool={}", std::string{tool_name});
         return PermissionDecision{
             .allowed = false,
             .requires_confirmation = true,
@@ -134,7 +140,8 @@ namespace codeharness::permissions {
 
         for (const auto& rule : settings_.path_rules) {
             if (simple_match(path, rule.pattern) && !rule.allow) {
-                spdlog::debug("permissions: path {} matches deny rule {}", path, rule.pattern);
+                CH_LOG_DEBUG("PermissionChecker::evaluate_path_rules",
+                             "path={} matched deny_rule={}", path, rule.pattern);
                 return PermissionDecision{
                     .allowed = false,
                     .reason = "path matches deny rule: " + rule.pattern,
@@ -155,7 +162,8 @@ namespace codeharness::permissions {
 
         for (const auto& pattern : settings_.denied_commands) {
             if (simple_match(command, pattern)) {
-                spdlog::debug("permissions: command matches deny pattern {}", pattern);
+                CH_LOG_DEBUG("PermissionChecker::evaluate_command_rules",
+                             "command matched deny_pattern={}", pattern);
                 return PermissionDecision{
                     .allowed = false,
                     .reason = "command matches deny pattern: " + pattern,

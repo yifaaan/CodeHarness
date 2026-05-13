@@ -2,8 +2,8 @@
 
 #include <absl/status/status.h>
 #include <absl/strings/str_cat.h>
-#include <spdlog/spdlog.h>
 
+#include "codeharness/logging.h"
 #include "codeharness/tools/base.h"
 
 namespace codeharness::tools {
@@ -16,17 +16,17 @@ namespace codeharness::tools {
         if (tool_name.empty()) {
             return absl::InvalidArgumentError("tool name cannot be empty");
         }
-        spdlog::debug("tools: registering tool name={}", tool_name);
+        CH_LOG_DEBUG("ToolRegistry::register_tool", "tool_name={}", tool_name);
         tools_.insert_or_assign(std::string{tool_name}, std::move(item));
         return absl::OkStatus();
     }
 
     auto ToolRegistry::find(absl::string_view name) const -> absl::StatusOr<tools::Tool*> {
         if (const auto it = tools_.find(name); it != tools_.end()) {
-            spdlog::debug("tools: lookup hit name={}", name);
+            CH_LOG_DEBUG("ToolRegistry::find", "lookup hit tool_name={}", name);
             return it->second.get();
         } else {
-            spdlog::debug("tools: lookup miss name={}", name);
+            CH_LOG_DEBUG("ToolRegistry::find", "lookup miss tool_name={}", name);
             return absl::NotFoundError(absl::StrCat("tool not found: ", name));
         }
     }
@@ -46,7 +46,7 @@ namespace codeharness::tools {
         for (auto& [_, item] : tools_) {
             result.emplace_back(item->api_schema());
         }
-        spdlog::debug("tools: built api schema count={}", result.size());
+        CH_LOG_DEBUG("ToolRegistry::api_schema", "schema_count={}", result.size());
         return result;
     }
 }  // namespace codeharness::tools

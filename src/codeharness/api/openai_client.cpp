@@ -7,11 +7,12 @@
 #include <absl/strings/string_view.h>
 #include <curl/curl.h>
 #include <fmt/core.h>
-#include <spdlog/spdlog.h>
 
 #include <string>
 #include <utility>
 #include <variant>
+
+#include "codeharness/logging.h"
 
 namespace {
     using namespace codeharness;
@@ -357,8 +358,8 @@ namespace {
                                  const nlohmann::json& payload) -> absl::StatusOr<nlohmann::json> {
         const auto url = chat_completions_url(options.base_url);
         const auto body = payload.dump();
-        spdlog::debug("api: POST {} request_bytes={} timeout_seconds={}", url, body.size(),
-                      options.timeout.count());
+        CH_LOG_DEBUG("codeharness::api::post_json", "url={} request_bytes={} timeout_seconds={}",
+                     url, body.size(), options.timeout.count());
 
         std::string response;
 
@@ -383,25 +384,28 @@ namespace {
 
         long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-        spdlog::debug("api: response status={} bytes={}", status_code, response.size());
+        CH_LOG_DEBUG("codeharness::api::post_json", "response_status={} response_bytes={}",
+                     status_code, response.size());
 
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
 
         if (result != CURLE_OK) {
-            spdlog::error("api: curl request failed: {}", curl_easy_strerror(result));
+            CH_LOG_ERROR("codeharness::api::post_json", "curl request failed error={}",
+                         curl_easy_strerror(result));
             return absl::UnavailableError(curl_easy_strerror(result));
         }
 
         if (status_code < 200 || status_code >= 300) {
-            spdlog::error("api: OpenAI-compatible request failed status={} response_bytes={}",
-                          status_code, response.size());
+            CH_LOG_ERROR("codeharness::api::post_json",
+                         "OpenAI-compatible request failed status={} response_bytes={}",
+                         status_code, response.size());
             return absl::InternalError(
                 fmt::format("OpenAI-compatible request failed: HTTP {}", status_code));
         }
 
         try {
-            spdlog::debug("api: response={}", response);
+            CH_LOG_DEBUG("codeharness::api::post_json", "response_body={}", response);
             return nlohmann::json::parse(response);
         } catch (const nlohmann::json::parse_error& error) {
             return absl::InvalidArgumentError(
@@ -417,9 +421,9 @@ namespace codeharness::api {
 
     auto OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink)
         -> absl::Status {
-        spdlog::debug("api: stream_message model={} messages={} tools={} max_tokens={}",
-                      request.model, request.messages.size(), request.tools.size(),
-                      request.max_tokens);
+        CH_LOG_DEBUG("OpenAIClient::stream_message", "model={} messages={} tools={} max_tokens={}",
+                     request.model, request.messages.size(), request.tools.size(),
+                     request.max_tokens);
 
         auto payload = nlohmann::json{
             {"model", request.model},
@@ -433,19 +437,23 @@ namespace codeharness::api {
 
         auto body = post_json(options_, payload);
         if (!body.ok()) {
-            spdlog::debug("api::OpenAiClient::stream_message(): body error, body.status={}", body.status().message());
+            CH_LOG_DEBUG("OpenAIClient::stream_message", "post_json failed status={}",
+                         body.status().message());
             return body.status();
         }
 
         auto complete = parse_message_complete(*body);
         if (!complete.ok()) {
-            spdlog::debug("api::OpenAiClient::stream_message(): complete error, complete.status={}", complete.status().message());
+            CH_LOG_DEBUG("OpenAIClient::stream_message",
+                         "parse_message_complete failed status={}",
+                         complete.status().message());
             return complete.status();
         }
-        spdlog::debug(
-            "api: parsed completion blocks={} input_tokens={} output_tokens={} stop_reason={}",
-            complete->message.content.size(), complete->usage.input_tokens,
-            complete->usage.output_tokens, complete->stop_reason);
+        CH_LOG_DEBUG("OpenAIClient::stream_message",
+                     "parsed completion blocks={} input_tokens={} output_tokens={} "
+                     "stop_reason={}",
+                     complete->message.content.size(), complete->usage.input_tokens,
+                     complete->usage.output_tokens, complete->stop_reason);
 
         if (!complete->message.text().empty()) {
             sink(engine::AssistantTextDelta{.text = complete->message.text()});
