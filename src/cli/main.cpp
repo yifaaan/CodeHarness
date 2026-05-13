@@ -27,16 +27,22 @@ namespace {
         std::string output_format = "text";
         std::string model = "gpt-5.5";
         std::string permission_mode = "default";
+        bool model_provided = false;
         bool verbose = false;
     };
 
     int run_print_mode(const CliOptions& options) {
         spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
-        spdlog::debug("running print mode with model={}", options.model);
+        spdlog::debug("running print mode with model_arg={} model_provided={}", options.model,
+                      options.model_provided);
 
-        const auto settings = config::load_settings(config::SettingsOverrides{
-            .model = options.model,
-            .permission_mode = permissions::parse_permission_mode(options.permission_mode)});
+        auto overrides = config::SettingsOverrides{
+            .permission_mode = permissions::parse_permission_mode(options.permission_mode),
+        };
+        if (options.model_provided) {
+            overrides.model = options.model;
+        }
+        const auto settings = config::load_settings(overrides);
         spdlog::debug("settings loaded: model={} base_url={} permission_mode={} api_key_present={}",
                       settings.api.model, settings.api.base_url, options.permission_mode,
                       !settings.api.api_key.empty());
@@ -102,7 +108,7 @@ int main(int argc, char** argv) {
     app.add_option("--output-format", options.output_format,
                    "Output format: text, json, stream-json")
         ->check(CLI::IsMember({"text", "json", "stream-json"}));
-    app.add_option("-m,--model", options.model, "Model name or alias");
+    auto* model_option = app.add_option("-m,--model", options.model, "Model name or alias");
     app.add_option("--permission-mode", options.permission_mode,
                    "Permission mode: default, plan, full_auto")
         ->check(CLI::IsMember({"default", "plan", "full_auto"}));
@@ -114,11 +120,13 @@ int main(int argc, char** argv) {
         return app.exit(error);
     }
 
+    options.model_provided = model_option->count() > 0;
     spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
-    spdlog::debug("parsed cli options: prompt_chars={} model={} output_format={} "
-                  "permission_mode={}",
-                  options.prompt.size(), options.model, options.output_format,
-                  options.permission_mode);
+    spdlog::debug(
+        "parsed cli options: prompt_chars={} model={} output_format={} "
+        "permission_mode={} model_provided={}",
+        options.prompt.size(), options.model, options.output_format, options.permission_mode,
+        options.model_provided);
 
     if (not options.prompt.empty()) {
         return run_print_mode(options);

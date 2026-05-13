@@ -1,14 +1,15 @@
 #include "codeharness/api/openai_client.h"
 
+#include <absl/strings/str_cat.h>
+#include <absl/strings/str_format.h>
 #include <curl/curl.h>
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
 #include <stdexcept>
+#include <string>
 #include <utility>
 
-#include "absl/strings/str_cat.h"
-#include "absl/strings/str_format.h"
 #include "codeharness/api/client.h"
 #include "codeharness/engine/message.h"
 #include "codeharness/engine/stream_event.h"
@@ -20,6 +21,24 @@ namespace {
 
     auto role_to_openai(engine::MessageRole role) -> std::string {
         return role == engine::MessageRole::user ? "user" : "assistant";
+    }
+
+    [[nodiscard]] auto trim_trailing_slashes(absl::string_view value) -> std::string_view {
+        while (!value.empty() && value.back() == '/') {
+            value.remove_suffix(1);
+        }
+        return value;
+    }
+
+    [[nodiscard]] auto chat_completions_url(absl::string_view base_url) -> std::string {
+        const auto normalized_base_url = trim_trailing_slashes(base_url);
+        if (normalized_base_url.ends_with("/chat/completions")) {
+            return std::string{normalized_base_url};
+        }
+        if (normalized_base_url.ends_with("/v1")) {
+            return absl::StrCat(normalized_base_url, "/chat/completions");
+        }
+        return absl::StrCat(normalized_base_url, "/v1/chat/completions");
     }
 
     auto to_openai_tools(const nlohmann::json& tools) -> nlohmann::json {
@@ -77,7 +96,7 @@ namespace {
                         {{"id", tool_use->id},
                          {"type", "function"},
                          {"function",
-                          {{"name", tool_use->name}, "arguments", tool_use->input.dump()}}});
+                          {{"name", tool_use->name}, {"arguments", tool_use->input.dump()}}}});
                 }
                 // ToolResultBlock{
                 //     tool_use_id = "call_123",
@@ -195,7 +214,7 @@ namespace {
 
     // 把 OpenAI 返回的完整响应 body 解析成 MessageComplete
     auto parse_message_complete(const nlohmann::json& body) -> api::MessageComplete {
-        const auto& choice = body.at("choice").at(0);
+        const auto& choice = body.at("choices").at(0);
         const auto& message = choice.at("message");
 
         std::vector<engine::ContentBlock> content;
@@ -238,8 +257,7 @@ namespace {
 
     auto post_json(const api::OpenAIClientOptions& options, const nlohmann::json& payload)
         -> nlohmann::json {
-        // const auto url = absl::StrCat(options.base_url, "/chat/completions");
-        const auto url = absl::StrCat(options.base_url, "");
+        const auto url = chat_completions_url(options.base_url);
         const auto body = payload.dump();
         spdlog::debug("api: POST {} request_bytes={} timeout_seconds={}", url, body.size(),
                       options.timeout.count());
@@ -289,7 +307,8 @@ namespace {
 }  // namespace
 
 namespace codeharness::api {
-    OpenAIClient::OpenAIClient(OpenAIClientOptions options) : options_{std::move(options)} {}
+    OpenAIClient::OpenAIClient(OpenAIClientOptions options)
+        : options_{std::move(options)} {}
 
     void OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink) {
         spdlog::debug("api: stream_message model={} messages={} tools={} max_tokens={}",
