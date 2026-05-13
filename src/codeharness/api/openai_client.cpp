@@ -10,18 +10,10 @@
 #include <string>
 #include <utility>
 
-#include "codeharness/api/client.h"
-#include "codeharness/engine/message.h"
-#include "codeharness/engine/stream_event.h"
-#include "curl/easy.h"
-#include "nlohmann/json_fwd.hpp"
+#include "codeharness/engine/message_json.h"
 
 namespace {
     using namespace codeharness;
-
-    auto role_to_openai(engine::MessageRole role) -> std::string {
-        return role == engine::MessageRole::user ? "user" : "assistant";
-    }
 
     [[nodiscard]] auto trim_trailing_slashes(absl::string_view value) -> std::string_view {
         while (!value.empty() && value.back() == '/') {
@@ -41,7 +33,7 @@ namespace {
         return absl::StrCat(normalized_base_url, "/v1/chat/completions");
     }
 
-    auto to_openai_tools(const nlohmann::json& tools) -> nlohmann::json {
+    [[nodiscard]] auto to_openai_tools(const nlohmann::json& tools) -> nlohmann::json {
         auto result = nlohmann::json::array();
 
         for (const auto& tool : tools) {
@@ -55,109 +47,139 @@ namespace {
                  }},
             });
         }
+
         return result;
     }
 
-    auto to_openai_messages(const api::MessageRequest& request) -> nlohmann::json {
+    [[nodiscard]] auto to_openai_tool_call(const nlohmann::json& block) -> nlohmann::json {
+        // ToolUseBlock{
+        //     id = "call_123",
+        //     name = "get_weather",
+        //     input = { {"city", "Shanghai"} }
+        // }
+        //
+        // "tool_calls": [
+        //     {
+        //          "id": "call_123",
+        //          "type": "function",
+        //          "function": {
+        //              "name": "get_weather",
+        //              "arguments": "{\"city\":\"Shanghai\"}"
+        //          }
+        //     }
+        // ]
+        return {
+            {"id", block.at("id")},
+            {"type", "function"},
+            {"function",
+             {
+                 {"name", block.at("name")},
+                 {"arguments", block.value("input", nlohmann::json::object()).dump()},
+             }},
+        };
+    }
+
+    auto append_openai_tool_result(nlohmann::json& messages, const nlohmann::json& block) -> void {
+        // ToolResultBlock{
+        //     tool_use_id = "call_123",
+        //     content = "上海今天 25 度，晴"
+        // }
+        //
+        // {
+        //     "role": "tool",
+        //     "tool_call_id": "call_123",
+        //     "content": "上海今天 25 度，晴"
+        // }
+        messages.push_back({
+            {"role", "tool"},
+            {"tool_call_id", block.at("tool_use_id")},
+            {"content", block.at("content")},
+        });
+    }
+
+    auto append_openai_message(nlohmann::json& messages,
+                               const engine::ConversationMessage& message) -> void {
+        const auto serialized = engine::to_json(message);
+        std::string text;
+        auto tool_calls = nlohmann::json::array();
+
+        for (const auto& block : serialized.at("content")) {
+            const auto type = block.at("type").get<std::string>();
+
+            if (type == "text") {
+                text += block.value("text", "");
+                continue;
+            }
+
+            if (type == "tool_use") {
+                tool_calls.push_back(to_openai_tool_call(block));
+                continue;
+            }
+
+            if (type == "tool_result") {
+                append_openai_tool_result(messages, block);
+            }
+        }
+
+        if (text.empty() && tool_calls.empty()) {
+            return;
+        }
+
+        // {
+        //     "role": "assistant",
+        //     "content": null,
+        //     "tool_calls": [
+        //         {
+        //             "id": "call_123",
+        //             "type": "function",
+        //             "function": {
+        //                 "name": "get_weather",
+        //                 "arguments": "{\"city\":\"Shanghai\"}"
+        //             }
+        //         }
+        //     ]
+        // }
+        auto item = nlohmann::json{
+            {"role", serialized.at("role")},
+            {"content", text.empty() ? nlohmann::json(nullptr) : nlohmann::json(text)},
+        };
+        if (!tool_calls.empty()) {
+            item["tool_calls"] = std::move(tool_calls);
+        }
+        messages.push_back(std::move(item));
+    }
+
+    [[nodiscard]] auto to_openai_messages(const api::MessageRequest& request) -> nlohmann::json {
         auto messages = nlohmann::json::array();
-        if (not request.system_prompt.empty()) {
+
+        if (!request.system_prompt.empty()) {
             messages.push_back({
                 {"role", "system"},
                 {"content", request.system_prompt},
             });
         }
 
-        for (const auto& m : request.messages) {
-            std::string text;
-            auto tool_calls = nlohmann::json::array();
-            for (const auto& block : m.content) {
-                if (auto text_block = std::get_if<engine::TextBlock>(&block)) {
-                    text += text_block->text;
-                }
-
-                // ToolUseBlock{
-                //     id = "call_123",
-                //     name = "get_weather",
-                //     input = { {"city", "Shanghai"} }
-                // }
-
-                // "tool_calls": [
-                //     {
-                //          "id": "call_123",
-                //          "type": "function",
-                //          "function": {
-                //              "name": "get_weather",
-                //              "arguments": "{\"city\":\"Shanghai\"}"
-                //          }
-                //     }
-                // ]
-                if (auto tool_use = std::get_if<engine::ToolUseBlock>(&block)) {
-                    tool_calls.push_back(
-                        {{"id", tool_use->id},
-                         {"type", "function"},
-                         {"function",
-                          {{"name", tool_use->name}, {"arguments", tool_use->input.dump()}}}});
-                }
-                // ToolResultBlock{
-                //     tool_use_id = "call_123",
-                //     content = "上海今天 25 度，晴"
-                // }
-
-                // {
-                //     "role": "tool",
-                //     "tool_call_id": "call_123",
-                //     "content": "上海今天 25 度，晴"
-                // }
-                if (auto tool_result = std::get_if<engine::ToolResultBlock>(&block)) {
-                    messages.push_back({
-                        {"role", "tool"},
-                        {"tool_call_id", tool_result->tool_use_id},
-                        {"content", tool_result->content},
-                    });
-                }
-            }
-
-            // {
-            //     "role": "assistant",
-            //     "content": null,
-            //     "tool_calls": [
-            //         {
-            //             "id": "call_123",
-            //             "type": "function",
-            //             "function": {
-            //                 "name": "get_weather",
-            //                 "arguments": "{\"city\":\"Shanghai\"}"
-            //             }
-            //         }
-            //     ]
-            // }
-            if (not text.empty() or not tool_calls.empty()) {
-                auto item = nlohmann::json{
-                    {"role", role_to_openai(m.role)},
-                    {"content", text.empty() ? nlohmann::json(nullptr) : nlohmann::json(text)}};
-                if (not tool_calls.empty()) {
-                    item["tool_calls"] = std::move(tool_calls);
-                }
-                messages.push_back(std::move(item));
-            }
+        for (const auto& message : request.messages) {
+            append_openai_message(messages, message);
         }
+
         return messages;
     }
 
-    // ```
-    //  {
-    //      "name": "get_weather",
-    //      "arguments": "{\"city\":\"Shanghai\",\"unit\":\"celsius\"}"
-    //  }
-    //
-    //  {
-    //      "city": "Shanghai",
-    //      "unit": "celsius"
-    //  }
-    // ```
-    //
-    // 从 OpenAI 返回的 function 对象里取出 arguments 字段，并把它从字符串解析成 JSON
-    auto parse_arguments(const nlohmann::json& function) -> nlohmann::json {
+    [[nodiscard]] auto parse_arguments(const nlohmann::json& function) -> nlohmann::json {
+        // ```
+        //  {
+        //      "name": "get_weather",
+        //      "arguments": "{\"city\":\"Shanghai\",\"unit\":\"celsius\"}"
+        //  }
+        //
+        //  {
+        //      "city": "Shanghai",
+        //      "unit": "celsius"
+        //  }
+        // ```
+        //
+        // 从 OpenAI 返回的 function 对象里取出 arguments 字段，并把它从字符串解析成 JSON
         const auto raw = function.value("arguments", "{}");
 
         try {
@@ -167,77 +189,118 @@ namespace {
         }
     }
 
-    // {
-    //     "choices": [
-    //         {
-    //              "message": {
-    //                  "role": "assistant",
-    //                  "content": "我来查一下天气。",
-    //                  "tool_calls": [
-    //                       {
-    //                           "id": "call_123",
-    //                           "type": "function",
-    //                           "function": {
-    //                           "name": "get_weather",
-    //                           "arguments": "{\"city\":\"Shanghai\"}"
-    //                           }
-    //                       }
-    //                  ]
-    //              },
-    //              "finish_reason": "tool_calls"
-    //         }
-    //     ],
-    //     "usage": {
-    //         "prompt_tokens": 20,
-    //         "completion_tokens": 15
-    //     }
-    // }
-    //
-    // MessageComplete{
-    //     .message = ConversationMessage{
-    //         .role = MessageRole::assistent,
-    //         .content = {
-    //             TextBlock{ .text = "我来查一下天气。" },
-    //             ToolUseBlock{
-    //                 .id = "call_123",
-    //                 .name = "get_weather",
-    //                 .input = { {"city", "Shanghai"} }
-    //             }
-    //         }
-    //     },
-    //     .usage = UsageSnapshot{
-    //         .input_tokens = 20,
-    //         .output_tokens = 15
-    //     },
-    //     .stop_reason = "tool_calls"
-    // }
+    [[nodiscard]] auto message_content_from_openai(const nlohmann::json& message)
+        -> nlohmann::json {
+        // OpenAI message:
+        //
+        // {
+        //     "role": "assistant",
+        //     "content": "我来查一下天气。",
+        //     "tool_calls": [
+        //          {
+        //              "id": "call_123",
+        //              "type": "function",
+        //              "function": {
+        //                  "name": "get_weather",
+        //                  "arguments": "{\"city\":\"Shanghai\"}"
+        //              }
+        //          }
+        //     ]
+        // }
+        //
+        // Internal message JSON content:
+        //
+        // [
+        //     {"type": "text", "text": "我来查一下天气。"},
+        //     {
+        //         "type": "tool_use",
+        //         "id": "call_123",
+        //         "name": "get_weather",
+        //         "input": {"city": "Shanghai"}
+        //     }
+        // ]
+        auto content = nlohmann::json::array();
 
-    // 把 OpenAI 返回的完整响应 body 解析成 MessageComplete
-    auto parse_message_complete(const nlohmann::json& body) -> api::MessageComplete {
-        const auto& choice = body.at("choices").at(0);
-        const auto& message = choice.at("message");
-
-        std::vector<engine::ContentBlock> content;
         const auto text = message.value("content", "");
         if (!text.empty()) {
-            content.emplace_back(engine::TextBlock{.text = text});
+            content.push_back({
+                {"type", "text"},
+                {"text", text},
+            });
         }
+
         if (message.contains("tool_calls")) {
             for (const auto& call : message.at("tool_calls")) {
-                const auto& func = call.at("function");
-                content.emplace_back(engine::ToolUseBlock{.id = call.value("id", ""),
-                                                          .name = func.value("name", ""),
-                                                          .input = parse_arguments(func)});
+                const auto& function = call.at("function");
+                content.push_back({
+                    {"type", "tool_use"},
+                    {"id", call.value("id", "")},
+                    {"name", function.value("name", "")},
+                    {"input", parse_arguments(function)},
+                });
             }
         }
+
+        return content;
+    }
+
+    [[nodiscard]] auto parse_message_complete(const nlohmann::json& body)
+        -> api::MessageComplete {
+        // {
+        //     "choices": [
+        //         {
+        //              "message": {
+        //                  "role": "assistant",
+        //                  "content": "我来查一下天气。",
+        //                  "tool_calls": [
+        //                       {
+        //                           "id": "call_123",
+        //                           "type": "function",
+        //                           "function": {
+        //                               "name": "get_weather",
+        //                               "arguments": "{\"city\":\"Shanghai\"}"
+        //                           }
+        //                       }
+        //                  ]
+        //              },
+        //              "finish_reason": "tool_calls"
+        //         }
+        //     ],
+        //     "usage": {
+        //         "prompt_tokens": 20,
+        //         "completion_tokens": 15
+        //     }
+        // }
+        //
+        // MessageComplete{
+        //     .message = ConversationMessage{
+        //         .role = MessageRole::assistent,
+        //         .content = {
+        //             TextBlock{ .text = "我来查一下天气。" },
+        //             ToolUseBlock{
+        //                 .id = "call_123",
+        //                 .name = "get_weather",
+        //                 .input = { {"city", "Shanghai"} }
+        //             }
+        //         }
+        //     },
+        //     .usage = UsageSnapshot{
+        //         .input_tokens = 20,
+        //         .output_tokens = 15
+        //     },
+        //     .stop_reason = "tool_calls"
+        // }
+        //
+        // 把 OpenAI 返回的完整响应 body 解析成 MessageComplete
+        const auto& choice = body.at("choices").at(0);
+        const auto& message = choice.at("message");
         const auto usage = body.value("usage", nlohmann::json::object());
 
         return api::MessageComplete{
-            .message =
-                engine::ConversationMessage{
-                    .role = engine::MessageRole::assistent,
-                    .content = std::move(content),
-                },
+            .message = engine::conversation_message_from_json({
+                {"role", "assistant"},
+                {"content", message_content_from_openai(message)},
+            }),
             .usage =
                 engine::UsageSnapshot{
                     .input_tokens = usage.value("prompt_tokens", 0),
@@ -245,7 +308,6 @@ namespace {
                 },
             .stop_reason = choice.value("finish_reason", ""),
         };
-        // TODO:
     }
 
     auto write_callback(char* ptr, std::size_t size, std::size_t nmemb, void* userdata)
@@ -255,8 +317,8 @@ namespace {
         return size * nmemb;
     }
 
-    auto post_json(const api::OpenAIClientOptions& options, const nlohmann::json& payload)
-        -> nlohmann::json {
+    [[nodiscard]] auto post_json(const api::OpenAIClientOptions& options,
+                                 const nlohmann::json& payload) -> nlohmann::json {
         const auto url = chat_completions_url(options.base_url);
         const auto body = payload.dump();
         spdlog::debug("api: POST {} request_bytes={} timeout_seconds={}", url, body.size(),
@@ -264,8 +326,8 @@ namespace {
 
         std::string response;
 
-        auto curl = curl_easy_init();
-        if (not curl) {
+        auto* curl = curl_easy_init();
+        if (curl == nullptr) {
             throw std::runtime_error{"failed to initialize curl"};
         }
 
@@ -307,17 +369,21 @@ namespace {
 }  // namespace
 
 namespace codeharness::api {
+
     OpenAIClient::OpenAIClient(OpenAIClientOptions options)
         : options_{std::move(options)} {}
 
-    void OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink) {
+    auto OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink) -> void {
         spdlog::debug("api: stream_message model={} messages={} tools={} max_tokens={}",
                       request.model, request.messages.size(), request.tools.size(),
                       request.max_tokens);
-        auto payload = nlohmann::json{{"model", request.model},
-                                      {"messages", to_openai_messages(request)},
-                                      {"max_tokens", request.max_tokens},
-                                      {"stream", false}};
+
+        auto payload = nlohmann::json{
+            {"model", request.model},
+            {"messages", to_openai_messages(request)},
+            {"max_tokens", request.max_tokens},
+            {"stream", false},
+        };
         if (!request.tools.empty()) {
             payload["tools"] = to_openai_tools(request.tools);
         }
@@ -335,4 +401,5 @@ namespace codeharness::api {
 
         sink(std::move(complete));
     }
+
 }  // namespace codeharness::api
