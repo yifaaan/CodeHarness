@@ -1,0 +1,117 @@
+#include <doctest/doctest.h>
+
+#include <chrono>
+#include <filesystem>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "codeharness/engine/message.h"
+#include "codeharness/services/session_storage.h"
+
+using namespace codeharness;
+
+namespace {
+
+    class TempDirectory {
+    public:
+        explicit TempDirectory(std::string name)
+            : path_{std::filesystem::temp_directory_path() / std::move(name)} {
+            std::filesystem::remove_all(path_);
+            std::filesystem::create_directories(path_);
+        }
+
+        ~TempDirectory() { std::filesystem::remove_all(path_); }
+
+        TempDirectory(const TempDirectory&) = delete;
+        auto operator=(const TempDirectory&) -> TempDirectory& = delete;
+
+        TempDirectory(TempDirectory&&) = delete;
+        auto operator=(TempDirectory&&) -> TempDirectory& = delete;
+
+        [[nodiscard]] auto path() const -> const std::filesystem::path& { return path_; }
+
+    private:
+        std::filesystem::path path_;
+    };
+
+}  // namespace
+
+TEST_CASE("session storage creates saves loads and lists sessions") {
+    auto temp = TempDirectory{"codeharness-session-storage-test"};
+    auto storage = services::SessionStorage{temp.path()};
+
+    const auto metadata =
+        storage.create_session("demo", "mock-model", std::filesystem::current_path());
+
+    CHECK_FALSE(metadata.id.empty());
+    CHECK(metadata.name == "demo");
+    CHECK(metadata.model == "mock-model");
+
+    const auto messages = std::vector<engine::ConversationMessage>{
+        engine::ConversationMessage::from_user_text("hello"),
+        engine::ConversationMessage{
+            .role = engine::MessageRole::assistent,
+            .content =
+                {
+                    engine::TextBlock{.text = "I will call a tool."},
+                    engine::ToolUseBlock{
+                        .id = "toolu_1",
+                        .name = "read_file",
+                        .input = nlohmann::json{{"path", "hello.txt"}},
+                    },
+                },
+        },
+        engine::ConversationMessage{
+            .role = engine::MessageRole::user,
+            .content =
+                {
+                    engine::ToolResultBlock{
+                        .tool_use_id = "toolu_1",
+                        .content = "alpha\nbeta\n",
+                        .is_error = false,
+                    },
+                },
+        },
+    };
+
+    storage.save_messages(metadata.id, messages);
+
+    const auto loaded = storage.load_session(metadata.id);
+    CHECK(loaded.metadata.id == metadata.id);
+    CHECK(loaded.metadata.name == "demo");
+    CHECK(loaded.metadata.model == "mock-model");
+    REQUIRE(loaded.messages.size() == 3);
+    CHECK(loaded.messages[0].text() == "hello");
+    CHECK(loaded.messages[1].text() == "I will call a tool.");
+
+    const auto tool_uses = loaded.messages[1].tool_uses();
+    REQUIRE(tool_uses.size() == 1);
+    CHECK(tool_uses[0].id == "toolu_1");
+    CHECK(tool_uses[0].name == "read_file");
+    CHECK(tool_uses[0].input.at("path").get<std::string>() == "hello.txt");
+
+    const auto* tool_result = std::get_if<engine::ToolResultBlock>(&loaded.messages[2].content[0]);
+    REQUIRE(tool_result != nullptr);
+    CHECK(tool_result->tool_use_id == "toolu_1");
+    CHECK(tool_result->content == "alpha\nbeta\n");
+    CHECK_FALSE(tool_result->is_error);
+
+    const auto sessions = storage.list_sessions();
+    REQUIRE(sessions.size() == 1);
+    CHECK(sessions[0].id == metadata.id);
+}
+
+TEST_CASE("session storage lists newest updated sessions first") {
+    auto temp = TempDirectory{"codeharness-session-storage-order-test"};
+    auto storage = services::SessionStorage{temp.path()};
+
+    const auto older = storage.create_session("older", "mock-model", std::filesystem::current_path());
+    std::this_thread::sleep_for(std::chrono::seconds{1});
+    const auto newer = storage.create_session("newer", "mock-model", std::filesystem::current_path());
+
+    const auto sessions = storage.list_sessions();
+    REQUIRE(sessions.size() == 2);
+    CHECK(sessions[0].id == newer.id);
+    CHECK(sessions[1].id == older.id);
+}

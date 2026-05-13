@@ -3,7 +3,10 @@
 #include <absl/strings/string_view.h>
 #include <absl/types/span.h>
 
+#include <chrono>
+#include <filesystem>
 #include <string>
+#include <vector>
 
 #include "codeharness/engine/message.h"
 
