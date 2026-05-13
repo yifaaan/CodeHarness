@@ -6,8 +6,13 @@
 #include <stdexcept>
 #include <utility>
 
+#include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "codeharness/api/client.h"
 #include "codeharness/engine/message.h"
+#include "codeharness/engine/stream_event.h"
+#include "curl/easy.h"
+#include "nlohmann/json_fwd.hpp"
 
 namespace {
     using namespace codeharness;
@@ -167,6 +172,26 @@ namespace {
     //         "completion_tokens": 15
     //     }
     // }
+    //
+    // MessageComplete{
+    //     .message = ConversationMessage{
+    //         .role = MessageRole::assistent,
+    //         .content = {
+    //             TextBlock{ .text = "我来查一下天气。" },
+    //             ToolUseBlock{
+    //                 .id = "call_123",
+    //                 .name = "get_weather",
+    //                 .input = { {"city", "Shanghai"} }
+    //             }
+    //         }
+    //     },
+    //     .usage = UsageSnapshot{
+    //         .input_tokens = 20,
+    //         .output_tokens = 15
+    //     },
+    //     .stop_reason = "tool_calls"
+    // }
+
     // 把 OpenAI 返回的完整响应 body 解析成 MessageComplete
     auto parse_message_complete(const nlohmann::json& body) -> api::MessageComplete {
         const auto& choice = body.at("choice").at(0);
@@ -174,8 +199,106 @@ namespace {
 
         std::vector<engine::ContentBlock> content;
         const auto text = message.value("content", "");
+        if (!text.empty()) {
+            content.emplace_back(engine::TextBlock{.text = text});
+        }
+        if (message.contains("tool_calls")) {
+            for (const auto& call : message.at("tool_calls")) {
+                const auto& func = call.at("function");
+                content.emplace_back(engine::ToolUseBlock{.id = call.value("id", ""),
+                                                          .name = func.value("name", ""),
+                                                          .input = parse_arguments(func)});
+            }
+        }
+        const auto usage = body.value("usage", nlohmann::json::object());
+
+        return api::MessageComplete{
+            .message =
+                engine::ConversationMessage{
+                    .role = engine::MessageRole::assistent,
+                    .content = std::move(content),
+                },
+            .usage =
+                engine::UsageSnapshot{
+                    .input_tokens = usage.value("prompt_tokens", 0),
+                    .output_tokens = usage.value("completion_tokens", 0),
+                },
+            .stop_reason = choice.value("finish_reason", ""),
+        };
         // TODO:
+    }
+
+    auto write_callback(char* ptr, std::size_t size, std::size_t nmemb, void* userdata)
+        -> std::size_t {
+        auto* out = static_cast<std::string*>(userdata);
+        out->append(ptr, size * nmemb);
+        return size * nmemb;
+    }
+
+    auto post_json(const api::OpenAIClientOptions& options, const nlohmann::json& payload)
+        -> nlohmann::json {
+        const auto url = absl::StrCat(options.base_url, "/chat/completions");
+        const auto body = payload.dump();
+
+        std::string response;
+
+        auto curl = curl_easy_init();
+        if (not curl) {
+            throw std::runtime_error{"failed to initialize curl"};
+        }
+
+        curl_slist* headers{};
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(
+            headers, absl::StrFormat("Authorization: Bearer %s", options.api_key).c_str());
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, static_cast<long>(options.timeout.count()));
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+        const auto result = curl_easy_perform(curl);
+
+        long status_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+
+        if (result != CURLE_OK) {
+            throw std::runtime_error{curl_easy_strerror(result)};
+        }
+
+        if (status_code < 200 || status_code >= 300) {
+            throw std::runtime_error{
+                fmt::format("OpenAI-compatible request failed: HTTP {}", status_code)};
+        }
+
+        return nlohmann::json::parse(response);
     }
 }  // namespace
 
-namespace codeharness::api {}
+namespace codeharness::api {
+    OpenAIClient::OpenAIClient(OpenAIClientOptions options) : options_{std::move(options)} {}
+
+    void OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink) {
+        auto payload = nlohmann::json{{"model", request.model},
+                                      {"messages", to_openai_messages(request)},
+                                      {"max_tokens", request.max_tokens},
+                                      {"stream", false}};
+        if (!request.tools.empty()) {
+            payload["tools"] = to_openai_tools(request.tools);
+        }
+
+        const auto body = post_json(options_, payload);
+        auto complete = parse_message_complete(body);
+
+        if (!complete.message.text().empty()) {
+            sink(engine::AssistantTextDelta{.text = complete.message.text()});
+        }
+
+        sink(std::move(complete));
+    }
+}  // namespace codeharness::api
