@@ -1,5 +1,6 @@
 #include "codeharness/permissions/checker.h"
 
+#include <absl/strings/match.h>
 #include <absl/strings/string_view.h>
 #include <absl/types/span.h>
 #include <spdlog/spdlog.h>
@@ -27,7 +28,7 @@ namespace {
         const auto prefix = pattern.substr(0, wildcard);
         const auto suffix = pattern.substr(wildcard + 1);
 
-        return value.starts_with(prefix) && value.ends_with(suffix);
+        return absl::StartsWith(value, prefix) && absl::EndsWith(value, suffix);
     }
 
     [[nodiscard]] std::string json_string_field(const nlohmann::json& input,

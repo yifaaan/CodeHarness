@@ -14,18 +14,18 @@ namespace codeharness::tools {
         if (tool_name.empty()) {
             throw std::invalid_argument{"tool name cannot be empty"};
         }
-        spdlog::debug("tools: registering tool name={}", std::string{tool_name});
-        tools_.insert_or_assign(tool_name, std::move(item));
+        spdlog::debug("tools: registering tool name={}", tool_name);
+        tools_.insert_or_assign(std::string{tool_name}, std::move(item));
     }
 
     auto ToolRegistry::find(absl::string_view name) const -> tools::Tool* {
-        auto it = tools_.find(name);
-        if (it == tools_.end()) {
-            spdlog::debug("tools: lookup miss name={}", std::string{name});
+        if (const auto it = tools_.find(name); it != tools_.end()) {
+            spdlog::debug("tools: lookup hit name={}", name);
+            return it->second.get();
+        } else {
+            spdlog::debug("tools: lookup miss name={}", name);
             return nullptr;
         }
-        spdlog::debug("tools: lookup hit name={}", std::string{name});
-        return it->second.get();
     }
 
     auto ToolRegistry::list_tools() const -> std::vector<const Tool*> {
@@ -39,6 +39,7 @@ namespace codeharness::tools {
 
     auto ToolRegistry::api_schema() const -> nlohmann::json {
         auto result = nlohmann::json::array();
+        result.get_ref<nlohmann::json::array_t&>().reserve(tools_.size());
         for (auto& [_, item] : tools_) {
             result.emplace_back(item->api_schema());
         }

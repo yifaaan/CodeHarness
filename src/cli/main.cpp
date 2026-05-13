@@ -5,7 +5,6 @@
 #include <CLI/CLI.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -94,9 +93,6 @@ namespace {
             //     fmt::println("Tool result: {}", tool_execution_complete->output);
             // }
         });
-        const auto text =
-            fmt::format("CodeHarness bootstrap is ready. prompt=\"{}\" model={} permission={}",
-                        options.prompt, options.model, options.permission_mode);
         spdlog::debug("print mode completed");
 
         return EXIT_SUCCESS;
@@ -138,6 +134,6 @@ int main(int argc, char** argv) {
         return run_print_mode(options);
     }
 
-    std::cout << "CodeHarness bootstrap is ready. Use -p \"hello\" to run print mode.\n";
+    fmt::println("CodeHarness bootstrap is ready. Use -p \"hello\" to run print mode.");
     return EXIT_SUCCESS;
 }

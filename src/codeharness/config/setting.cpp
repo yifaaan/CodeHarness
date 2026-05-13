@@ -1,5 +1,8 @@
 #include "codeharness/config/setting.h"
 
+#include <absl/strings/numbers.h>
+#include <absl/strings/string_view.h>
+
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -10,11 +13,12 @@
 namespace {
     using namespace codeharness;
 
-    [[nodiscard]] auto env_string(const char* name) -> std::optional<std::string> {
+    [[nodiscard]] auto env_string(absl::string_view name) -> std::optional<std::string> {
 #if defined(_WIN32)
         char* raw_value = nullptr;
         std::size_t value_size = 0;
-        if (::_dupenv_s(&raw_value, &value_size, name) != 0 || raw_value == nullptr) {
+        if (::_dupenv_s(&raw_value, &value_size, std::string{name}.c_str()) != 0 ||
+            raw_value == nullptr) {
             return std::nullopt;
         }
 
@@ -24,7 +28,7 @@ namespace {
         };
         const auto value = std::string{owned_value.get()};
 #else
-        const auto* raw_value = std::getenv(name);
+        const auto* raw_value = std::getenv(std::string{name}.c_str());
         if (raw_value == nullptr) {
             return std::nullopt;
         }
@@ -42,7 +46,13 @@ namespace {
         if (!value.has_value()) {
             return std::nullopt;
         }
-        return std::stoi(*value);
+
+        auto parsed = int{};
+        if (!absl::SimpleAtoi(*value, &parsed)) {
+            spdlog::warn("config: environment variable {} is not a valid integer", name);
+            return std::nullopt;
+        }
+        return parsed;
     }
 }  // namespace
 namespace codeharness::config {
@@ -78,6 +88,9 @@ namespace codeharness::config {
         if (overrides.max_tokens.has_value()) {
             settings.api.max_tokens = *overrides.max_tokens;
             spdlog::debug("config: max_tokens provided by override");
+        } else if (const auto max_tokens = env_int("OPENAI_MAX_TOKENS")) {
+            settings.api.max_tokens = *max_tokens;
+            spdlog::debug("config: max_tokens loaded from OPENAI_MAX_TOKENS");
         }
         if (overrides.permission_mode.has_value()) {
             settings.permissions.mode = *overrides.permission_mode;

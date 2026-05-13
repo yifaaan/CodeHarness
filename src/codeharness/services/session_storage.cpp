@@ -1,6 +1,8 @@
 #include "codeharness/services/session_storage.h"
 
+#include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
+#include <absl/strings/string_view.h>
 #include <absl/time/clock.h>
 #include <absl/time/time.h>
 #include <nlohmann/json.hpp>
@@ -33,7 +35,8 @@ namespace {
         auto error = std::string{};
         if (!absl::ParseTime("%Y-%m-%dT%H:%M:%SZ", value, absl::UTCTimeZone(), &parsed,
                              &error)) {
-            throw std::invalid_argument{"invalid session timestamp: " + value + ": " + error};
+            throw std::invalid_argument{
+                absl::StrCat("invalid session timestamp: ", value, ": ", error)};
         }
 
         return absl::ToChronoTime(parsed);
@@ -54,8 +57,8 @@ namespace {
     }
 
     [[nodiscard]] auto make_session_id() -> std::string {
-        return compact_utc_timestamp(absl::ToChronoTime(absl::Now())) + "-" +
-               random_hex_suffix();
+        return absl::StrCat(compact_utc_timestamp(absl::ToChronoTime(absl::Now())), "-",
+                            random_hex_suffix());
     }
 
     [[nodiscard]] auto metadata_to_json(const SessionMetadata& metadata) -> nlohmann::json {
@@ -83,6 +86,7 @@ namespace {
     [[nodiscard]] auto messages_to_json(absl::Span<const engine::ConversationMessage> messages)
         -> nlohmann::json {
         auto result = nlohmann::json::array();
+        result.get_ref<nlohmann::json::array_t&>().reserve(messages.size());
         for (const auto& message : messages) {
             result.push_back(engine::to_json(message));
         }
@@ -113,7 +117,8 @@ namespace {
 
         auto out = std::ofstream{path, std::ios::binary | std::ios::trunc};
         if (!out.is_open()) {
-            throw std::runtime_error{"failed to open session file for writing: " + path.string()};
+            throw std::runtime_error{
+                absl::StrCat("failed to open session file for writing: ", path.string())};
         }
 
         out << payload.dump(2) << '\n';
@@ -122,7 +127,7 @@ namespace {
     [[nodiscard]] auto read_session_json(const std::filesystem::path& path) -> nlohmann::json {
         auto in = std::ifstream{path, std::ios::binary};
         if (!in.is_open()) {
-            throw std::runtime_error{"failed to open session file: " + path.string()};
+            throw std::runtime_error{absl::StrCat("failed to open session file: ", path.string())};
         }
 
         return nlohmann::json::parse(in);
@@ -138,14 +143,14 @@ namespace {
     auto SessionStorage::create_session(std::string name,
                                         std::string model,
                                         std::filesystem::path cwd) -> SessionMetadata {
-        const auto now = absl::ToChronoTime(absl::Now());
+        const auto now = absl::Now();
         auto metadata = SessionMetadata{
             .id = make_session_id(),
             .name = std::move(name),
             .model = std::move(model),
             .cwd = std::move(cwd),
-            .created_at = now,
-            .updated_at = now,
+            .created_at = absl::ToChronoTime(now),
+            .updated_at = absl::ToChronoTime(now),
         };
 
         write_session_file(session_path(metadata.id), metadata, {});
@@ -197,7 +202,7 @@ namespace {
 
     auto SessionStorage::session_path(absl::string_view session_id) const
         -> std::filesystem::path {
-        return root_dir_ / (std::string{session_id} + ".json");
+        return root_dir_ / absl::StrCat(session_id, ".json");
     }
 
 }  // namespace codeharness::services

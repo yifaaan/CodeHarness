@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #include <fstream>
+#include <iterator>
 
 #include "absl/strings/str_cat.h"
 #include "base.h"
@@ -60,9 +61,8 @@ namespace codeharness::tools {
             };
         }
 
-        std::ostringstream buffer;
-        buffer << file.rdbuf();
-        const auto output = buffer.str();
+        const auto output = std::string{std::istreambuf_iterator<char>{file},
+                                        std::istreambuf_iterator<char>{}};
         spdlog::debug("read_file: read path={} bytes={}", full_path.string(), output.size());
 
         return ToolResult{

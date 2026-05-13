@@ -2,15 +2,15 @@
 
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
+#include <absl/strings/string_view.h>
 #include <curl/curl.h>
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
 
+#include <variant>
 #include <stdexcept>
 #include <string>
 #include <utility>
-
-#include "codeharness/engine/message_json.h"
 
 namespace {
     using namespace codeharness;
@@ -51,7 +51,7 @@ namespace {
         return result;
     }
 
-    [[nodiscard]] auto to_openai_tool_call(const nlohmann::json& block) -> nlohmann::json {
+    [[nodiscard]] auto to_openai_tool_call(const engine::ToolUseBlock& block) -> nlohmann::json {
         // ToolUseBlock{
         //     id = "call_123",
         //     name = "get_weather",
@@ -69,17 +69,18 @@ namespace {
         //     }
         // ]
         return {
-            {"id", block.at("id")},
+            {"id", block.id},
             {"type", "function"},
             {"function",
              {
-                 {"name", block.at("name")},
-                 {"arguments", block.value("input", nlohmann::json::object()).dump()},
+                 {"name", block.name},
+                 {"arguments", block.input.dump()},
              }},
         };
     }
 
-    auto append_openai_tool_result(nlohmann::json& messages, const nlohmann::json& block) -> void {
+    auto append_openai_tool_result(nlohmann::json& messages,
+                                   const engine::ToolResultBlock& block) -> void {
         // ToolResultBlock{
         //     tool_use_id = "call_123",
         //     content = "上海今天 25 度，晴"
@@ -92,32 +93,29 @@ namespace {
         // }
         messages.push_back({
             {"role", "tool"},
-            {"tool_call_id", block.at("tool_use_id")},
-            {"content", block.at("content")},
+            {"tool_call_id", block.tool_use_id},
+            {"content", block.content},
         });
     }
 
     auto append_openai_message(nlohmann::json& messages,
                                const engine::ConversationMessage& message) -> void {
-        const auto serialized = engine::to_json(message);
         std::string text;
         auto tool_calls = nlohmann::json::array();
 
-        for (const auto& block : serialized.at("content")) {
-            const auto type = block.at("type").get<std::string>();
-
-            if (type == "text") {
-                text += block.value("text", "");
+        for (const auto& block : message.content) {
+            if (const auto* item = std::get_if<engine::TextBlock>(&block)) {
+                text += item->text;
                 continue;
             }
 
-            if (type == "tool_use") {
-                tool_calls.push_back(to_openai_tool_call(block));
+            if (const auto* item = std::get_if<engine::ToolUseBlock>(&block)) {
+                tool_calls.push_back(to_openai_tool_call(*item));
                 continue;
             }
 
-            if (type == "tool_result") {
-                append_openai_tool_result(messages, block);
+            if (const auto* item = std::get_if<engine::ToolResultBlock>(&block)) {
+                append_openai_tool_result(messages, *item);
             }
         }
 
@@ -140,7 +138,7 @@ namespace {
         //     ]
         // }
         auto item = nlohmann::json{
-            {"role", serialized.at("role")},
+            {"role", message.role == engine::MessageRole::user ? "user" : "assistant"},
             {"content", text.empty() ? nlohmann::json(nullptr) : nlohmann::json(text)},
         };
         if (!tool_calls.empty()) {
@@ -189,8 +187,8 @@ namespace {
         }
     }
 
-    [[nodiscard]] auto message_content_from_openai(const nlohmann::json& message)
-        -> nlohmann::json {
+    [[nodiscard]] auto message_from_openai(const nlohmann::json& message)
+        -> engine::ConversationMessage {
         // OpenAI message:
         //
         // {
@@ -219,29 +217,28 @@ namespace {
         //         "input": {"city": "Shanghai"}
         //     }
         // ]
-        auto content = nlohmann::json::array();
+        auto content = std::vector<engine::ContentBlock>{};
 
-        const auto text = message.value("content", "");
+        auto text = message.value("content", "");
         if (!text.empty()) {
-            content.push_back({
-                {"type", "text"},
-                {"text", text},
-            });
+            content.emplace_back(engine::TextBlock{.text = std::move(text)});
         }
 
         if (message.contains("tool_calls")) {
             for (const auto& call : message.at("tool_calls")) {
                 const auto& function = call.at("function");
-                content.push_back({
-                    {"type", "tool_use"},
-                    {"id", call.value("id", "")},
-                    {"name", function.value("name", "")},
-                    {"input", parse_arguments(function)},
+                content.emplace_back(engine::ToolUseBlock{
+                    .id = call.value("id", ""),
+                    .name = function.value("name", ""),
+                    .input = parse_arguments(function),
                 });
             }
         }
 
-        return content;
+        return engine::ConversationMessage{
+            .role = engine::MessageRole::assistent,
+            .content = std::move(content),
+        };
     }
 
     [[nodiscard]] auto parse_message_complete(const nlohmann::json& body)
@@ -297,10 +294,7 @@ namespace {
         const auto usage = body.value("usage", nlohmann::json::object());
 
         return api::MessageComplete{
-            .message = engine::conversation_message_from_json({
-                {"role", "assistant"},
-                {"content", message_content_from_openai(message)},
-            }),
+            .message = message_from_openai(message),
             .usage =
                 engine::UsageSnapshot{
                     .input_tokens = usage.value("prompt_tokens", 0),
