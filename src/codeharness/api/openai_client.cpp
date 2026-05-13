@@ -2,6 +2,7 @@
 
 #include <curl/curl.h>
 #include <fmt/core.h>
+#include <spdlog/spdlog.h>
 
 #include <stdexcept>
 #include <utility>
@@ -240,6 +241,8 @@ namespace {
         // const auto url = absl::StrCat(options.base_url, "/chat/completions");
         const auto url = absl::StrCat(options.base_url, "");
         const auto body = payload.dump();
+        spdlog::debug("api: POST {} request_bytes={} timeout_seconds={}", url, body.size(),
+                      options.timeout.count());
 
         std::string response;
 
@@ -264,15 +267,19 @@ namespace {
 
         long status_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+        spdlog::debug("api: response status={} bytes={}", status_code, response.size());
 
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
 
         if (result != CURLE_OK) {
+            spdlog::error("api: curl request failed: {}", curl_easy_strerror(result));
             throw std::runtime_error{curl_easy_strerror(result)};
         }
 
         if (status_code < 200 || status_code >= 300) {
+            spdlog::error("api: OpenAI-compatible request failed status={} response_bytes={}",
+                          status_code, response.size());
             throw std::runtime_error{
                 fmt::format("OpenAI-compatible request failed: HTTP {}", status_code)};
         }
@@ -285,6 +292,9 @@ namespace codeharness::api {
     OpenAIClient::OpenAIClient(OpenAIClientOptions options) : options_{std::move(options)} {}
 
     void OpenAIClient::stream_message(const MessageRequest& request, ApiStreamSink sink) {
+        spdlog::debug("api: stream_message model={} messages={} tools={} max_tokens={}",
+                      request.model, request.messages.size(), request.tools.size(),
+                      request.max_tokens);
         auto payload = nlohmann::json{{"model", request.model},
                                       {"messages", to_openai_messages(request)},
                                       {"max_tokens", request.max_tokens},
@@ -295,6 +305,10 @@ namespace codeharness::api {
 
         const auto body = post_json(options_, payload);
         auto complete = parse_message_complete(body);
+        spdlog::debug(
+            "api: parsed completion blocks={} input_tokens={} output_tokens={} stop_reason={}",
+            complete.message.content.size(), complete.usage.input_tokens,
+            complete.usage.output_tokens, complete.stop_reason);
 
         if (!complete.message.text().empty()) {
             sink(engine::AssistantTextDelta{.text = complete.message.text()});

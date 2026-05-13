@@ -1,5 +1,7 @@
 #include "codeharness/tools/tool_registry.h"
 
+#include <spdlog/spdlog.h>
+
 #include "codeharness/tools/base.h"
 
 namespace codeharness::tools {
@@ -12,14 +14,17 @@ namespace codeharness::tools {
         if (tool_name.empty()) {
             throw std::invalid_argument{"tool name cannot be empty"};
         }
+        spdlog::debug("tools: registering tool name={}", std::string{tool_name});
         tools_.insert_or_assign(tool_name, std::move(item));
     }
 
     auto ToolRegistry::find(absl::string_view name) const -> tools::Tool* {
         auto it = tools_.find(name);
         if (it == tools_.end()) {
+            spdlog::debug("tools: lookup miss name={}", std::string{name});
             return nullptr;
         }
+        spdlog::debug("tools: lookup hit name={}", std::string{name});
         return it->second.get();
     }
 
@@ -37,6 +42,7 @@ namespace codeharness::tools {
         for (auto& [_, item] : tools_) {
             result.emplace_back(item->api_schema());
         }
+        spdlog::debug("tools: built api schema count={}", result.size());
         return result;
     }
 }  // namespace codeharness::tools

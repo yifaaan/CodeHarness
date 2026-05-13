@@ -8,6 +8,12 @@ TabWidth:        4
 UseTab:          Never
 ColumnLimit:     100
 AlignAfterOpenBracket: Align
+BinPackParameters: false
+AlignEscapedNewlines: Left
+AlwaysBreakTemplateDeclarations: Yes
+PackConstructorInitializers: Never
+BreakConstructorInitializersBeforeComma: false
+IndentPPDirectives: None
 
 NamespaceIndentation: All
 

@@ -37,6 +37,9 @@ namespace {
         const auto settings = config::load_settings(config::SettingsOverrides{
             .model = options.model,
             .permission_mode = permissions::parse_permission_mode(options.permission_mode)});
+        spdlog::debug("settings loaded: model={} base_url={} permission_mode={} api_key_present={}",
+                      settings.api.model, settings.api.base_url, options.permission_mode,
+                      !settings.api.api_key.empty());
 
         auto api = api::OpenAIClient{
             api::OpenAIClientOptions{
@@ -49,6 +52,8 @@ namespace {
         auto tools = tools::ToolRegistry{};
         tools.register_tool(std::make_unique<tools::ReadFileTool>());
         const auto permissions = permissions::PermissionChecker{settings.permissions};
+        spdlog::debug("registered {} tool(s); cwd={}", tools.list_tools().size(),
+                      std::filesystem::current_path().string());
 
         auto engine = engine::QueryEngine{
             api,
@@ -59,6 +64,8 @@ namespace {
             "You are CodeHarness, a  concise coding assistant.",
         };
 
+        spdlog::debug("submitting prompt: chars={} output_format={}", options.prompt.size(),
+                      options.output_format);
         engine.submit_message(options.prompt, [](const engine::StreamEvent& event) {
             // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
             // ToolExecutionStared,  ToolExecutionComplete>;
@@ -78,6 +85,7 @@ namespace {
         const auto text =
             fmt::format("CodeHarness bootstrap is ready. prompt=\"{}\" model={} permission={}",
                         options.prompt, options.model, options.permission_mode);
+        spdlog::debug("print mode completed");
 
         return EXIT_SUCCESS;
     }
@@ -105,6 +113,12 @@ int main(int argc, char** argv) {
     } catch (const CLI::ParseError& error) {
         return app.exit(error);
     }
+
+    spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
+    spdlog::debug("parsed cli options: prompt_chars={} model={} output_format={} "
+                  "permission_mode={}",
+                  options.prompt.size(), options.model, options.output_format,
+                  options.permission_mode);
 
     if (not options.prompt.empty()) {
         return run_print_mode(options);

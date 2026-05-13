@@ -5,6 +5,8 @@
 #include <optional>
 #include <string>
 
+#include <spdlog/spdlog.h>
+
 namespace {
     using namespace codeharness;
 
@@ -49,28 +51,42 @@ namespace codeharness::config {
 
         if (overrides.api_key.has_value()) {
             settings.api.api_key = *overrides.api_key;
+            spdlog::debug("config: api key provided by override");
         } else if (const auto api_key = env_string("OPENAI_API_KEY")) {
             settings.api.api_key = *api_key;
+            spdlog::debug("config: api key loaded from OPENAI_API_KEY");
+        } else {
+            spdlog::debug("config: api key is not configured");
         }
 
         if (overrides.base_url.has_value()) {
             settings.api.base_url = *overrides.base_url;
+            spdlog::debug("config: base_url provided by override");
         } else if (const auto base_url = env_string("OPENAI_BASE_URL")) {
             settings.api.base_url = *base_url;
+            spdlog::debug("config: base_url loaded from OPENAI_BASE_URL");
         }
 
         if (overrides.model.has_value()) {
             settings.api.model = *overrides.model;
+            spdlog::debug("config: model provided by override");
         } else if (const auto model = env_string("OPENAI_MODEL")) {
             settings.api.model = *model;
+            spdlog::debug("config: model loaded from OPENAI_MODEL");
         }
 
         if (overrides.max_tokens.has_value()) {
             settings.api.max_tokens = *overrides.max_tokens;
+            spdlog::debug("config: max_tokens provided by override");
         }
         if (overrides.permission_mode.has_value()) {
             settings.permissions.mode = *overrides.permission_mode;
+            spdlog::debug("config: permission mode provided by override");
         }
+
+        spdlog::debug("config resolved: base_url={} model={} max_tokens={} api_key_present={}",
+                      settings.api.base_url, settings.api.model, settings.api.max_tokens,
+                      !settings.api.api_key.empty());
 
         return settings;
     }
