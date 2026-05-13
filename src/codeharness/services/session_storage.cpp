@@ -61,58 +61,16 @@ namespace {
                             random_hex_suffix());
     }
 
-    [[nodiscard]] auto metadata_to_json(const SessionMetadata& metadata) -> nlohmann::json {
-        return {
-            {"id", metadata.id},
-            {"name", metadata.name},
-            {"model", metadata.model},
-            {"cwd", metadata.cwd.string()},
-            {"created_at", to_iso8601(metadata.created_at)},
-            {"updated_at", to_iso8601(metadata.updated_at)},
-        };
-    }
-
-    [[nodiscard]] auto metadata_from_json(const nlohmann::json& value) -> SessionMetadata {
-        return SessionMetadata{
-            .id = value.at("id").get<std::string>(),
-            .name = value.at("name").get<std::string>(),
-            .model = value.at("model").get<std::string>(),
-            .cwd = std::filesystem::path{value.at("cwd").get<std::string>()},
-            .created_at = from_iso8601(value.at("created_at").get<std::string>()),
-            .updated_at = from_iso8601(value.at("updated_at").get<std::string>()),
-        };
-    }
-
-    [[nodiscard]] auto messages_to_json(absl::Span<const engine::ConversationMessage> messages)
-        -> nlohmann::json {
-        auto result = nlohmann::json::array();
-        result.get_ref<nlohmann::json::array_t&>().reserve(messages.size());
-        for (const auto& message : messages) {
-            result.push_back(engine::to_json(message));
-        }
-        return result;
-    }
-
-    [[nodiscard]] auto messages_from_json(const nlohmann::json& value)
-        -> std::vector<engine::ConversationMessage> {
-        auto result = std::vector<engine::ConversationMessage>{};
-        result.reserve(value.size());
-
-        for (const auto& message : value) {
-            result.push_back(engine::conversation_message_from_json(message));
-        }
-
-        return result;
-    }
-
     auto write_session_file(const std::filesystem::path& path,
                             const SessionMetadata& metadata,
                             absl::Span<const engine::ConversationMessage> messages) -> void {
         std::filesystem::create_directories(path.parent_path());
 
+        auto stored_messages =
+            std::vector<engine::ConversationMessage>{messages.begin(), messages.end()};
         const auto payload = nlohmann::json{
-            {"metadata", metadata_to_json(metadata)},
-            {"messages", messages_to_json(messages)},
+            {"metadata", metadata},
+            {"messages", std::move(stored_messages)},
         };
 
         auto out = std::ofstream{path, std::ios::binary | std::ios::trunc};
@@ -134,6 +92,42 @@ namespace {
     }
 
 }  // namespace
+
+    auto to_json(nlohmann::json& value, const SessionMetadata& metadata) -> void {
+        value = {
+            {"id", metadata.id},
+            {"name", metadata.name},
+            {"model", metadata.model},
+            {"cwd", metadata.cwd.string()},
+            {"created_at", to_iso8601(metadata.created_at)},
+            {"updated_at", to_iso8601(metadata.updated_at)},
+        };
+    }
+
+    auto from_json(const nlohmann::json& value, SessionMetadata& metadata) -> void {
+        metadata = SessionMetadata{
+            .id = value.at("id").get<std::string>(),
+            .name = value.at("name").get<std::string>(),
+            .model = value.at("model").get<std::string>(),
+            .cwd = std::filesystem::path{value.at("cwd").get<std::string>()},
+            .created_at = from_iso8601(value.at("created_at").get<std::string>()),
+            .updated_at = from_iso8601(value.at("updated_at").get<std::string>()),
+        };
+    }
+
+    auto to_json(nlohmann::json& value, const Session& session) -> void {
+        value = {
+            {"metadata", session.metadata},
+            {"messages", session.messages},
+        };
+    }
+
+    auto from_json(const nlohmann::json& value, Session& session) -> void {
+        session = Session{
+            .metadata = value.at("metadata").get<SessionMetadata>(),
+            .messages = value.at("messages").get<std::vector<engine::ConversationMessage>>(),
+        };
+    }
 
     SessionStorage::SessionStorage(std::filesystem::path root_dir)
         : root_dir_{std::move(root_dir)} {
@@ -168,11 +162,7 @@ namespace {
 
     auto SessionStorage::load_session(absl::string_view session_id) const -> Session {
         const auto payload = read_session_json(session_path(session_id));
-
-        return Session{
-            .metadata = metadata_from_json(payload.at("metadata")),
-            .messages = messages_from_json(payload.at("messages")),
-        };
+        return payload.get<Session>();
     }
 
     auto SessionStorage::list_sessions() const -> std::vector<SessionMetadata> {
@@ -188,7 +178,7 @@ namespace {
 
             try {
                 const auto payload = read_session_json(entry.path());
-                result.push_back(metadata_from_json(payload.at("metadata")));
+                result.push_back(payload.at("metadata").get<SessionMetadata>());
             } catch (const std::exception&) {
                 continue;
             }

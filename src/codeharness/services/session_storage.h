@@ -5,10 +5,11 @@
 
 #include <chrono>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
-#include "codeharness/engine/message.h"
+#include "codeharness/engine/message_json.h"
 
 namespace codeharness::services {
 
@@ -25,6 +26,11 @@ namespace codeharness::services {
         SessionMetadata metadata;
         std::vector<engine::ConversationMessage> messages;
     };
+
+    auto to_json(nlohmann::json& value, const SessionMetadata& metadata) -> void;
+    auto from_json(const nlohmann::json& value, SessionMetadata& metadata) -> void;
+    auto to_json(nlohmann::json& value, const Session& session) -> void;
+    auto from_json(const nlohmann::json& value, Session& session) -> void;
 
     class SessionStorage {
     public:

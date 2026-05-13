@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -100,6 +101,34 @@ TEST_CASE("session storage creates saves loads and lists sessions") {
     const auto sessions = storage.list_sessions();
     REQUIRE(sessions.size() == 1);
     CHECK(sessions[0].id == metadata.id);
+}
+
+TEST_CASE("session json round trips through nlohmann conversions") {
+    const auto session = services::Session{
+        .metadata =
+            services::SessionMetadata{
+                .id = "session_1",
+                .name = "demo",
+                .model = "mock-model",
+                .cwd = std::filesystem::current_path(),
+                .created_at = std::chrono::system_clock::now(),
+                .updated_at = std::chrono::system_clock::now(),
+            },
+        .messages =
+            {
+                engine::ConversationMessage::from_user_text("hello"),
+            },
+    };
+
+    const auto serialized = nlohmann::json(session);
+    const auto parsed = serialized.get<services::Session>();
+
+    CHECK(parsed.metadata.id == session.metadata.id);
+    CHECK(parsed.metadata.name == session.metadata.name);
+    CHECK(parsed.metadata.model == session.metadata.model);
+    CHECK(parsed.metadata.cwd == session.metadata.cwd);
+    REQUIRE(parsed.messages.size() == 1);
+    CHECK(parsed.messages[0].text() == "hello");
 }
 
 TEST_CASE("session storage lists newest updated sessions first") {

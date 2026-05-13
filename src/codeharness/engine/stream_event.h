@@ -3,7 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <variant>
 
-#include "codeharness/engine/message.h"
+#include "codeharness/engine/message_json.h"
 
 namespace codeharness::engine {
     struct UsageSnapshot {
@@ -35,7 +35,20 @@ namespace codeharness::engine {
         bool is_error{};
     };
 
-    // query_engine 对外层 UI 的事件
+    // query_engine exposed UI events
     using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete, ToolExecutionStared,
                                      ToolExecutionComplete>;
+
+    auto to_json(nlohmann::json& value, const UsageSnapshot& usage) -> void;
+    auto from_json(const nlohmann::json& value, UsageSnapshot& usage) -> void;
+    auto to_json(nlohmann::json& value, const AssistantTextDelta& delta) -> void;
+    auto from_json(const nlohmann::json& value, AssistantTextDelta& delta) -> void;
+    auto to_json(nlohmann::json& value, const AssistantTurnComplete& complete) -> void;
+    auto from_json(const nlohmann::json& value, AssistantTurnComplete& complete) -> void;
+    auto to_json(nlohmann::json& value, const ToolExecutionStared& started) -> void;
+    auto from_json(const nlohmann::json& value, ToolExecutionStared& started) -> void;
+    auto to_json(nlohmann::json& value, const ToolExecutionComplete& complete) -> void;
+    auto from_json(const nlohmann::json& value, ToolExecutionComplete& complete) -> void;
+    auto to_json(nlohmann::json& value, const StreamEvent& event) -> void;
+    auto from_json(const nlohmann::json& value, StreamEvent& event) -> void;
 }  // namespace codeharness::engine

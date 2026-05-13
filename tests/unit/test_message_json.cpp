@@ -27,7 +27,7 @@ TEST_CASE("conversation message json round trips all content block types") {
             },
     };
 
-    const auto serialized = engine::to_json(original);
+    const auto serialized = nlohmann::json(original);
 
     CHECK(serialized.at("role").get<std::string>() == "assistant");
     REQUIRE(serialized.at("content").size() == 3);
@@ -35,7 +35,7 @@ TEST_CASE("conversation message json round trips all content block types") {
     CHECK(serialized.at("content").at(1).at("type").get<std::string>() == "tool_use");
     CHECK(serialized.at("content").at(2).at("type").get<std::string>() == "tool_result");
 
-    const auto parsed = engine::conversation_message_from_json(serialized);
+    const auto parsed = serialized.get<engine::ConversationMessage>();
 
     CHECK(parsed.role == engine::MessageRole::assistent);
     REQUIRE(parsed.content.size() == 3);
@@ -55,10 +55,12 @@ TEST_CASE("conversation message json round trips all content block types") {
 }
 
 TEST_CASE("conversation message json accepts legacy assistent spelling") {
-    const auto parsed = engine::conversation_message_from_json(nlohmann::json{
+    const auto parsed = nlohmann::json(
+                            nlohmann::json{
         {"role", "assistent"},
         {"content", nlohmann::json::array({{{"type", "text"}, {"text", "hello"}}})},
-    });
+    })
+                            .get<engine::ConversationMessage>();
 
     CHECK(parsed.role == engine::MessageRole::assistent);
     CHECK(parsed.text() == "hello");
