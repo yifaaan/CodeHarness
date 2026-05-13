@@ -18,6 +18,7 @@
 #include "codeharness/permissions/models.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/tool_registry.h"
+#include "codeharness/ui/stream_json_renderer.h"
 
 namespace {
 
@@ -72,21 +73,26 @@ namespace {
 
         spdlog::debug("submitting prompt: chars={} output_format={}", options.prompt.size(),
                       options.output_format);
-        engine.submit_message(options.prompt, [](const engine::StreamEvent& event) {
+        engine.submit_message(options.prompt, [&](const engine::StreamEvent& event) {
             // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
             // ToolExecutionStared,  ToolExecutionComplete>;
+            if (options.output_format == "stream-json") {
+                fmt::println("{}", ui::to_stream_json(event).dump());
+                return;
+            }
             if (auto delta = std::get_if<engine::AssistantTextDelta>(&event)) {
                 fmt::print("{}", delta->text);
             }
-            if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
-                fmt::println("\nTurn completed:\n{}", complete->message.text());
-            }
-            if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
-                fmt::println("Tool use: {}", tool_use_start->tool_name);
-            }
-            if (auto tool_execution_complete = std::get_if<engine::ToolExecutionComplete>(&event)) {
-                fmt::println("Tool result: {}", tool_execution_complete->output);
-            }
+            // if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
+            //     fmt::println("\nTurn completed:\n{}", complete->message.text());
+            // }
+            // if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
+            //     fmt::println("Tool use: {}", tool_use_start->tool_name);
+            // }
+            // if (auto tool_execution_complete =
+            // std::get_if<engine::ToolExecutionComplete>(&event)) {
+            //     fmt::println("Tool result: {}", tool_execution_complete->output);
+            // }
         });
         const auto text =
             fmt::format("CodeHarness bootstrap is ready. prompt=\"{}\" model={} permission={}",

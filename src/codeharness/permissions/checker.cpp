@@ -1,12 +1,13 @@
 #include "codeharness/permissions/checker.h"
 
 #include <absl/strings/string_view.h>
+#include <absl/types/span.h>
 #include <spdlog/spdlog.h>
 
 #include <nlohmann/json.hpp>
 
-#include "absl/types/span.h"
 #include "models.h"
+
 
 namespace {
     [[nodiscard]] bool contains_name(absl::Span<const std::string> values, absl::string_view name) {
@@ -43,7 +44,8 @@ namespace codeharness::permissions {
     PermissionChecker::PermissionChecker(PermissionSettings settings)
         : settings_{std::move(settings)} {}
 
-    auto PermissionChecker::evaluate(absl::string_view tool_name, bool is_read_only,
+    auto PermissionChecker::evaluate(absl::string_view tool_name,
+                                     bool is_read_only,
                                      const nlohmann::json& input) const -> PermissionDecision {
         spdlog::debug("permissions: evaluating tool={} read_only={} input_bytes={}",
                       std::string{tool_name}, is_read_only, input.dump().size());
@@ -94,8 +96,7 @@ namespace codeharness::permissions {
         }
 
         if (settings_.mode == PermissionMode::plan) {
-            spdlog::debug("permissions: plan mode blocks mutating tool={}",
-                          std::string{tool_name});
+            spdlog::debug("permissions: plan mode blocks mutating tool={}", std::string{tool_name});
             return PermissionDecision{
                 .allowed = false,
                 .reason = "plan mode blocks mutating tools",
