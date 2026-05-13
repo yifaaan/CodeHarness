@@ -165,6 +165,18 @@ namespace {
         return messages;
     }
 
+    // 从 OpenAI 返回的 JSON 对象中获取字符串类型的值，如果值为 null，则返回空字符串
+    [[nodiscard]] auto json_string_or_empty(const nlohmann::json& object, absl::string_view key)
+        -> std::string {
+        const auto key_string = std::string{key};
+        if (!object.contains(key_string)) {
+            return {};
+        }
+        const auto& value = object.at(key_string);
+        return value.is_string() ? value.get<std::string>() : std::string{};
+    }
+
+    // 从 OpenAI 返回的 function 对象里取出 arguments 字段，并把它从字符串解析成 JSON
     [[nodiscard]] auto parse_arguments(const nlohmann::json& function) -> nlohmann::json {
         // ```
         //  {
@@ -179,10 +191,21 @@ namespace {
         // ```
         //
         // 从 OpenAI 返回的 function 对象里取出 arguments 字段，并把它从字符串解析成 JSON
-        const auto raw = function.value("arguments", "{}");
+        if (!function.contains("arguments")) {
+            return nlohmann::json::object();
+        }
+
+        const auto& raw = function.at("arguments");
+        if (raw.is_object()) {
+            return raw;
+        }
+        if (!raw.is_string()) {
+            return nlohmann::json::object();
+        }
+        const auto raw_string = raw.get<std::string>();
 
         try {
-            return nlohmann::json::parse(raw);
+            return nlohmann::json::parse(raw_string);
         } catch (const nlohmann::json::parse_error&) {
             return nlohmann::json::object();
         }
@@ -220,12 +243,13 @@ namespace {
         // ]
         auto content = std::vector<engine::ContentBlock>{};
 
-        auto text = message.value("content", "");
+        // 模型返回调用工具的信息时，content 为 null 类型，而不是空字符串类型，这里需要判断
+        auto text = json_string_or_empty(message, "content");
         if (!text.empty()) {
             content.emplace_back(engine::TextBlock{.text = std::move(text)});
         }
-
-        if (message.contains("tool_calls")) {
+        
+        if (message.contains("tool_calls") && message.at("tool_calls").is_array()) {
             for (const auto& call : message.at("tool_calls")) {
                 if (!call.contains("function") || !call.at("function").is_object()) {
                     return absl::InvalidArgumentError(
@@ -233,8 +257,8 @@ namespace {
                 }
                 const auto& function = call.at("function");
                 content.emplace_back(engine::ToolUseBlock{
-                    .id = call.value("id", ""),
-                    .name = function.value("name", ""),
+                    .id = json_string_or_empty(call, "id"),
+                    .name = json_string_or_empty(function, "name"),
                     .input = parse_arguments(function),
                 });
             }
@@ -377,6 +401,7 @@ namespace {
         }
 
         try {
+            spdlog::debug("api: response={}", response);
             return nlohmann::json::parse(response);
         } catch (const nlohmann::json::parse_error& error) {
             return absl::InvalidArgumentError(
@@ -408,11 +433,13 @@ namespace codeharness::api {
 
         auto body = post_json(options_, payload);
         if (!body.ok()) {
+            spdlog::debug("api::OpenAiClient::stream_message(): body error, body.status={}", body.status().message());
             return body.status();
         }
 
         auto complete = parse_message_complete(*body);
         if (!complete.ok()) {
+            spdlog::debug("api::OpenAiClient::stream_message(): complete error, complete.status={}", complete.status().message());
             return complete.status();
         }
         spdlog::debug(
