@@ -28,9 +28,9 @@ namespace codeharness::permissions {
     };
 
     // 调用工具前，用来执行权限检查
-    class PerssionChecker {
+    class PermissionChecker {
     public:
-        explicit PerssionChecker(PermissionSettings settings);
+        explicit PermissionChecker(PermissionSettings settings);
 
         [[nodiscard]] auto evaluate(absl::string_view tool_name, bool is_read_only,
                                     const nlohmann::json& input) const -> PermissionDecision;

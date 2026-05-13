@@ -39,11 +39,11 @@ namespace {
     }
 }  // namespace
 namespace codeharness::permissions {
-    PerssionChecker::PerssionChecker(PermissionSettings settings)
+    PermissionChecker::PermissionChecker(PermissionSettings settings)
         : settings_{std::move(settings)} {}
 
-    auto PerssionChecker::evaluate(absl::string_view tool_name, bool is_read_only,
-                                   const nlohmann::json& input) const -> PermissionDecision {
+    auto PermissionChecker::evaluate(absl::string_view tool_name, bool is_read_only,
+                                     const nlohmann::json& input) const -> PermissionDecision {
         if (is_denied_tool(tool_name)) {
             return PermissionDecision{
                 .allowed = false,
@@ -96,15 +96,15 @@ namespace codeharness::permissions {
         };
     }
 
-    auto PerssionChecker::is_allowed_tool(absl::string_view tool_name) const -> bool {
+    auto PermissionChecker::is_allowed_tool(absl::string_view tool_name) const -> bool {
         return contains_name(settings_.allowed_tools, tool_name);
     }
 
-    auto PerssionChecker::is_denied_tool(absl::string_view tool_name) const -> bool {
+    auto PermissionChecker::is_denied_tool(absl::string_view tool_name) const -> bool {
         return contains_name(settings_.denied_tools, tool_name);
     }
 
-    auto PerssionChecker::evaluate_path_rules(const nlohmann::json& input) const
+    auto PermissionChecker::evaluate_path_rules(const nlohmann::json& input) const
         -> PermissionDecision {
         auto path = json_string_field(input, "path");
         if (path.empty()) {
@@ -127,7 +127,7 @@ namespace codeharness::permissions {
         return PermissionDecision{.allowed = true};
     }
 
-    auto PerssionChecker::evaluate_command_rules(const nlohmann::json& input) const
+    auto PermissionChecker::evaluate_command_rules(const nlohmann::json& input) const
         -> PermissionDecision {
         const auto command = json_string_field(input, "command");
 

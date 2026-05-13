@@ -237,7 +237,8 @@ namespace {
 
     auto post_json(const api::OpenAIClientOptions& options, const nlohmann::json& payload)
         -> nlohmann::json {
-        const auto url = absl::StrCat(options.base_url, "/chat/completions");
+        // const auto url = absl::StrCat(options.base_url, "/chat/completions");
+        const auto url = absl::StrCat(options.base_url, "");
         const auto body = payload.dump();
 
         std::string response;

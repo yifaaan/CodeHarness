@@ -12,7 +12,7 @@ namespace codeharness::tools {
         // 判断这次调用是否只读
         [[nodiscard]] virtual auto is_read_only(const nlohmann::json& input) const -> bool override;
 
-        virtual auto execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
+        auto execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
             -> ToolResult override;
     };
 }  // namespace codeharness::tools

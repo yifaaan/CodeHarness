@@ -11,7 +11,7 @@
 
 namespace codeharness::engine {
     QueryEngine::QueryEngine(api::Client& api, const tools::ToolRegistry& tools,
-                             const permissions::PerssionChecker& permissions,
+                             const permissions::PermissionChecker& permissions,
                              std::filesystem::path cwd, std::string model,
                              std::string system_prompt)
         : api_{api},

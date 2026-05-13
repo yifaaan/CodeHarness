@@ -1,17 +1,38 @@
 #include "codeharness/config/setting.h"
 
 #include <cstdlib>
+#include <memory>
 #include <optional>
+#include <string>
 
 namespace {
     using namespace codeharness;
 
     [[nodiscard]] auto env_string(const char* name) -> std::optional<std::string> {
-        auto value = std::getenv(name);
-        if (not value || std::string{value}.empty()) {
+#if defined(_WIN32)
+        char* raw_value = nullptr;
+        std::size_t value_size = 0;
+        if (::_dupenv_s(&raw_value, &value_size, name) != 0 || raw_value == nullptr) {
             return std::nullopt;
         }
-        return std::string{value};
+
+        const auto owned_value = std::unique_ptr<char, decltype(&std::free)>{
+            raw_value,
+            &std::free,
+        };
+        const auto value = std::string{owned_value.get()};
+#else
+        const auto* raw_value = std::getenv(name);
+        if (raw_value == nullptr) {
+            return std::nullopt;
+        }
+        const auto value = std::string{raw_value};
+#endif
+
+        if (value.empty()) {
+            return std::nullopt;
+        }
+        return value;
     }
 
     [[nodiscard]] auto env_int(const char* name) -> std::optional<int> {
@@ -28,16 +49,22 @@ namespace codeharness::config {
 
         if (overrides.api_key.has_value()) {
             settings.api.api_key = *overrides.api_key;
+        } else if (const auto api_key = env_string("OPENAI_API_KEY")) {
+            settings.api.api_key = *api_key;
         }
+
         if (overrides.base_url.has_value()) {
             settings.api.base_url = *overrides.base_url;
+        } else if (const auto base_url = env_string("OPENAI_BASE_URL")) {
+            settings.api.base_url = *base_url;
         }
+
         if (overrides.model.has_value()) {
             settings.api.model = *overrides.model;
+        } else if (const auto model = env_string("OPENAI_MODEL")) {
+            settings.api.model = *model;
         }
-        if (overrides.max_tokens.has_value()) {
-            settings.api.max_tokens = *overrides.max_tokens;
-        }
+
         if (overrides.max_tokens.has_value()) {
             settings.api.max_tokens = *overrides.max_tokens;
         }

@@ -71,7 +71,7 @@ TEST_CASE("query engine executes read_file through mock api") {
     auto perm_settings = permissions::PermissionSettings{
         .mode = permissions::PermissionMode::default_mode,
     };
-    auto permissions = permissions::PerssionChecker{std::move(perm_settings)};
+    auto permissions = permissions::PermissionChecker{std::move(perm_settings)};
 
     auto engine =
         engine::QueryEngine{client, registry, permissions, cwd, "mock-model", "system-prompt"};

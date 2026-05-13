@@ -20,7 +20,7 @@ namespace codeharness::engine {
     class QueryEngine {
     public:
         QueryEngine(api::Client& api, const tools::ToolRegistry& tools,
-                    const permissions::PerssionChecker& permissions, std::filesystem::path cwd,
+                    const permissions::PermissionChecker& permissions, std::filesystem::path cwd,
                     std::string model, std::string system_prompt);
 
         // 用户发消息入口：
@@ -44,7 +44,7 @@ namespace codeharness::engine {
 
         api::Client& api_;
         const tools::ToolRegistry& tools_;
-        const permissions::PerssionChecker& permissions_;
+        const permissions::PermissionChecker& permissions_;
         std::filesystem::path cwd_;
         std::string model_;
         std::string system_prompt_;
