@@ -34,12 +34,18 @@ namespace codeharness::engine {
             api::MessageComplete final_message;
             bool has_final_message{};
 
+            CH_LOG_DEBUG("QueryEngine::submit_message",
+                         "turn={} preparing request messages_before_copy={}", turn,
+                         messages_.size());
+            const auto tools_schema = tools_.api_schema();
+            CH_LOG_DEBUG("QueryEngine::submit_message",
+                         "turn={} prepared tool schema tools={}", turn, tools_schema.size());
             const auto request = api::MessageRequest{
                 .model = model_,
                 .messages = messages_,
                 .system_prompt = system_prompt_,
                 .max_tokens = max_tokens_,
-                .tools = tools_.api_schema(),
+                .tools = std::move(tools_schema),
             };
             CH_LOG_DEBUG("QueryEngine::submit_message",
                          "turn={} sending request messages={} tools={} max_tokens={}", turn,

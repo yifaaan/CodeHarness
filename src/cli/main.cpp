@@ -10,15 +10,11 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
-#include "codeharness/api/openai_client.h"
+#include "codeharness/app/runtime_bundle.h"
 #include "codeharness/config/setting.h"
-#include "codeharness/engine/query_engine.h"
 #include "codeharness/engine/stream_event.h"
 #include "codeharness/logging.h"
-#include "codeharness/permissions/checker.h"
 #include "codeharness/permissions/models.h"
-#include "codeharness/tools/read_file_tool.h"
-#include "codeharness/tools/tool_registry.h"
 #include "codeharness/ui/stream_json_renderer.h"
 
 namespace {
@@ -58,37 +54,18 @@ namespace {
                      settings->api.model, settings->api.base_url, options.permission_mode,
                      !settings->api.api_key.empty());
 
-        auto api = api::OpenAIClient{
-            api::OpenAIClientOptions{
-                .api_key = settings->api.api_key,
-                .base_url = settings->api.base_url,
-                .timeout = settings->api.timeout,
-            },
-        };
-
-        auto tools = tools::ToolRegistry{};
-        if (const auto status = tools.register_tool(std::make_unique<tools::ReadFileTool>());
-            !status.ok()) {
-            fmt::println(stderr, "Failed to register tool: {}", status.message());
+        auto runtime = app::RuntimeBundle::create(*settings, std::filesystem::current_path());
+        if (!runtime.ok()) {
+            fmt::println(stderr, "Failed to initialize runtime: {}", runtime.status().message());
             return EXIT_FAILURE;
         }
-        const auto permissions = permissions::PermissionChecker{settings->permissions};
-        CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}", tools.list_tools().size(),
-                     std::filesystem::current_path().string());
-
-        auto engine = engine::QueryEngine{
-            api,
-            tools,
-            permissions,
-            std::filesystem::current_path(),
-            settings->api.model,
-            "You are CodeHarness, a  concise coding assistant.",
-        };
+        CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}",
+                     runtime->tools().list_tools().size(), runtime->cwd().string());
 
         CH_LOG_DEBUG("run_print_mode", "submitting prompt_chars={} output_format={}",
                      options.prompt.size(), options.output_format);
         const auto status =
-            engine.submit_message(options.prompt, [&](const engine::StreamEvent& event) {
+            runtime->engine().submit_message(options.prompt, [&](const engine::StreamEvent& event) {
                 // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
                 // ToolExecutionStared,  ToolExecutionComplete>;
                 if (options.output_format == "stream-json") {

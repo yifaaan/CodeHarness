@@ -8,6 +8,7 @@
 #include <curl/curl.h>
 #include <fmt/core.h>
 
+#include <mutex>
 #include <string>
 #include <utility>
 #include <variant>
@@ -16,6 +17,18 @@
 
 namespace {
     using namespace codeharness;
+
+    [[nodiscard]] auto ensure_curl_initialized() -> absl::Status {
+        static const auto init_status = []() -> absl::Status {
+            const auto code = curl_global_init(CURL_GLOBAL_DEFAULT);
+            if (code != CURLE_OK) {
+                return absl::InternalError(
+                    absl::StrCat("curl_global_init failed: ", curl_easy_strerror(code)));
+            }
+            return absl::OkStatus();
+        }();
+        return init_status;
+    }
 
     [[nodiscard]] auto trim_trailing_slashes(absl::string_view value) -> std::string_view {
         while (!value.empty() && value.back() == '/') {
@@ -356,6 +369,11 @@ namespace {
 
     [[nodiscard]] auto post_json(const api::OpenAIClientOptions& options,
                                  const nlohmann::json& payload) -> absl::StatusOr<nlohmann::json> {
+        if (auto init_status = ensure_curl_initialized(); !init_status.ok()) {
+            CH_LOG_ERROR("codeharness::api::post_json", "{}", init_status.message());
+            return init_status;
+        }
+
         const auto url = chat_completions_url(options.base_url);
         const auto body = payload.dump();
         CH_LOG_DEBUG("codeharness::api::post_json", "url={} request_bytes={} timeout_seconds={}",
