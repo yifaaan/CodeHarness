@@ -1,19 +1,27 @@
 #pragma once
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/status/status.h>
 #include <absl/status/statusor.h>
-#include <absl/container/flat_hash_map.h>
 #include <absl/strings/string_view.h>
 
 #include <memory>
 #include <nlohmann/json.hpp>
 
+#include "codeharness/tools/base.h"
+
 namespace codeharness::tools {
 
-    class Tool;
     // 工具注册表
     class ToolRegistry {
     public:
+        ToolRegistry() = default;
+        ~ToolRegistry() = default;
+        ToolRegistry(const ToolRegistry&) = delete;
+        ToolRegistry& operator=(const ToolRegistry&) = delete;
+        ToolRegistry(ToolRegistry&&) = default;
+        ToolRegistry& operator=(ToolRegistry&&) = default;
+
         auto register_tool(std::unique_ptr<Tool> item) -> absl::Status;
 
         [[nodiscard]] auto find(absl::string_view name) const -> absl::StatusOr<tools::Tool*>;

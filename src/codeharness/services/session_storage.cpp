@@ -5,16 +5,16 @@
 #include <absl/strings/str_cat.h>
 #include <absl/strings/str_format.h>
 #include <absl/strings/string_view.h>
-#include <absl/time/clock.h>
-#include <absl/time/time.h>
-#include <nlohmann/json.hpp>
+#include <date/date.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <random>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,86 +24,77 @@
 #include "codeharness/logging.h"
 
 namespace codeharness::services {
-namespace {
+    namespace {
 
-    [[nodiscard]] auto to_iso8601(std::chrono::system_clock::time_point time_point)
-        -> std::string {
-        return absl::FormatTime("%Y-%m-%dT%H:%M:%SZ", absl::FromChrono(time_point),
-                                absl::UTCTimeZone());
-    }
+        [[nodiscard]] auto parse_session_time(const std::string& value)
+            -> absl::StatusOr<std::chrono::system_clock::time_point> {
+            auto input = std::istringstream{value};
+            auto parsed = date::sys_seconds{};
+            input >> date::parse("%Y-%m-%dT%H:%M:%SZ", parsed);
 
-    [[nodiscard]] auto from_iso8601(const std::string& value)
-        -> absl::StatusOr<std::chrono::system_clock::time_point> {
-        auto parsed = absl::Time{};
-        auto error = std::string{};
-        if (!absl::ParseTime("%Y-%m-%dT%H:%M:%SZ", value, absl::UTCTimeZone(), &parsed,
-                             &error)) {
-            return absl::InvalidArgumentError(
-                absl::StrCat("invalid session timestamp: ", value, ": ", error));
+            if (input.fail() || input.peek() != std::char_traits<char>::eof()) {
+                return absl::InvalidArgumentError(
+                    absl::StrCat("invalid session timestamp: ", value));
+            }
+
+            return std::chrono::system_clock::time_point{parsed.time_since_epoch()};
         }
 
-        return absl::ToChronoTime(parsed);
-    }
+        [[nodiscard]] auto random_hex_suffix() -> std::string {
+            auto random = std::random_device{};
+            auto engine = std::mt19937_64{random()};
+            const auto value = static_cast<std::uint32_t>(engine());
 
-    [[nodiscard]] auto compact_utc_timestamp(std::chrono::system_clock::time_point time_point)
-        -> std::string {
-        return absl::FormatTime("%Y%m%d-%H%M%S", absl::FromChrono(time_point),
-                                absl::UTCTimeZone());
-    }
-
-    [[nodiscard]] auto random_hex_suffix() -> std::string {
-        auto random = std::random_device{};
-        auto engine = std::mt19937_64{random()};
-        const auto value = static_cast<std::uint32_t>(engine());
-
-        return absl::StrFormat("%08x", value);
-    }
-
-    [[nodiscard]] auto make_session_id() -> std::string {
-        return absl::StrCat(compact_utc_timestamp(absl::ToChronoTime(absl::Now())), "-",
-                            random_hex_suffix());
-    }
-
-    auto write_session_file(const std::filesystem::path& path,
-                            const SessionMetadata& metadata,
-                            absl::Span<const engine::ConversationMessage> messages)
-        -> absl::Status {
-        std::filesystem::create_directories(path.parent_path());
-
-        auto stored_messages =
-            std::vector<engine::ConversationMessage>{messages.begin(), messages.end()};
-        const auto payload = nlohmann::json{
-            {"metadata", metadata},
-            {"messages", std::move(stored_messages)},
-        };
-
-        auto out = std::ofstream{path, std::ios::binary | std::ios::trunc};
-        if (!out.is_open()) {
-            return absl::InternalError(
-                absl::StrCat("failed to open session file for writing: ", path.string()));
+            return absl::StrFormat("%08x", value);
         }
 
-        out << payload.dump(2) << '\n';
-        return absl::OkStatus();
-    }
-
-    [[nodiscard]] auto read_session_json(const std::filesystem::path& path)
-        -> absl::StatusOr<nlohmann::json> {
-        auto in = std::ifstream{path, std::ios::binary};
-        if (!in.is_open()) {
-            return absl::NotFoundError(
-                absl::StrCat("failed to open session file: ", path.string()));
+        [[nodiscard]] auto make_session_id() -> std::string {
+            return absl::StrCat(date::format("%Y%m%d-%H%M%S",
+                                             date::floor<std::chrono::seconds>(
+                                                 std::chrono::system_clock::now())),
+                                "-", random_hex_suffix());
         }
 
-        try {
-            return nlohmann::json::parse(in);
-        } catch (const nlohmann::json::parse_error& error) {
-            return absl::InvalidArgumentError(
-                absl::StrCat("failed to parse session file ", path.string(), ": ", error.what()));
-        }
-    }
+        auto write_session_file(const std::filesystem::path& path,
+                                const SessionMetadata& metadata,
+                                absl::Span<const engine::ConversationMessage> messages)
+            -> absl::Status {
+            std::filesystem::create_directories(path.parent_path());
 
-}  // namespace
+            auto stored_messages =
+                std::vector<engine::ConversationMessage>{messages.begin(), messages.end()};
+            const auto payload = nlohmann::json{
+                {"metadata", metadata},
+                {"messages", std::move(stored_messages)},
+            };
+
+            auto out = std::ofstream{path, std::ios::binary | std::ios::trunc};
+            if (!out.is_open()) {
+                return absl::InternalError(
+                    absl::StrCat("failed to open session file for writing: ", path.string()));
+            }
+
+            out << payload.dump(2) << '\n';
+            return absl::OkStatus();
+        }
+
+        [[nodiscard]] auto read_session_json(const std::filesystem::path& path)
+            -> absl::StatusOr<nlohmann::json> {
+            auto in = std::ifstream{path, std::ios::binary};
+            if (!in.is_open()) {
+                return absl::NotFoundError(
+                    absl::StrCat("failed to open session file: ", path.string()));
+            }
+
+            try {
+                return nlohmann::json::parse(in);
+            } catch (const nlohmann::json::parse_error& error) {
+                return absl::InvalidArgumentError(absl::StrCat("failed to parse session file ",
+                                                               path.string(), ": ", error.what()));
+            }
+        }
+
+    }  // namespace
 
     auto to_json(nlohmann::json& value, const SessionMetadata& metadata) -> void {
         value = {
@@ -111,8 +102,12 @@ namespace {
             {"name", metadata.name},
             {"model", metadata.model},
             {"cwd", metadata.cwd.string()},
-            {"created_at", to_iso8601(metadata.created_at)},
-            {"updated_at", to_iso8601(metadata.updated_at)},
+            {"created_at",
+             date::format("%Y-%m-%dT%H:%M:%SZ",
+                          date::floor<std::chrono::seconds>(metadata.created_at))},
+            {"updated_at",
+             date::format("%Y-%m-%dT%H:%M:%SZ",
+                          date::floor<std::chrono::seconds>(metadata.updated_at))},
         };
     }
 
@@ -143,12 +138,12 @@ namespace {
                 "session metadata is missing string field: updated_at");
         }
 
-        auto created_at = from_iso8601(value.at("created_at").get<std::string>());
+        auto created_at = parse_session_time(value.at("created_at").get<std::string>());
         if (!created_at.ok()) {
             return created_at.status();
         }
 
-        auto updated_at = from_iso8601(value.at("updated_at").get<std::string>());
+        auto updated_at = parse_session_time(value.at("updated_at").get<std::string>());
         if (!updated_at.ok()) {
             return updated_at.status();
         }
@@ -223,14 +218,14 @@ namespace {
                                         std::string model,
                                         std::filesystem::path cwd)
         -> absl::StatusOr<SessionMetadata> {
-        const auto now = absl::Now();
+        const auto now = std::chrono::system_clock::now();
         auto metadata = SessionMetadata{
             .id = make_session_id(),
             .name = std::move(name),
             .model = std::move(model),
             .cwd = std::move(cwd),
-            .created_at = absl::ToChronoTime(now),
-            .updated_at = absl::ToChronoTime(now),
+            .created_at = now,
+            .updated_at = now,
         };
 
         auto status = write_session_file(session_path(metadata.id), metadata, {});
@@ -240,19 +235,20 @@ namespace {
         return metadata;
     }
 
-    auto SessionStorage::save_messages(
-        absl::string_view session_id,
-        absl::Span<const engine::ConversationMessage> messages) -> absl::Status {
+    auto SessionStorage::save_messages(absl::string_view session_id,
+                                       absl::Span<const engine::ConversationMessage> messages)
+        -> absl::Status {
         const auto path = session_path(session_id);
         auto session = load_session(session_id);
         if (!session.ok()) {
             return session.status();
         }
-        session->metadata.updated_at = absl::ToChronoTime(absl::Now());
+        session->metadata.updated_at = std::chrono::system_clock::now();
         return write_session_file(path, session->metadata, messages);
     }
 
-    auto SessionStorage::load_session(absl::string_view session_id) const -> absl::StatusOr<Session> {
+    auto SessionStorage::load_session(absl::string_view session_id) const
+        -> absl::StatusOr<Session> {
         auto payload = read_session_json(session_path(session_id));
         if (!payload.ok()) {
             return payload.status();
@@ -281,8 +277,7 @@ namespace {
 
             if (!payload->contains("metadata")) {
                 CH_LOG_WARN("SessionStorage::list_sessions",
-                            "skipping session without metadata path={}",
-                            entry.path().string());
+                            "skipping session without metadata path={}", entry.path().string());
                 continue;
             }
 
@@ -302,8 +297,7 @@ namespace {
         return result;
     }
 
-    auto SessionStorage::session_path(absl::string_view session_id) const
-        -> std::filesystem::path {
+    auto SessionStorage::session_path(absl::string_view session_id) const -> std::filesystem::path {
         return root_dir_ / absl::StrCat(session_id, ".json");
     }
 

@@ -10,6 +10,7 @@
 
 #include "codeharness/logging.h"
 #include "codeharness/tools/read_file_tool.h"
+#include "codeharness/tools/write_file_tool.h"
 
 namespace codeharness::app {
 

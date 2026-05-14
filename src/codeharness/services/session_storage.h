@@ -50,8 +50,10 @@ namespace codeharness::services {
             -> absl::StatusOr<SessionMetadata>;
 
         auto save_messages(absl::string_view session_id,
-                           absl::Span<const engine::ConversationMessage> messages)
-            -> absl::Status;
+                           absl::Span<const engine::ConversationMessage> messages) -> absl::Status;
+
+        [[nodiscard]] auto export_session_markdown(absl::string_view session_id) const
+            -> absl::StatusOr<std::filesystem::path>;
 
         [[nodiscard]] auto load_session(absl::string_view session_id) const
             -> absl::StatusOr<Session>;
