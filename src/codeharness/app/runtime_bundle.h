@@ -1,6 +1,7 @@
 #pragma once
 
 #include <absl/status/statusor.h>
+#include <absl/strings/string_view.h>
 
 #include <filesystem>
 #include <string>
@@ -18,8 +19,7 @@ namespace codeharness::app {
     public:
         static auto create(config::Settings settings,
                            std::filesystem::path cwd,
-                           std::string system_prompt = default_system_prompt())
-            -> absl::StatusOr<RuntimeBundle>;
+                           std::string system_prompt) -> absl::StatusOr<RuntimeBundle>;
 
         RuntimeBundle(const RuntimeBundle&) = delete;
         auto operator=(const RuntimeBundle&) -> RuntimeBundle& = delete;
@@ -29,7 +29,7 @@ namespace codeharness::app {
 
         ~RuntimeBundle() = default;
 
-        [[nodiscard]] static auto default_system_prompt() -> std::string;
+        [[nodiscard]] static auto default_system_prompt() -> absl::string_view;
 
         [[nodiscard]] auto engine() noexcept -> engine::QueryEngine& { return engine_; }
         [[nodiscard]] auto engine() const noexcept -> const engine::QueryEngine& { return engine_; }

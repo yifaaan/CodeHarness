@@ -1,4 +1,5 @@
 #include <absl/status/status.h>
+#include <absl/strings/str_cat.h>
 #include <fmt/base.h>
 #include <fmt/core.h>
 #include <spdlog/spdlog.h>
@@ -6,7 +7,6 @@
 #include <CLI/CLI.hpp>
 #include <cstdlib>
 #include <filesystem>
-#include <memory>
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -27,6 +27,12 @@ namespace {
         std::string output_format = "text";
         std::string model = "gpt-5.5";
         std::string permission_mode = "default";
+
+        std::string system_prompt;
+        std::string append_system_prompt;
+        std::string base_url;
+        std::string api_key;
+
         bool model_provided = false;
         bool verbose = false;
     };
@@ -41,6 +47,17 @@ namespace {
 
     [[nodiscard]] auto default_log_file_path() -> std::filesystem::path {
         return std::filesystem::current_path() / ".codeharness" / "logs" / "codeharness.log";
+    }
+
+    [[nodiscard]] auto build_system_prompt(const CliOptions& options) -> std::string {
+        auto prompt = std::string{app::RuntimeBundle::default_system_prompt()};
+
+        // 用cli参数替换默认system-prompt
+        if (!options.system_prompt.empty()) {
+            prompt = options.system_prompt;
+        }
+
+        return absl::StrCat(prompt, "\n\n", options.append_system_prompt);
     }
 
     [[nodiscard]] auto build_print_mode_json(const PrintModeResult& result) -> nlohmann::json {
@@ -65,24 +82,37 @@ namespace {
         auto overrides = config::SettingsOverrides{
             .permission_mode = permissions::parse_permission_mode(options.permission_mode),
         };
+
         if (options.model_provided) {
             overrides.model = options.model;
         }
+
+        if (!options.base_url.empty()) {
+            overrides.base_url = options.base_url;
+        }
+        if (!options.api_key.empty()) {
+            overrides.api_key = options.api_key;
+        }
+
         const auto settings = config::load_settings(overrides);
         if (!settings.ok()) {
             fmt::println(stderr, "Failed to load settings: {}", settings.status().message());
             return EXIT_FAILURE;
         }
-        CH_LOG_DEBUG("run_print_mode",
-                     "settings loaded model={} base_url={} permission_mode={} api_key_present={}",
-                     settings->api.model, settings->api.base_url, options.permission_mode,
-                     !settings->api.api_key.empty());
 
-        auto runtime = app::RuntimeBundle::create(*settings, std::filesystem::current_path());
+        auto system_prompt = build_system_prompt(options);
+        auto runtime =
+            app::RuntimeBundle::create(*settings, std::filesystem::current_path(), system_prompt);
         if (!runtime.ok()) {
             fmt::println(stderr, "Failed to initialize runtime: {}", runtime.status().message());
             return EXIT_FAILURE;
         }
+
+        CH_LOG_DEBUG("run_print_mode",
+                     "settings loaded model={} base_url={} permission_mode={} api_key_present={} "
+                     "system_prompt_chars={}",
+                     settings->api.model, settings->api.base_url, options.permission_mode,
+                     !settings->api.api_key.empty(), system_prompt.size());
         CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}",
                      runtime->tools().list_tools().size(), runtime->cwd().string());
 
@@ -135,6 +165,7 @@ namespace {
         if (options.output_format == "json") {
             fmt::println("{}", build_print_mode_json(result).dump(2));
         }
+
         CH_LOG_DEBUG("run_print_mode", "completed successfully");
 
         return EXIT_SUCCESS;
@@ -157,6 +188,12 @@ int main(int argc, char** argv) {
                    "Permission mode: default, plan, full_auto")
         ->check(CLI::IsMember({"default", "plan", "full_auto"}));
     app.add_flag("-v,--verbose", options.verbose, "Enable debug logging");
+    app.add_option("--base-url", options.base_url, "Override API base URL for this run");
+    app.add_option("--api-key", options.api_key, "Override API key for this run");
+    app.add_option("-s,--system-prompt", options.system_prompt,
+                   "Replace the default system prompt");
+    app.add_option("--append-system-prompt", options.append_system_prompt,
+                   "Append extra text to the system prompt");
 
     try {
         app.parse(argc, argv);

@@ -2,6 +2,7 @@
 
 #include <absl/status/status.h>
 #include <absl/status/statusor.h>
+#include <absl/strings/string_view.h>
 
 #include <filesystem>
 #include <memory>
@@ -12,7 +13,7 @@
 
 namespace codeharness::app {
 
-    auto RuntimeBundle::default_system_prompt() -> std::string {
+    auto RuntimeBundle::default_system_prompt() -> absl::string_view {
         return "You are CodeHarness, a concise coding assistant.";
     }
 
