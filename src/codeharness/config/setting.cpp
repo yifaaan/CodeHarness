@@ -115,10 +115,6 @@ namespace {
         }
     }
 
-    auto merge_settings(config::Settings& dst, const config::Settings& src) -> void {
-        dst.api = src.api;
-        dst.permissions = src.permissions;
-    }
 }  // namespace
 namespace codeharness::config {
     auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
@@ -130,7 +126,7 @@ namespace codeharness::config {
                 return file_or.status();
             }
             if (file_or->has_value()) {
-                merge_settings(settings, **file_or);
+                settings = **file_or;
             }
         }
         apply_overrides(settings, overrides);

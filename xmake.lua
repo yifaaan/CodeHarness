@@ -18,34 +18,27 @@ else
     add_cxxflags("-Wall", "-Wextra", "-Wpedantic", {tools = {"gcc", "clang"}})
 end
 
+local codeharness_core_sources = {
+    "src/codeharness/app/*.cpp",
+    "src/codeharness/logging.cpp",
+    "src/codeharness/api/*.cpp",
+    "src/codeharness/config/*.cpp",
+    "src/codeharness/engine/*.cpp",
+    "src/codeharness/permissions/*.cpp",
+    "src/codeharness/services/*.cpp",
+    "src/codeharness/tools/*.cpp",
+}
+
 target("codeharness")
     set_kind("binary")
     add_includedirs("src")
     add_defines("SPDLOG_FMT_EXTERNAL")
-    add_files("src/cli/main.cpp")
-    add_files("src/codeharness/app/*.cpp")
-    add_files("src/codeharness/logging.cpp")
-    add_files("src/codeharness/api/*.cpp")
-    add_files("src/codeharness/config/*.cpp")
-    add_files("src/codeharness/engine/*.cpp")
-    add_files("src/codeharness/permissions/*.cpp")
-    add_files("src/codeharness/services/*.cpp")
-    add_files("src/codeharness/tools/*.cpp")
-    add_files("src/codeharness/ui/*.cpp")
+    add_files("src/cli/main.cpp", table.unpack(codeharness_core_sources))
     add_packages("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "libcurl")
 
 target("codeharness_tests")
     set_kind("binary")
     add_includedirs("src", "tests/support")
     add_defines("SPDLOG_FMT_EXTERNAL")
-    add_files("tests/unit/*.cpp")
-    add_files("src/codeharness/app/*.cpp")
-    add_files("src/codeharness/logging.cpp")
-    add_files("src/codeharness/api/*.cpp")
-    add_files("src/codeharness/config/*.cpp")
-    add_files("src/codeharness/engine/*.cpp")
-    add_files("src/codeharness/permissions/*.cpp")
-    add_files("src/codeharness/services/*.cpp")
-    add_files("src/codeharness/tools/*.cpp")
-    add_files("src/codeharness/ui/*.cpp")
+    add_files("tests/unit/*.cpp", table.unpack(codeharness_core_sources))
     add_packages("abseil", "doctest", "nlohmann_json", "fmt", "spdlog", "libcurl")

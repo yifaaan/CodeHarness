@@ -7,6 +7,9 @@
 
 namespace codeharness::ui {
 
-    [[nodiscard]] auto to_stream_json(const engine::StreamEvent& event) -> nlohmann::json;
+    // Thin alias: StreamEvent already provides nlohmann ADL serialization.
+    [[nodiscard]] inline auto to_stream_json(const engine::StreamEvent& event) -> nlohmann::json {
+        return event;
+    }
 
 }  // namespace codeharness::ui

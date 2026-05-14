@@ -1,4 +1,3 @@
-#include <absl/status/status.h>
 #include <absl/strings/str_cat.h>
 #include <fmt/base.h>
 #include <fmt/core.h>
@@ -8,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 
 #include "codeharness/app/runtime_bundle.h"
@@ -39,10 +39,9 @@ namespace {
 
     struct PrintModeResult {
         std::string text;
-        engine::ConversationMessage message;
+        std::optional<engine::ConversationMessage> message;
         engine::UsageSnapshot usage;
         std::vector<nlohmann::json> tool_events;
-        bool has_message = false;
     };
 
     [[nodiscard]] auto default_log_file_path() -> std::filesystem::path {
@@ -68,14 +67,13 @@ namespace {
             {"tool_events", result.tool_events},
         };
 
-        if (result.has_message) {
-            json["message"] = result.message;
+        if (result.message) {
+            json["message"] = *result.message;
         }
         return json;
     }
 
     int run_print_mode(const CliOptions& options) {
-        spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
         CH_LOG_DEBUG("run_print_mode", "model_arg={} model_provided={}", options.model,
                      options.model_provided);
 
@@ -122,8 +120,6 @@ namespace {
         PrintModeResult result;
         const auto status =
             runtime->engine().submit_message(options.prompt, [&](const engine::StreamEvent& event) {
-                // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
-                // ToolExecutionStared,  ToolExecutionComplete>;
                 if (options.output_format == "stream-json") {
                     fmt::println("{}", ui::to_stream_json(event).dump());
                     return;
@@ -136,20 +132,16 @@ namespace {
                     return;
                 }
                 if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
-                    // fmt::println("\nTurn completed:\n{}", complete->message.text());
                     result.message = complete->message;
                     result.usage = complete->usage;
-                    result.has_message = true;
                     return;
                 }
                 if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
-                    // fmt::println("Tool use: {}", tool_use_start->tool_name);
                     result.tool_events.push_back(*tool_use_start);
                     return;
                 }
                 if (auto tool_execution_complete =
                         std::get_if<engine::ToolExecutionComplete>(&event)) {
-                    // fmt::println("Tool result: {}", tool_execution_complete->output);
                     result.tool_events.push_back(*tool_execution_complete);
                     return;
                 }

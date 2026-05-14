@@ -18,7 +18,6 @@ namespace codeharness::engine {
     auto from_json(const nlohmann::json& value, ContentBlock& block) -> void;
     auto from_json(const nlohmann::json& value, ConversationMessage& message) -> void;
 
-    [[nodiscard]] auto to_json(const ConversationMessage& message) -> nlohmann::json;
     [[nodiscard]] auto conversation_message_from_json(const nlohmann::json& value)
         -> absl::StatusOr<ConversationMessage>;
 
