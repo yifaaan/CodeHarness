@@ -41,6 +41,9 @@ namespace codeharness::services {
     public:
         explicit SessionStorage(std::filesystem::path root_dir);
 
+        // 会话根目录：全局 sessions 下按 cwd 分项目子目录
+        [[nodiscard]] static auto for_cwd(std::filesystem::path cwd) -> SessionStorage;
+
         [[nodiscard]] auto create_session(std::string name,
                                           std::string model,
                                           std::filesystem::path cwd)

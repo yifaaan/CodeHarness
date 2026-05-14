@@ -1,12 +1,14 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "codeharness/config/paths.h"
 #include "codeharness/engine/message.h"
 #include "codeharness/services/session_storage.h"
 
@@ -153,4 +155,38 @@ TEST_CASE("session storage lists newest updated sessions first") {
     REQUIRE(sessions->size() == 2);
     CHECK(sessions->at(0).id == newer->id);
     CHECK(sessions->at(1).id == older->id);
+}
+
+TEST_CASE("SessionStorage::for_cwd uses same root for identical cwd") {
+    auto data_root = TempDirectory{"codeharness-for-cwd-data-root"};
+    auto project = TempDirectory{"codeharness-for-cwd-project"};
+
+#if defined(_WIN32)
+    REQUIRE(_putenv_s("CODEHARNESS_DATA_DIR", data_root.path().string().c_str()) == 0);
+#else
+    REQUIRE(setenv("CODEHARNESS_DATA_DIR", data_root.path().c_str(), 1) == 0);
+#endif
+
+    auto first = services::SessionStorage::for_cwd(project.path());
+    auto second = services::SessionStorage::for_cwd(project.path());
+    const auto metadata =
+        first.create_session("demo", "mock-model", std::filesystem::path{project.path()});
+    REQUIRE(metadata.ok());
+    const auto loaded = second.load_session(metadata->id);
+    REQUIRE(loaded.ok());
+    CHECK(loaded->metadata.id == metadata->id);
+
+#if defined(_WIN32)
+    static_cast<void>(_putenv("CODEHARNESS_DATA_DIR="));
+#else
+    static_cast<void>(unsetenv("CODEHARNESS_DATA_DIR"));
+#endif
+}
+
+TEST_CASE("project_sessions_directory is stable for the same cwd") {
+    auto temp = TempDirectory{"codeharness-project-sessions-dir"};
+    const auto a = config::paths::project_sessions_directory(temp.path(), false);
+    const auto b = config::paths::project_sessions_directory(temp.path(), false);
+    CHECK(a == b);
+    CHECK(a.filename().string().starts_with(temp.path().filename().string()));
 }

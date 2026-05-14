@@ -12,6 +12,7 @@
 #include <string>
 
 #include "codeharness/app/runtime_bundle.h"
+#include "codeharness/config/paths.h"
 #include "codeharness/config/setting.h"
 #include "codeharness/engine/message.h"
 #include "codeharness/engine/stream_event.h"
@@ -48,7 +49,7 @@ namespace {
     };
 
     [[nodiscard]] auto default_log_file_path() -> std::filesystem::path {
-        return std::filesystem::current_path() / ".codeharness" / "logs" / "codeharness.log";
+        return config::paths::user_logs_root(/*create_if_missing=*/true) / "codeharness.log";
     }
 
     [[nodiscard]] auto build_system_prompt(const CliOptions& options) -> std::string {

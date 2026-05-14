@@ -46,11 +46,15 @@ namespace codeharness::app {
             },
         };
 
+        const auto cwd_for_sessions = cwd;
+        auto session_storage = services::SessionStorage::for_cwd(cwd_for_sessions);
+
         CH_LOG_DEBUG("RuntimeBundle::create", "registered_tools={}", tools.list_tools().size());
 
         return RuntimeBundle{
-            std::move(settings), std::move(cwd),   std::move(system_prompt),
-            std::move(api),      std::move(tools), std::move(permissions),
+            std::move(settings),      std::move(cwd),           std::move(system_prompt),
+            std::move(api),           std::move(tools),         std::move(permissions),
+            std::move(session_storage),
         };
     }
 
@@ -59,9 +63,11 @@ namespace codeharness::app {
                                  std::string system_prompt,
                                  api::OpenAIClient api,
                                  tools::ToolRegistry tools,
-                                 permissions::PermissionChecker permissions)
+                                 permissions::PermissionChecker permissions,
+                                 services::SessionStorage session_storage)
         : settings_{std::move(settings)},
           cwd_{std::move(cwd)},
+          session_storage_{std::move(session_storage)},
           system_prompt_{std::move(system_prompt)},
           api_{std::move(api)},
           tools_{std::move(tools)},
@@ -74,6 +80,7 @@ namespace codeharness::app {
     RuntimeBundle::RuntimeBundle(RuntimeBundle&& other) noexcept
         : settings_{std::move(other.settings_)},
           cwd_{std::move(other.cwd_)},
+          session_storage_{std::move(other.session_storage_)},
           system_prompt_{std::move(other.system_prompt_)},
           api_{std::move(other.api_)},
           tools_{std::move(other.tools_)},

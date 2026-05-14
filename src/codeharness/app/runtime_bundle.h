@@ -10,7 +10,7 @@
 #include "codeharness/config/setting.h"
 #include "codeharness/engine/query_engine.h"
 #include "codeharness/permissions/checker.h"
-#include "codeharness/tools/base.h"
+#include "codeharness/services/session_storage.h"
 #include "codeharness/tools/tool_registry.h"
 
 namespace codeharness::app {
@@ -40,6 +40,13 @@ namespace codeharness::app {
 
         [[nodiscard]] auto cwd() const noexcept -> const std::filesystem::path& { return cwd_; }
 
+        [[nodiscard]] auto session_storage() noexcept -> services::SessionStorage& {
+            return session_storage_;
+        }
+        [[nodiscard]] auto session_storage() const noexcept -> const services::SessionStorage& {
+            return session_storage_;
+        }
+
         [[nodiscard]] auto tools() noexcept -> tools::ToolRegistry& { return tools_; }
         [[nodiscard]] auto tools() const noexcept -> const tools::ToolRegistry& { return tools_; }
 
@@ -57,10 +64,12 @@ namespace codeharness::app {
                       std::string system_prompt,
                       api::OpenAIClient api,
                       tools::ToolRegistry tools,
-                      permissions::PermissionChecker permissions);
+                      permissions::PermissionChecker permissions,
+                      services::SessionStorage session_storage);
 
         config::Settings settings_;
         std::filesystem::path cwd_;
+        services::SessionStorage session_storage_;
         std::string system_prompt_;
         api::OpenAIClient api_;
         tools::ToolRegistry tools_;

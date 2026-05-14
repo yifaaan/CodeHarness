@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "codeharness/config/paths.h"
 #include "codeharness/engine/message_json.h"
 #include "codeharness/logging.h"
 
@@ -212,8 +213,10 @@ namespace {
     }
 
     SessionStorage::SessionStorage(std::filesystem::path root_dir)
-        : root_dir_{std::move(root_dir)} {
-        std::filesystem::create_directories(root_dir_);
+        : root_dir_{std::move(root_dir)} {}
+
+    auto SessionStorage::for_cwd(std::filesystem::path cwd) -> SessionStorage {
+        return SessionStorage{config::paths::project_sessions_directory(std::move(cwd))};
     }
 
     auto SessionStorage::create_session(std::string name,

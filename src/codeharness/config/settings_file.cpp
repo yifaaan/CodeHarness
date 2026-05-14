@@ -6,13 +6,13 @@
 #include <string>
 #include <vector>
 
+#include "codeharness/config/paths.h"
 #include "codeharness/config/setting.h"
 #include "codeharness/logging.h"
 
 namespace codeharness::config {
     auto default_user_settings_path() -> std::filesystem::path {
-        // TODO: 需要从环境变量中获取用户配置文件路径
-        return std::filesystem::current_path() / ".codeharness" / "settings.json";
+        return paths::user_settings_json_path(/*create_if_missing=*/true);
     }
 
     auto load_settings_file(const std::filesystem::path& path)
