@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 
+#include "absl/status/statusor.h"
 #include "codeharness/app/runtime_bundle.h"
 #include "codeharness/config/setting.h"
 #include "codeharness/engine/message.h"
@@ -32,6 +33,8 @@ namespace {
         std::string append_system_prompt;
         std::string base_url;
         std::string api_key;
+
+        std::string cwd;
 
         bool model_provided = false;
         bool verbose = false;
@@ -59,6 +62,36 @@ namespace {
         return absl::StrCat(prompt, "\n\n", options.append_system_prompt);
     }
 
+    [[nodiscard]] auto resolve_working_directory(const CliOptions& options)
+        -> absl::StatusOr<std::filesystem::path> {
+        namespace fs = std::filesystem;
+        auto cwd = fs::current_path();
+
+        if (!options.cwd.empty()) {
+            cwd = options.cwd;
+            if (cwd.is_relative()) {
+                cwd = fs::current_path() / cwd;
+            }
+        }
+        std::error_code ec;
+        cwd = fs::weakly_canonical(cwd, ec);
+        if (ec) {
+            return absl::InvalidArgumentError(
+                fmt::format("failed to resolve --cwd '{}': {}", options.cwd, ec.message()));
+        }
+
+        if (!fs::exists(cwd)) {
+            return absl::InvalidArgumentError(
+                fmt::format("working directory does not exist: {}", cwd.string()));
+        }
+
+        if (!fs::is_directory(cwd)) {
+            return absl::InvalidArgumentError(
+                fmt::format("working directory is not a directory: {}", cwd.string()));
+        }
+
+        return cwd;
+    }
     [[nodiscard]] auto build_print_mode_json(const PrintModeResult& result) -> nlohmann::json {
         auto json = nlohmann::json{
             {"ok", true},
@@ -99,8 +132,13 @@ namespace {
         }
 
         auto system_prompt = build_system_prompt(options);
-        auto runtime =
-            app::RuntimeBundle::create(*settings, std::filesystem::current_path(), system_prompt);
+        const auto cwd = resolve_working_directory(options);
+        if (!cwd.ok()) {
+            fmt::println(stderr, "Invalid working directory: {}", cwd.status().message());
+            return EXIT_FAILURE;
+        }
+
+        auto runtime = app::RuntimeBundle::create(*settings, *cwd, system_prompt);
         if (!runtime.ok()) {
             fmt::println(stderr, "Failed to initialize runtime: {}", runtime.status().message());
             return EXIT_FAILURE;
@@ -108,9 +146,10 @@ namespace {
 
         CH_LOG_DEBUG("run_print_mode",
                      "settings loaded model={} base_url={} permission_mode={} api_key_present={} "
-                     "system_prompt_chars={}",
+                     "system_prompt_chars={} cwd={}",
                      settings->api.model, settings->api.base_url, options.permission_mode,
-                     !settings->api.api_key.empty(), system_prompt.size());
+                     !settings->api.api_key.empty(), system_prompt.size(), cwd->string());
+
         CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}",
                      runtime->tools().list_tools().size(), runtime->cwd().string());
 
@@ -186,6 +225,7 @@ int main(int argc, char** argv) {
                    "Replace the default system prompt");
     app.add_option("--append-system-prompt", options.append_system_prompt,
                    "Append extra text to the system prompt");
+    app.add_option("--cwd", options.cwd, "Working directory for this run");
 
     try {
         app.parse(argc, argv);
