@@ -21,22 +21,14 @@ namespace codeharness::app {
     auto RuntimeBundle::create(config::Settings settings,
                                std::filesystem::path cwd,
                                std::string system_prompt) -> absl::StatusOr<RuntimeBundle> {
-        if (cwd.empty()) {
-            cwd = std::filesystem::current_path();
-        }
-
         CH_LOG_DEBUG("RuntimeBundle::create",
                      "cwd={} model={} base_url={} max_tokens={} api_key_present={}", cwd.string(),
                      settings.api.model, settings.api.base_url, settings.api.max_tokens,
                      !settings.api.api_key.empty());
 
         auto tools = tools::ToolRegistry{};
-        if (const auto status = tools.register_tool(std::make_unique<tools::ReadFileTool>());
-            !status.ok()) {
-            CH_LOG_ERROR("RuntimeBundle::create", "failed to register read_file tool: {}",
-                         status.message());
-            return status;
-        }
+        tools.register_tool(std::make_unique<tools::ReadFileTool>());
+        tools.register_tool(std::make_unique<tools::WriteFileTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{

@@ -69,14 +69,14 @@ namespace codeharness::permissions {
         }
 
         const auto path_decision = evaluate_path_rules(input);
-        if (!path_decision.allowed && !path_decision.reason.empty()) {
+        if (!path_decision.allowed) {
             CH_LOG_DEBUG("PermissionChecker::evaluate", "path rule blocked tool={} reason={}",
                          std::string{tool_name}, path_decision.reason);
             return path_decision;
         }
 
         const auto command_decision = evaluate_command_rules(input);
-        if (!command_decision.allowed && !command_decision.reason.empty()) {
+        if (!command_decision.allowed) {
             CH_LOG_DEBUG("PermissionChecker::evaluate",
                          "command rule blocked tool={} reason={}", std::string{tool_name},
                          command_decision.reason);

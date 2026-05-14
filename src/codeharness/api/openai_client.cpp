@@ -449,9 +449,7 @@ namespace codeharness::api {
             {"max_tokens", request.max_tokens},
             {"stream", false},
         };
-        if (!request.tools.empty()) {
-            payload["tools"] = to_openai_tools(request.tools);
-        }
+        payload["tools"] = to_openai_tools(request.tools);
 
         auto body = post_json(options_, payload);
         if (!body.ok()) {

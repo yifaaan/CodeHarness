@@ -126,16 +126,15 @@ namespace codeharness::config {
     auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
         auto settings = Settings{};
 
-        if (const auto settings_path = resolve_settings_path(overrides); !settings_path.empty()) {
-            auto file_or = config::load_settings_file(settings_path);
-            if (!file_or.ok()) {
-                return file_or.status();
-            }
-            if (file_or->has_value()) {
-                settings = **file_or;
-                CH_LOG_DEBUG("config::load_settings", "loaded settings file path={}",
-                             settings_path.string());
-            }
+        const auto settings_path = resolve_settings_path(overrides);
+        auto file_or = config::load_settings_file(settings_path);
+        if (!file_or.ok()) {
+            return file_or.status();
+        }
+        if (file_or->has_value()) {
+            settings = **file_or;
+            CH_LOG_DEBUG("config::load_settings", "loaded settings file path={}",
+                         settings_path.string());
         }
         apply_overrides(settings, overrides);
 

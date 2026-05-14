@@ -12,9 +12,7 @@ namespace codeharness::logging {
     auto initialize_default_logger(const std::filesystem::path& log_file_path,
                                    spdlog::level::level_enum level) -> absl::Status {
         try {
-            if (const auto parent = log_file_path.parent_path(); !parent.empty()) {
-                std::filesystem::create_directories(parent);
-            }
+            std::filesystem::create_directories(log_file_path.parent_path());
 
             auto logger = std::make_shared<spdlog::logger>(
                 "codeharness.file",

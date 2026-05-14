@@ -62,18 +62,12 @@ namespace codeharness::config::paths {
         }
 
         [[nodiscard]] auto normalize_dir(const std::filesystem::path& p) -> std::filesystem::path {
-            if (p.empty()) {
-                return p;
-            }
             std::error_code ec;
             const auto canon = std::filesystem::weakly_canonical(p, ec);
             return ec ? std::filesystem::absolute(p) : canon;
         }
 
         auto ensure_dir(const std::filesystem::path& dir) -> void {
-            if (dir.empty()) {
-                return;
-            }
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);
             // 与 OpenHarness 的 mkdir(parents=True, exist_ok=True) 一致：失败时静默交给后续 IO

@@ -7,18 +7,10 @@
 #include "codeharness/tools/base.h"
 
 namespace codeharness::tools {
-    auto ToolRegistry::register_tool(std::unique_ptr<Tool> item) -> absl::Status {
-        if (!item) {
-            return absl::InvalidArgumentError("cannot register null tool");
-        }
-
+    auto ToolRegistry::register_tool(std::unique_ptr<Tool> item) -> void {
         auto tool_name = item->name();
-        if (tool_name.empty()) {
-            return absl::InvalidArgumentError("tool name cannot be empty");
-        }
         CH_LOG_DEBUG("ToolRegistry::register_tool", "tool_name={}", tool_name);
         tools_.insert_or_assign(std::string{tool_name}, std::move(item));
-        return absl::OkStatus();
     }
 
     auto ToolRegistry::find(absl::string_view name) const -> absl::StatusOr<tools::Tool*> {

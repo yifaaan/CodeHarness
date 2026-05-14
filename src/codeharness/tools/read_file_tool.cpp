@@ -41,11 +41,6 @@ namespace codeharness::tools {
 
     auto ReadFileTool::execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
         -> absl::StatusOr<std::string> {
-        if (!input.contains("path") || !input["path"].is_string()) {
-            CH_LOG_WARN("ReadFileTool::execute", "missing or invalid string field path");
-            return absl::InvalidArgumentError("read_file requires a string field: path");
-        }
-
         const auto requested_path = input["path"].get<std::string>();
         const auto full_path = ctx.cwd / requested_path;
         CH_LOG_DEBUG("ReadFileTool::execute", "requested_path={} full_path={}", requested_path,

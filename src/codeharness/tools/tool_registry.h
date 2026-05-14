@@ -22,7 +22,7 @@ namespace codeharness::tools {
         ToolRegistry(ToolRegistry&&) = default;
         ToolRegistry& operator=(ToolRegistry&&) = default;
 
-        auto register_tool(std::unique_ptr<Tool> item) -> absl::Status;
+        auto register_tool(std::unique_ptr<Tool> item) -> void;
 
         [[nodiscard]] auto find(absl::string_view name) const -> absl::StatusOr<tools::Tool*>;
         // 生成发给模型 API 的工具 schema 列表

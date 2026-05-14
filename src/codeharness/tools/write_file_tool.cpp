@@ -51,13 +51,6 @@ namespace codeharness::tools {
 
     auto WriteFileTool::execute(const nlohmann::json& input, const ToolExecutionContext& ctx)
         -> absl::StatusOr<std::string> {
-        if (!input.contains("path") || !input["path"].is_string()) {
-            return absl::InvalidArgumentError("write_file requires a string field: path");
-        }
-        if (!input.contains("content") || !input["content"].is_string()) {
-            return absl::InvalidArgumentError("write_file requires a string field: content");
-        }
-
         const auto requested_path = input["path"].get<std::string>();
         const auto content = input["content"].get<std::string>();
         const auto create_dirs = input.value("create_directories", true);
