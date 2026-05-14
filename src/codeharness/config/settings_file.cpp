@@ -1,38 +1,13 @@
 #include "codeharness/config/settings_file.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <optional>
+#include <string>
+#include <vector>
 
 #include "codeharness/config/setting.h"
 #include "codeharness/logging.h"
-
-
-namespace {
-    using namespace codeharness;
-
-    auto merge_api(config::ApiSettings& dst, const nlohmann::json& src) -> void {
-        if (src.contains("base_url") and src.at("base_url").is_string()) {
-            dst.base_url = src.at("base_url").get<std::string>();
-        }
-        if (src.contains("model") and src.at("model").is_string()) {
-            dst.model = src.at("model").get<std::string>();
-        }
-        if (src.contains("max_tokens") and src.at("max_tokens").is_number_integer()) {
-            dst.max_tokens = src.at("max_tokens").get<int>();
-        }
-        if (src.contains("timeout") and src.at("timeout").is_number_integer()) {
-            dst.timeout = std::chrono::seconds(src.at("timeout").get<int>());
-        }
-    }
-
-    void merge_permissions(permissions::PermissionSettings& dst, const nlohmann::json& j) {
-        if (j.contains("mode") and j["mode"].is_string()) {
-            dst.mode = permissions::parse_permission_mode(j["mode"].get<std::string>());
-        }
-        // TODO: 依次合并 allowed_tools / denied_tools / path_rules / denied_commands
-    }
-}  // namespace
 
 namespace codeharness::config {
     auto default_user_settings_path() -> std::filesystem::path {
@@ -57,13 +32,68 @@ namespace codeharness::config {
             CH_LOG_ERROR("config::load_settings_file", "invalid JSON: {}", path.string());
             return std::nullopt;
         }
+
         auto out = Settings{};
-        if (j.contains("api") and j["api"].is_object()) {
-            merge_api(out.api, j["api"]);
+
+        if (j.contains("api") and j.at("api").is_object()) {
+            const auto& a = j.at("api");
+            if (a.contains("api_key") and a.at("api_key").is_string()) {
+                out.api.api_key = a.at("api_key").get<std::string>();
+            }
+            if (a.contains("base_url") and a.at("base_url").is_string()) {
+                out.api.base_url = a.at("base_url").get<std::string>();
+            }
+            if (a.contains("model") and a.at("model").is_string()) {
+                out.api.model = a.at("model").get<std::string>();
+            }
+            if (a.contains("max_tokens") and a.at("max_tokens").is_number_integer()) {
+                out.api.max_tokens = a.at("max_tokens").get<int>();
+            }
+            if (a.contains("timeout") and a.at("timeout").is_number_integer()) {
+                out.api.timeout = std::chrono::seconds(a.at("timeout").get<int>());
+            }
         }
-        if (j.contains("permissions") and j["permissions"].is_object()) {
-            merge_permissions(out.permissions, j["permissions"]);
+
+        if (j.contains("permissions") and j.at("permissions").is_object()) {
+            const auto& p = j.at("permissions");
+            if (p.contains("mode") and p.at("mode").is_string()) {
+                out.permissions.mode =
+                    permissions::parse_permission_mode(p.at("mode").get<std::string>());
+            }
+
+            auto take_string_array = [&p](const char* key, std::vector<std::string>& dst) {
+                if (not p.contains(key) or not p.at(key).is_array()) {
+                    return;
+                }
+                dst.clear();
+                for (const auto& item : p.at(key)) {
+                    if (item.is_string()) {
+                        dst.push_back(item.get<std::string>());
+                    }
+                }
+            };
+            take_string_array("allowed_tools", out.permissions.allowed_tools);
+            take_string_array("denied_tools", out.permissions.denied_tools);
+            take_string_array("denied_commands", out.permissions.denied_commands);
+
+            if (p.contains("path_rules") and p.at("path_rules").is_array()) {
+                auto rules = std::vector<permissions::PathRule>{};
+                for (const auto& item : p.at("path_rules")) {
+                    if (not item.is_object()) {
+                        continue;
+                    }
+                    if (not item.contains("pattern") or not item.at("pattern").is_string()) {
+                        continue;
+                    }
+                    rules.push_back(permissions::PathRule{
+                        .pattern = item.at("pattern").get<std::string>(),
+                        .allow = item.value("allow", true),
+                    });
+                }
+                out.permissions.path_rules = std::move(rules);
+            }
         }
+
         return out;
     }
 }  // namespace codeharness::config

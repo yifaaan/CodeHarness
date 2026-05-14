@@ -1,11 +1,13 @@
 #pragma once
 
 #include <absl/status/statusor.h>
+
 #include <chrono>
 #include <optional>
 #include <string>
 
 #include "codeharness/permissions/checker.h"
+
 
 namespace codeharness::config {
     struct ApiSettings {
@@ -27,6 +29,7 @@ namespace codeharness::config {
         std::optional<std::string> model;
         std::optional<int> max_tokens;
         std::optional<permissions::PermissionMode> permission_mode;
+        std::optional<std::filesystem::path> settings_file;
     };
 
     [[nodiscard]] auto load_settings(const SettingsOverrides& overrides = {})

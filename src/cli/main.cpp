@@ -1,3 +1,4 @@
+#include <absl/status/statusor.h>
 #include <absl/strings/str_cat.h>
 #include <fmt/base.h>
 #include <fmt/core.h>
@@ -10,7 +11,6 @@
 #include <optional>
 #include <string>
 
-#include "absl/status/statusor.h"
 #include "codeharness/app/runtime_bundle.h"
 #include "codeharness/config/setting.h"
 #include "codeharness/engine/message.h"
@@ -33,8 +33,8 @@ namespace {
         std::string append_system_prompt;
         std::string base_url;
         std::string api_key;
-
         std::string cwd;
+        std::string settings_file;
 
         bool model_provided = false;
         bool verbose = false;
@@ -92,6 +92,27 @@ namespace {
 
         return cwd;
     }
+
+    [[nodiscard]] auto resolve_settings_file_path(const CliOptions& options)
+        -> std::optional<std::filesystem::path> {
+        if (options.settings_file.empty()) {
+            return std::nullopt;
+        }
+        namespace fs = std::filesystem;
+        auto path = fs::path{options.settings_file};
+        if (path.is_relative()) {
+            path = fs::current_path() / path;
+        }
+
+        std::error_code ec;
+        path = fs::weakly_canonical(path, ec);
+        if (ec) {
+            path = fs::absolute(path);
+        }
+
+        return path;
+    }
+
     [[nodiscard]] auto build_print_mode_json(const PrintModeResult& result) -> nlohmann::json {
         auto json = nlohmann::json{
             {"ok", true},
@@ -117,12 +138,16 @@ namespace {
         if (options.model_provided) {
             overrides.model = options.model;
         }
-
         if (!options.base_url.empty()) {
             overrides.base_url = options.base_url;
         }
         if (!options.api_key.empty()) {
             overrides.api_key = options.api_key;
+        }
+
+        if (const auto settings_file = resolve_settings_file_path(options);
+            settings_file.has_value()) {
+            overrides.settings_file = *settings_file;
         }
 
         const auto settings = config::load_settings(overrides);
@@ -146,9 +171,10 @@ namespace {
 
         CH_LOG_DEBUG("run_print_mode",
                      "settings loaded model={} base_url={} permission_mode={} api_key_present={} "
-                     "system_prompt_chars={} cwd={}",
+                     "system_prompt_chars={} cwd={} settings_file={}",
                      settings->api.model, settings->api.base_url, options.permission_mode,
-                     !settings->api.api_key.empty(), system_prompt.size(), cwd->string());
+                     !settings->api.api_key.empty(), system_prompt.size(), cwd->string(),
+                     options.settings_file.empty() ? "<default>" : options.settings_file);
 
         CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}",
                      runtime->tools().list_tools().size(), runtime->cwd().string());
@@ -226,6 +252,7 @@ int main(int argc, char** argv) {
     app.add_option("--append-system-prompt", options.append_system_prompt,
                    "Append extra text to the system prompt");
     app.add_option("--cwd", options.cwd, "Working directory for this run");
+    app.add_option("--settings", options.settings_file, "Path to a JSON settings file");
 
     try {
         app.parse(argc, argv);

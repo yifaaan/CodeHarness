@@ -59,6 +59,12 @@ namespace {
         return parsed;
     }
 
+    [[nodiscard]] auto resolve_settings_path(const config::SettingsOverrides& overrides)
+        -> std::filesystem::path {
+        return overrides.settings_file.has_value() ? *overrides.settings_file
+                                                   : config::default_user_settings_path();
+    }
+
     auto apply_overrides(config::Settings& settings, const config::SettingsOverrides& overrides)
         -> void {
         if (overrides.api_key.has_value()) {
@@ -120,13 +126,15 @@ namespace codeharness::config {
     auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
         auto settings = Settings{};
 
-        if (const auto path = default_user_settings_path(); !path.empty()) {
-            auto file_or = config::load_settings_file(path);
+        if (const auto settings_path = resolve_settings_path(overrides); !settings_path.empty()) {
+            auto file_or = config::load_settings_file(settings_path);
             if (!file_or.ok()) {
                 return file_or.status();
             }
             if (file_or->has_value()) {
                 settings = **file_or;
+                CH_LOG_DEBUG("config::load_settings", "loaded settings file path={}",
+                             settings_path.string());
             }
         }
         apply_overrides(settings, overrides);
