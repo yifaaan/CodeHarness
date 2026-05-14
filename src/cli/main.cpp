@@ -12,6 +12,7 @@
 
 #include "codeharness/app/runtime_bundle.h"
 #include "codeharness/config/setting.h"
+#include "codeharness/engine/message.h"
 #include "codeharness/engine/stream_event.h"
 #include "codeharness/logging.h"
 #include "codeharness/permissions/models.h"
@@ -20,6 +21,7 @@
 namespace {
 
     using namespace codeharness;
+
     struct CliOptions {
         std::string prompt;
         std::string output_format = "text";
@@ -29,8 +31,30 @@ namespace {
         bool verbose = false;
     };
 
+    struct PrintModeResult {
+        std::string text;
+        engine::ConversationMessage message;
+        engine::UsageSnapshot usage;
+        std::vector<nlohmann::json> tool_events;
+        bool has_message = false;
+    };
+
     [[nodiscard]] auto default_log_file_path() -> std::filesystem::path {
         return std::filesystem::current_path() / ".codeharness" / "logs" / "codeharness.log";
+    }
+
+    [[nodiscard]] auto build_print_mode_json(const PrintModeResult& result) -> nlohmann::json {
+        auto json = nlohmann::json{
+            {"ok", true},
+            {"text", result.text},
+            {"usage", result.usage},
+            {"tool_events", result.tool_events},
+        };
+
+        if (result.has_message) {
+            json["message"] = result.message;
+        }
+        return json;
     }
 
     int run_print_mode(const CliOptions& options) {
@@ -64,6 +88,8 @@ namespace {
 
         CH_LOG_DEBUG("run_print_mode", "submitting prompt_chars={} output_format={}",
                      options.prompt.size(), options.output_format);
+
+        PrintModeResult result;
         const auto status =
             runtime->engine().submit_message(options.prompt, [&](const engine::StreamEvent& event) {
                 // using StreamEvent = std::variant<AssistantTextDelta, AssistantTurnComplete,
@@ -73,22 +99,41 @@ namespace {
                     return;
                 }
                 if (auto delta = std::get_if<engine::AssistantTextDelta>(&event)) {
-                    fmt::print("{}", delta->text);
+                    result.text += delta->text;
+                    if (options.output_format == "text") {
+                        fmt::print("{}", delta->text);
+                    }
+                    return;
                 }
-                // if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
-                //     fmt::println("\nTurn completed:\n{}", complete->message.text());
-                // }
-                // if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
-                //     fmt::println("Tool use: {}", tool_use_start->tool_name);
-                // }
-                // if (auto tool_execution_complete =
-                // std::get_if<engine::ToolExecutionComplete>(&event)) {
-                //     fmt::println("Tool result: {}", tool_execution_complete->output);
-                // }
+                if (auto complete = std::get_if<engine::AssistantTurnComplete>(&event)) {
+                    // fmt::println("\nTurn completed:\n{}", complete->message.text());
+                    result.message = complete->message;
+                    result.usage = complete->usage;
+                    result.has_message = true;
+                    return;
+                }
+                if (auto tool_use_start = std::get_if<engine::ToolExecutionStared>(&event)) {
+                    // fmt::println("Tool use: {}", tool_use_start->tool_name);
+                    result.tool_events.push_back(*tool_use_start);
+                    return;
+                }
+                if (auto tool_execution_complete =
+                        std::get_if<engine::ToolExecutionComplete>(&event)) {
+                    // fmt::println("Tool result: {}", tool_execution_complete->output);
+                    result.tool_events.push_back(*tool_execution_complete);
+                    return;
+                }
             });
         if (!status.ok()) {
             fmt::println(stderr, "Request failed: {}", status.message());
             return EXIT_FAILURE;
+        }
+        if (options.output_format == "text" && !result.text.empty()) {
+            fmt::print("\n");
+        }
+
+        if (options.output_format == "json") {
+            fmt::println("{}", build_print_mode_json(result).dump(2));
         }
         CH_LOG_DEBUG("run_print_mode", "completed successfully");
 
