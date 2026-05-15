@@ -18,6 +18,7 @@
 #include "codeharness/engine/stream_event.h"
 #include "codeharness/logging.h"
 #include "codeharness/permissions/models.h"
+#include "codeharness/prompts/environment_info.h"
 #include "codeharness/ui/stream_json_renderer.h"
 
 namespace {
@@ -52,12 +53,20 @@ namespace {
         return config::paths::user_logs_root(/*create_if_missing=*/true) / "codeharness.log";
     }
 
-    [[nodiscard]] auto build_system_prompt(const CliOptions& options) -> std::string {
+    [[nodiscard]] auto build_system_prompt(const CliOptions& options,
+                                           const std::filesystem::path& cwd) -> std::string {
         auto prompt = std::string{app::RuntimeBundle::default_system_prompt()};
 
         // 用cli参数替换默认system-prompt
         if (!options.system_prompt.empty()) {
             prompt = options.system_prompt;
+        }
+
+        const auto env_info = prompts::collect_environment(cwd);
+        const auto env_block = prompts::format_environment_block(env_info);
+
+        if (options.append_system_prompt.empty()) {
+            return absl::StrCat(prompt, "\n\n", env_block);
         }
 
         return absl::StrCat(prompt, "\n\n", options.append_system_prompt);
@@ -157,12 +166,13 @@ namespace {
             return EXIT_FAILURE;
         }
 
-        auto system_prompt = build_system_prompt(options);
         const auto cwd = resolve_working_directory(options);
         if (!cwd.ok()) {
             fmt::println(stderr, "Invalid working directory: {}", cwd.status().message());
             return EXIT_FAILURE;
         }
+
+        auto system_prompt = build_system_prompt(options, *cwd);
 
         auto runtime = app::RuntimeBundle::create(*settings, *cwd, system_prompt);
         if (!runtime.ok()) {

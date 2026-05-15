@@ -1,11 +1,10 @@
 #include "codeharness/prompts/environment_info.h"
 
 #include <date/date.h>
+#include <fmt/format.h>
 
 #include <filesystem>
 #include <system_error>
-
-#include "fmt/format.h"
 
 namespace codeharness::prompts {
 
