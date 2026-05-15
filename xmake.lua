@@ -22,6 +22,7 @@ local codeharness_core_sources = {
     "src/codeharness/services/*.cpp",
     "src/codeharness/tools/*.cpp",
     "src/codeharness/prompts/*.cpp",
+    "src/codeharness/commands/*.cpp",
 }
 
 target("codeharness")
