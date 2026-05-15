@@ -69,7 +69,7 @@ namespace {
             return absl::StrCat(prompt, "\n\n", env_block);
         }
 
-        return absl::StrCat(prompt, "\n\n", options.append_system_prompt);
+        return absl::StrCat(prompt, "\n\n", env_block, "\n\n", options.append_system_prompt);
     }
 
     [[nodiscard]] auto resolve_working_directory(const CliOptions& options)
