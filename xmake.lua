@@ -21,6 +21,7 @@ local codeharness_core_sources = {
     "src/codeharness/permissions/*.cpp",
     "src/codeharness/services/*.cpp",
     "src/codeharness/tools/*.cpp",
+    "src/codeharness/prompts/*.cpp",
 }
 
 target("codeharness")
