@@ -13,8 +13,8 @@ namespace codeharness::tools {
 
 namespace codeharness::commands {
     struct CommandContext {
-        engine::QueryEngine* engine;
-        const tools::ToolRegistry* tools;
+        engine::QueryEngine* engine{};
+        tools::ToolRegistry* tools{};
     };
 
     struct CommandResult {
