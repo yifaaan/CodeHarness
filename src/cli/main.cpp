@@ -12,6 +12,7 @@
 #include <string>
 
 #include "codeharness/app/runtime_bundle.h"
+#include "codeharness/commands/command_registry.h"
 #include "codeharness/config/paths.h"
 #include "codeharness/config/setting.h"
 #include "codeharness/engine/message.h"
@@ -189,6 +190,64 @@ namespace {
 
         CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}",
                      runtime->tools().list_tools().size(), runtime->cwd().string());
+
+        const auto command_registry = commands::CommandRegistry{};
+        const auto command_result = command_registry.try_dispatch(
+            commands::CommandContext{
+                .engine = &runtime->engine(),
+                .tools = &runtime->tools(),
+            },
+            options.prompt);
+
+        if (command_result.handled) {
+            CH_LOG_DEBUG("run_print_mode", "handled local command should_exit={} clear_screen={}",
+                         command_result.should_exit, command_result.clear_screen);
+
+            if (options.output_format == "json") {
+                const auto json = nlohmann::json{
+                    {"ok", true},
+                    {"command", true},
+                    {"text", command_result.message},
+                    {"should_exit", command_result.should_exit},
+                    {"clear_screen", command_result.clear_screen},
+                };
+                fmt::println("{}", json.dump(2));
+                return EXIT_SUCCESS;
+            }
+
+            if (options.output_format == "stream-json") {
+                const auto message = engine::ConversationMessage{
+                    .role = engine::MessageRole::assistant,
+                    .content =
+                        {
+                            engine::TextBlock{.text = command_result.message},
+                        },
+                };
+
+                fmt::println("{}", ui::to_stream_json(engine::StreamEvent{
+                                                          engine::AssistantTextDelta{
+                                                              .text = command_result.message,
+                                                          },
+                                                      })
+                                       .dump());
+
+                fmt::println("{}", ui::to_stream_json(engine::StreamEvent{
+                                                          engine::AssistantTurnComplete{
+                                                              .message = message,
+                                                              .usage = engine::UsageSnapshot{},
+                                                          },
+                                                      })
+                                       .dump());
+
+                return EXIT_SUCCESS;
+            }
+
+            if (!command_result.message.empty()) {
+                fmt::println("{}", command_result.message);
+            }
+
+            return EXIT_SUCCESS;
+        }
 
         CH_LOG_DEBUG("run_print_mode", "submitting prompt_chars={} output_format={}",
                      options.prompt.size(), options.output_format);
