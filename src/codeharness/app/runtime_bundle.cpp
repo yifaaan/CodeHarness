@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "codeharness/logging.h"
+#include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 
@@ -29,6 +30,7 @@ namespace codeharness::app {
         auto tools = tools::ToolRegistry{};
         tools.register_tool(std::make_unique<tools::ReadFileTool>());
         tools.register_tool(std::make_unique<tools::WriteFileTool>());
+        tools.register_tool(std::make_unique<tools::EditFileTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{

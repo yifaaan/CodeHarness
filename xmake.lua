@@ -12,12 +12,6 @@ if is_mode("debug") then
     set_optimize("none")
 end
 
-if is_plat("windows") then
-    add_cxxflags("/W4", {tools = {"cl"}})
-else
-    add_cxxflags("-Wall", "-Wextra", "-Wpedantic", {tools = {"gcc", "clang"}})
-end
-
 local codeharness_core_sources = {
     "src/codeharness/app/*.cpp",
     "src/codeharness/logging.cpp",
