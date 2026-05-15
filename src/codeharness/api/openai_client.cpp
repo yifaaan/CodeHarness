@@ -18,27 +18,12 @@
 namespace {
     using namespace codeharness;
 
-    [[nodiscard]] auto ensure_curl_initialized() -> absl::Status {
-        static const auto init_status = []() -> absl::Status {
-            const auto code = curl_global_init(CURL_GLOBAL_DEFAULT);
-            if (code != CURLE_OK) {
-                return absl::InternalError(
-                    absl::StrCat("curl_global_init failed: ", curl_easy_strerror(code)));
-            }
-            return absl::OkStatus();
-        }();
-        return init_status;
-    }
-
-    [[nodiscard]] auto trim_trailing_slashes(absl::string_view value) -> std::string_view {
-        while (!value.empty() && value.back() == '/') {
-            value.remove_suffix(1);
-        }
-        return value;
-    }
-
     [[nodiscard]] auto chat_completions_url(absl::string_view base_url) -> std::string {
-        const auto normalized_base_url = trim_trailing_slashes(base_url);
+        auto normalized = base_url;
+        while (!normalized.empty() && normalized.back() == '/') {
+            normalized.remove_suffix(1);
+        }
+        const auto normalized_base_url = normalized;
         if (normalized_base_url.ends_with("/chat/completions")) {
             return std::string{normalized_base_url};
         }
@@ -66,55 +51,8 @@ namespace {
         return result;
     }
 
-    [[nodiscard]] auto to_openai_tool_call(const engine::ToolUseBlock& block) -> nlohmann::json {
-        // ToolUseBlock{
-        //     id = "call_123",
-        //     name = "get_weather",
-        //     input = { {"city", "Shanghai"} }
-        // }
-        //
-        // "tool_calls": [
-        //     {
-        //          "id": "call_123",
-        //          "type": "function",
-        //          "function": {
-        //              "name": "get_weather",
-        //              "arguments": "{\"city\":\"Shanghai\"}"
-        //          }
-        //     }
-        // ]
-        return {
-            {"id", block.id},
-            {"type", "function"},
-            {"function",
-             {
-                 {"name", block.name},
-                 {"arguments", block.input.dump()},
-             }},
-        };
-    }
-
-    auto append_openai_tool_result(nlohmann::json& messages,
-                                   const engine::ToolResultBlock& block) -> void {
-        // ToolResultBlock{
-        //     tool_use_id = "call_123",
-        //     content = "上海今天 25 度，晴"
-        // }
-        //
-        // {
-        //     "role": "tool",
-        //     "tool_call_id": "call_123",
-        //     "content": "上海今天 25 度，晴"
-        // }
-        messages.push_back({
-            {"role", "tool"},
-            {"tool_call_id", block.tool_use_id},
-            {"content", block.content},
-        });
-    }
-
-    auto append_openai_message(nlohmann::json& messages,
-                               const engine::ConversationMessage& message) -> void {
+    auto append_openai_message(nlohmann::json& messages, const engine::ConversationMessage& message)
+        -> void {
         std::string text;
         auto tool_calls = nlohmann::json::array();
 
@@ -125,12 +63,24 @@ namespace {
             }
 
             if (const auto* item = std::get_if<engine::ToolUseBlock>(&block)) {
-                tool_calls.push_back(to_openai_tool_call(*item));
+                tool_calls.push_back({
+                    {"id", item->id},
+                    {"type", "function"},
+                    {"function",
+                     {
+                         {"name", item->name},
+                         {"arguments", item->input.dump()},
+                     }},
+                });
                 continue;
             }
 
             if (const auto* item = std::get_if<engine::ToolResultBlock>(&block)) {
-                append_openai_tool_result(messages, *item);
+                messages.push_back({
+                    {"role", "tool"},
+                    {"tool_call_id", item->tool_use_id},
+                    {"content", item->content},
+                });
             }
         }
 
@@ -262,7 +212,7 @@ namespace {
         if (!text.empty()) {
             content.emplace_back(engine::TextBlock{.text = std::move(text)});
         }
-        
+
         if (message.contains("tool_calls") && message.at("tool_calls").is_array()) {
             for (const auto& call : message.at("tool_calls")) {
                 if (!call.contains("function") || !call.at("function").is_object()) {
@@ -338,7 +288,8 @@ namespace {
         }
 
         const auto& choice = body.at("choices").at(0);
-        if (!choice.is_object() || !choice.contains("message") || !choice.at("message").is_object()) {
+        if (!choice.is_object() || !choice.contains("message") ||
+            !choice.at("message").is_object()) {
             return absl::InvalidArgumentError("OpenAI response is missing choice.message");
         }
 
@@ -369,9 +320,16 @@ namespace {
 
     [[nodiscard]] auto post_json(const api::OpenAIClientOptions& options,
                                  const nlohmann::json& payload) -> absl::StatusOr<nlohmann::json> {
-        if (auto init_status = ensure_curl_initialized(); !init_status.ok()) {
-            CH_LOG_ERROR("codeharness::api::post_json", "{}", init_status.message());
-            return init_status;
+        // curl 单例初始化
+        static const auto curl_init_ok = [] {
+            const auto code = curl_global_init(CURL_GLOBAL_DEFAULT);
+            return code == CURLE_OK ? absl::OkStatus()
+                                    : absl::InternalError(absl::StrCat("curl_global_init failed: ",
+                                                                       curl_easy_strerror(code)));
+        }();
+        if (!curl_init_ok.ok()) {
+            CH_LOG_ERROR("codeharness::api::post_json", "{}", curl_init_ok.message());
+            return curl_init_ok;
         }
 
         const auto url = chat_completions_url(options.base_url);
@@ -460,8 +418,7 @@ namespace codeharness::api {
 
         auto complete = parse_message_complete(*body);
         if (!complete.ok()) {
-            CH_LOG_DEBUG("OpenAIClient::stream_message",
-                         "parse_message_complete failed status={}",
+            CH_LOG_DEBUG("OpenAIClient::stream_message", "parse_message_complete failed status={}",
                          complete.status().message());
             return complete.status();
         }

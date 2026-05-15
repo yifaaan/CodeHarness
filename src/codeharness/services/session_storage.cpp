@@ -40,19 +40,14 @@ namespace codeharness::services {
             return std::chrono::system_clock::time_point{parsed.time_since_epoch()};
         }
 
-        [[nodiscard]] auto random_hex_suffix() -> std::string {
+        [[nodiscard]] auto make_session_id() -> std::string {
             auto random = std::random_device{};
             auto engine = std::mt19937_64{random()};
-            const auto value = static_cast<std::uint32_t>(engine());
-
-            return absl::StrFormat("%08x", value);
-        }
-
-        [[nodiscard]] auto make_session_id() -> std::string {
+            const auto suffix = static_cast<std::uint32_t>(engine());
             return absl::StrCat(date::format("%Y%m%d-%H%M%S",
                                              date::floor<std::chrono::seconds>(
                                                  std::chrono::system_clock::now())),
-                                "-", random_hex_suffix());
+                                "-", absl::StrFormat("%08x", suffix));
         }
 
         auto write_session_file(const std::filesystem::path& path,

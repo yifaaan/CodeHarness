@@ -50,7 +50,7 @@ namespace codeharness::permissions {
                                      const nlohmann::json& input) const -> PermissionDecision {
         CH_LOG_DEBUG("PermissionChecker::evaluate", "tool={} read_only={} input_bytes={}",
                      std::string{tool_name}, is_read_only, input.dump().size());
-        if (is_denied_tool(tool_name)) {
+        if (contains_name(settings_.denied_tools, tool_name)) {
             CH_LOG_DEBUG("PermissionChecker::evaluate", "tool denied explicitly tool={}",
                          std::string{tool_name});
             return PermissionDecision{
@@ -59,7 +59,7 @@ namespace codeharness::permissions {
             };
         }
 
-        if (is_allowed_tool(tool_name)) {
+        if (contains_name(settings_.allowed_tools, tool_name)) {
             CH_LOG_DEBUG("PermissionChecker::evaluate", "tool allowed explicitly tool={}",
                          std::string{tool_name});
             return PermissionDecision{
@@ -117,14 +117,6 @@ namespace codeharness::permissions {
             .requires_confirmation = true,
             .reason = "mutating tools require confirmation in default mode",
         };
-    }
-
-    auto PermissionChecker::is_allowed_tool(absl::string_view tool_name) const -> bool {
-        return contains_name(settings_.allowed_tools, tool_name);
-    }
-
-    auto PermissionChecker::is_denied_tool(absl::string_view tool_name) const -> bool {
-        return contains_name(settings_.denied_tools, tool_name);
     }
 
     auto PermissionChecker::evaluate_path_rules(const nlohmann::json& input) const

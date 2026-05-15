@@ -36,8 +36,6 @@ namespace codeharness::permissions {
                                     const nlohmann::json& input) const -> PermissionDecision;
 
     private:
-        [[nodiscard]] auto is_allowed_tool(absl::string_view tool_name) const -> bool;
-        [[nodiscard]] auto is_denied_tool(absl::string_view tool_name) const -> bool;
         [[nodiscard]] auto evaluate_path_rules(const nlohmann::json& input) const
             -> PermissionDecision;
         [[nodiscard]] auto evaluate_command_rules(const nlohmann::json& input) const

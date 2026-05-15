@@ -67,7 +67,7 @@ TEST_CASE("query engine executes read_file through mock api") {
                 }};
     auto client = api::MockClient{std::move(responses)};
     auto registry = tools::ToolRegistry{};
-    REQUIRE(registry.register_tool(std::make_unique<tools::ReadFileTool>()).ok());
+    registry.register_tool(std::make_unique<tools::ReadFileTool>());
     auto perm_settings = permissions::PermissionSettings{
         .mode = permissions::PermissionMode::default_mode,
     };

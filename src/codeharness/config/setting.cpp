@@ -45,26 +45,6 @@ namespace {
         return value;
     }
 
-    [[nodiscard]] auto env_int(const char* name) -> absl::StatusOr<std::optional<int>> {
-        const auto value = env_string(name);
-        if (!value.has_value()) {
-            return std::optional<int>{};
-        }
-
-        auto parsed = int{};
-        if (!absl::SimpleAtoi(*value, &parsed)) {
-            return absl::InvalidArgumentError(
-                absl::StrCat("environment variable ", name, " is not a valid integer"));
-        }
-        return parsed;
-    }
-
-    [[nodiscard]] auto resolve_settings_path(const config::SettingsOverrides& overrides)
-        -> std::filesystem::path {
-        return overrides.settings_file.has_value() ? *overrides.settings_file
-                                                   : config::default_user_settings_path();
-    }
-
     auto apply_overrides(config::Settings& settings, const config::SettingsOverrides& overrides)
         -> void {
         if (overrides.api_key.has_value()) {
@@ -101,15 +81,13 @@ namespace {
             settings.api.max_tokens = *overrides.max_tokens;
             CH_LOG_DEBUG("config::load_settings", "max_tokens source=override value={}",
                          settings.api.max_tokens);
-        } else {
-            auto max_tokens = env_int("OPENAI_MAX_TOKENS");
-            if (!max_tokens.ok()) {
+        } else if (const auto max_tokens_env = env_string("OPENAI_MAX_TOKENS")) {
+            auto parsed = int{};
+            if (!absl::SimpleAtoi(*max_tokens_env, &parsed)) {
                 CH_LOG_ERROR("config::load_settings",
-                             "max_tokens source=OPENAI_MAX_TOKENS error={}",
-                             max_tokens.status().message());
-            }
-            if (max_tokens->has_value()) {
-                settings.api.max_tokens = **max_tokens;
+                             "max_tokens source=OPENAI_MAX_TOKENS error=not a valid integer");
+            } else {
+                settings.api.max_tokens = parsed;
                 CH_LOG_DEBUG("config::load_settings",
                              "max_tokens source=OPENAI_MAX_TOKENS value={}",
                              settings.api.max_tokens);
@@ -126,7 +104,9 @@ namespace codeharness::config {
     auto load_settings(const SettingsOverrides& overrides) -> absl::StatusOr<Settings> {
         auto settings = Settings{};
 
-        const auto settings_path = resolve_settings_path(overrides);
+        const auto settings_path = overrides.settings_file.has_value()
+                                       ? *overrides.settings_file
+                                       : config::default_user_settings_path();
         auto file_or = config::load_settings_file(settings_path);
         if (!file_or.ok()) {
             return file_or.status();
