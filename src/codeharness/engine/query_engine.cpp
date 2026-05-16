@@ -214,4 +214,9 @@ namespace codeharness::engine {
                      system_prompt.size());
         system_prompt_ = std::move(system_prompt);
     }
+
+    auto QueryEngine::set_max_turns(int max_turns) noexcept -> void {
+        CH_LOG_DEBUG("QueryEngine::set_max_turns", "from={} to={}", max_turns_, max_turns);
+        max_turns_ = max_turns;
+    }
 }  // namespace codeharness::engine

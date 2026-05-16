@@ -47,6 +47,7 @@ namespace {
         bool model_provided = false;
         bool verbose = false;
         bool dangerously_skip_permissions = false;
+        int max_turns = 20;
     };
 
     struct PrintModeResult {
@@ -227,6 +228,8 @@ namespace {
         CH_LOG_DEBUG("run_print_mode", "registered_tools={} cwd={}",
                      runtime->tools().list_tools().size(), runtime->cwd().string());
 
+        runtime->engine().set_max_turns(options.max_turns);
+
         const auto command_registry = commands::CommandRegistry{};
         const auto command_result = command_registry.try_dispatch(
             commands::CommandContext{
@@ -357,6 +360,9 @@ int main(int argc, char** argv) {
                    "Comma or space-separated list of tool names to allow");
     app.add_option("--disallowed-tools", options.disallowed_tools,
                    "Comma or space-separated list of tool names to deny");
+    app.add_option("--max-turns", options.max_turns,
+                   "Maximum number of agentic turns for one prompt")
+        ->check(CLI::Range(1, 1000));
     app.add_flag("-v,--verbose", options.verbose, "Enable debug logging");
     app.add_option("--base-url", options.base_url, "Override API base URL for this run");
     app.add_option("--api-key", options.api_key, "Override API key for this run");
@@ -387,9 +393,9 @@ int main(int argc, char** argv) {
     }
     CH_LOG_DEBUG("main",
                  "parsed cli options prompt_chars={} model={} output_format={} "
-                 "permission_mode={} model_provided={}",
+                 "permission_mode={} model_provided={} max_turns={}",
                  options.prompt.size(), options.model, options.output_format,
-                 options.permission_mode, options.model_provided);
+                 options.permission_mode, options.model_provided, options.max_turns);
 
     if (options.print_provided) {
         const auto stripped_prompt = absl::StripAsciiWhitespace(options.prompt);

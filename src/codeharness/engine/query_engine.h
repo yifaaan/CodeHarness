@@ -39,6 +39,7 @@ namespace codeharness::engine {
         auto clear() noexcept -> void;
         auto set_model(std::string model) noexcept -> void;
         auto set_system_prompt(std::string system_prompt) noexcept -> void;
+        auto set_max_turns(int max_turns) noexcept -> void;
 
     private:
         // 负责单次工具调用：找工具、查权限、执行工具、包装成 ToolResultBlock

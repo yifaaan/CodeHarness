@@ -115,3 +115,49 @@ TEST_CASE("query engine executes read_file through mock api") {
 
     std::filesystem::remove_all(cwd);
 }
+
+TEST_CASE("query engine stops after max turns") {
+    const auto cwd = std::filesystem::temp_directory_path() / "codeharness-turn-limit-test";
+    std::filesystem::create_directories(cwd);
+
+    auto responses = std::deque<api::MockClient::Response>{
+        api::MockClient::Response{
+            .message =
+                engine::ConversationMessage{
+                    .role = engine::MessageRole::assistant,
+                    .content =
+                        {
+                            engine::TextBlock{.text = "I need to inspect a file."},
+                            engine::ToolUseBlock{
+                                .id = "toolu_read_1",
+                                .name = "read_file",
+                                .input = nlohmann::json{{"path", "missing.txt"}},
+                            },
+                        },
+                },
+            .usage =
+                engine::UsageSnapshot{
+                    .input_tokens = 4,
+                    .output_tokens = 3,
+                },
+        },
+    };
+    auto client = api::MockClient{std::move(responses)};
+    auto registry = tools::ToolRegistry{};
+    registry.register_tool(std::make_unique<tools::ReadFileTool>());
+    auto permissions = permissions::PermissionChecker{permissions::PermissionSettings{}};
+
+    auto engine =
+        engine::QueryEngine{client, registry, permissions, cwd, "mock-model", "system-prompt"};
+    engine.set_max_turns(1);
+
+    std::vector<engine::StreamEvent> events;
+    const auto status = engine.submit_message(
+        "read missing.txt", [&](const engine::StreamEvent& event) { events.push_back(event); });
+
+    CHECK_FALSE(status.ok());
+    CHECK(status.message().find("maximum turn limit") != std::string::npos);
+    CHECK(client.requests().size() == 1);
+
+    std::filesystem::remove_all(cwd);
+}
