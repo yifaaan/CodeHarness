@@ -1,4 +1,5 @@
 #include <absl/status/statusor.h>
+#include <absl/strings/ascii.h>
 #include <absl/strings/str_cat.h>
 #include <fmt/base.h>
 #include <fmt/core.h>
@@ -10,6 +11,7 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "codeharness/app/runtime_bundle.h"
 #include "codeharness/commands/command_registry.h"
@@ -38,9 +40,13 @@ namespace {
         std::string api_key;
         std::string cwd;
         std::string settings_file;
+        std::string allowed_tools;
+        std::string disallowed_tools;
 
+        bool print_provided = false;
         bool model_provided = false;
         bool verbose = false;
+        bool dangerously_skip_permissions = false;
     };
 
     struct PrintModeResult {
@@ -138,6 +144,30 @@ namespace {
         return json;
     }
 
+    [[nodiscard]] auto parse_tool_list(const std::string& raw) -> std::vector<std::string> {
+        auto tools = std::vector<std::string>{};
+        auto current = std::string{};
+
+        // Match the Python CLI help: accept comma-separated or whitespace-separated lists.
+        for (const char ch : raw) {
+            if (ch == ',' || absl::ascii_isspace(static_cast<unsigned char>(ch))) {
+                if (!current.empty()) {
+                    tools.push_back(current);
+                    current.clear();
+                }
+                continue;
+            }
+
+            current.push_back(ch);
+        }
+
+        if (!current.empty()) {
+            tools.push_back(current);
+        }
+
+        return tools;
+    }
+
     int run_print_mode(const CliOptions& options) {
         CH_LOG_DEBUG("run_print_mode", "model_arg={} model_provided={}", options.model,
                      options.model_provided);
@@ -154,6 +184,12 @@ namespace {
         }
         if (!options.api_key.empty()) {
             overrides.api_key = options.api_key;
+        }
+        if (!options.allowed_tools.empty()) {
+            overrides.allowed_tools = parse_tool_list(options.allowed_tools);
+        }
+        if (!options.disallowed_tools.empty()) {
+            overrides.denied_tools = parse_tool_list(options.disallowed_tools);
         }
 
         if (const auto settings_file = resolve_settings_file_path(options);
@@ -306,7 +342,8 @@ int main(int argc, char** argv) {
     CLI::App app{"CodeHarness - C++23 learning harness for agent development"};
     app.option_defaults()->always_capture_default();
 
-    app.add_option("-p,--print", options.prompt, "Run one non-interactive prompt and exit");
+    auto* print_option =
+        app.add_option("-p,--print", options.prompt, "Run one non-interactive prompt and exit");
     app.add_option("--output-format", options.output_format,
                    "Output format: text, json, stream-json")
         ->check(CLI::IsMember({"text", "json", "stream-json"}));
@@ -314,6 +351,12 @@ int main(int argc, char** argv) {
     app.add_option("--permission-mode", options.permission_mode,
                    "Permission mode: default, plan, full_auto")
         ->check(CLI::IsMember({"default", "plan", "full_auto"}));
+    app.add_flag("--dangerously-skip-permissions", options.dangerously_skip_permissions,
+                 "Bypass all permission checks by forcing permission mode to full_auto");
+    app.add_option("--allowed-tools", options.allowed_tools,
+                   "Comma or space-separated list of tool names to allow");
+    app.add_option("--disallowed-tools", options.disallowed_tools,
+                   "Comma or space-separated list of tool names to deny");
     app.add_flag("-v,--verbose", options.verbose, "Enable debug logging");
     app.add_option("--base-url", options.base_url, "Override API base URL for this run");
     app.add_option("--api-key", options.api_key, "Override API key for this run");
@@ -330,7 +373,12 @@ int main(int argc, char** argv) {
         return app.exit(error);
     }
 
+    options.print_provided = print_option->count() > 0;
     options.model_provided = model_option->count() > 0;
+    if (options.dangerously_skip_permissions) {
+        options.permission_mode = "full_auto";
+    }
+
     const auto log_level = options.verbose ? spdlog::level::debug : spdlog::level::info;
     const auto log_path = default_log_file_path();
     if (const auto status = logging::initialize_default_logger(log_path, log_level); !status.ok()) {
@@ -343,7 +391,16 @@ int main(int argc, char** argv) {
                  options.prompt.size(), options.model, options.output_format,
                  options.permission_mode, options.model_provided);
 
-    if (not options.prompt.empty()) {
+    if (options.print_provided) {
+        const auto stripped_prompt = absl::StripAsciiWhitespace(options.prompt);
+        options.prompt.assign(stripped_prompt.data(), stripped_prompt.size());
+
+        if (options.prompt.empty()) {
+            fmt::println(stderr,
+                         "Error: -p/--print requires a prompt value, e.g. -p 'your prompt'");
+            return EXIT_FAILURE;
+        }
+
         return run_print_mode(options);
     }
 

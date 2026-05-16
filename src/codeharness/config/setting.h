@@ -5,6 +5,7 @@
 #include <chrono>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "codeharness/permissions/checker.h"
 
@@ -29,6 +30,8 @@ namespace codeharness::config {
         std::optional<std::string> model;
         std::optional<int> max_tokens;
         std::optional<permissions::PermissionMode> permission_mode;
+        std::optional<std::vector<std::string>> allowed_tools;
+        std::optional<std::vector<std::string>> denied_tools;
         std::optional<std::filesystem::path> settings_file;
     };
 

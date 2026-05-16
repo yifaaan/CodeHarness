@@ -97,6 +97,18 @@ namespace {
             settings.permissions.mode = *overrides.permission_mode;
             CH_LOG_DEBUG("config::load_settings", "permission_mode source=override");
         }
+
+        if (overrides.allowed_tools.has_value()) {
+            settings.permissions.allowed_tools = *overrides.allowed_tools;
+            CH_LOG_DEBUG("config::load_settings", "allowed_tools source=override count={}",
+                         settings.permissions.allowed_tools.size());
+        }
+
+        if (overrides.denied_tools.has_value()) {
+            settings.permissions.denied_tools = *overrides.denied_tools;
+            CH_LOG_DEBUG("config::load_settings", "denied_tools source=override count={}",
+                         settings.permissions.denied_tools.size());
+        }
     }
 
 }  // namespace
