@@ -16,6 +16,7 @@
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/sleep_tool.h"
 #include "codeharness/tools/tool_search_tool.h"
+#include "codeharness/tools/todo_write_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 
 namespace codeharness::app {
@@ -41,6 +42,7 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::ToolSearchTool>());
         tools.register_tool(std::make_unique<tools::BriefTool>());
         tools.register_tool(std::make_unique<tools::SleepTool>());
+        tools.register_tool(std::make_unique<tools::TodoWriteTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{
