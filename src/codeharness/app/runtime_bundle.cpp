@@ -13,6 +13,7 @@
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
+#include "codeharness/tools/tool_search_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 
 namespace codeharness::app {
@@ -35,6 +36,7 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::EditFileTool>());
         tools.register_tool(std::make_unique<tools::GlobTool>());
         tools.register_tool(std::make_unique<tools::GrepTool>());
+        tools.register_tool(std::make_unique<tools::ToolSearchTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{

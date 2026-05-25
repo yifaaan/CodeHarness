@@ -7,9 +7,12 @@
 #include <nlohmann/json.hpp>
 
 namespace codeharness::tools {
+    class ToolRegistry;
+
     // Tool execution context.
     struct ToolExecutionContext {
         std::filesystem::path cwd;
+        const ToolRegistry* tool_registry = nullptr;
     };
 
     class Tool {

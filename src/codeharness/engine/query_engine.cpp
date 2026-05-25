@@ -167,7 +167,10 @@ namespace codeharness::engine {
             };
         }
 
-        const auto result = tool->execute(call.input, tools::ToolExecutionContext{.cwd = cwd_});
+        const auto result = tool->execute(call.input, tools::ToolExecutionContext{
+                                                          .cwd = cwd_,
+                                                          .tool_registry = &tools_,
+                                                      });
         if (!result.ok()) {
             CH_LOG_DEBUG("QueryEngine::execute_tool_call",
                          "tool execution failed tool={} status={} message={}",
