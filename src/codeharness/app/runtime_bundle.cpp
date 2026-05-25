@@ -14,6 +14,7 @@
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
+#include "codeharness/tools/sleep_tool.h"
 #include "codeharness/tools/tool_search_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 
@@ -39,6 +40,7 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::GrepTool>());
         tools.register_tool(std::make_unique<tools::ToolSearchTool>());
         tools.register_tool(std::make_unique<tools::BriefTool>());
+        tools.register_tool(std::make_unique<tools::SleepTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{
