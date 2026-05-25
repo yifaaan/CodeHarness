@@ -6,6 +6,7 @@ add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
 
 add_requires("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "doctest", "libcurl", "date")
+add_requires("glob")
 
 if is_mode("debug") then
     set_symbols("debug")
@@ -31,6 +32,7 @@ target("codeharness")
     add_defines("SPDLOG_FMT_EXTERNAL")
     add_files("src/cli/main.cpp", table.unpack(codeharness_core_sources))
     add_packages("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "libcurl", "date")
+    add_packages("glob")
 
 target("codeharness_tests")
     set_kind("binary")
@@ -38,3 +40,4 @@ target("codeharness_tests")
     add_defines("SPDLOG_FMT_EXTERNAL")
     add_files("tests/unit/*.cpp", table.unpack(codeharness_core_sources))
     add_packages("abseil", "doctest", "nlohmann_json", "fmt", "spdlog", "libcurl", "date")
+    add_packages("glob")

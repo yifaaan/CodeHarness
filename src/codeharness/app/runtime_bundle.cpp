@@ -10,6 +10,8 @@
 
 #include "codeharness/logging.h"
 #include "codeharness/tools/edit_file_tool.h"
+#include "codeharness/tools/glob_tool.h"
+#include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 
@@ -31,6 +33,8 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::ReadFileTool>());
         tools.register_tool(std::make_unique<tools::WriteFileTool>());
         tools.register_tool(std::make_unique<tools::EditFileTool>());
+        tools.register_tool(std::make_unique<tools::GlobTool>());
+        tools.register_tool(std::make_unique<tools::GrepTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{
@@ -47,9 +51,8 @@ namespace codeharness::app {
         CH_LOG_DEBUG("RuntimeBundle::create", "registered_tools={}", tools.list_tools().size());
 
         return RuntimeBundle{
-            std::move(settings),      std::move(cwd),           std::move(system_prompt),
-            std::move(api),           std::move(tools),         std::move(permissions),
-            std::move(session_storage),
+            std::move(settings), std::move(cwd),         std::move(system_prompt),   std::move(api),
+            std::move(tools),    std::move(permissions), std::move(session_storage),
         };
     }
 
