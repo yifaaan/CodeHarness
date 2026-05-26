@@ -20,6 +20,7 @@
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
+#include "codeharness/tools/remote_trigger_tool.h"
 #include "codeharness/tools/sleep_tool.h"
 #include "codeharness/tools/tool_search_tool.h"
 #include "codeharness/tools/todo_write_tool.h"
@@ -57,6 +58,7 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::CronCreateTool>());
         tools.register_tool(std::make_unique<tools::CronListTool>());
         tools.register_tool(std::make_unique<tools::CronDeleteTool>());
+        tools.register_tool(std::make_unique<tools::RemoteTriggerTool>());
         tools.register_tool(std::make_unique<tools::WebFetchTool>());
         tools.register_tool(std::make_unique<tools::WebSearchTool>());
 

@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iterator>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -119,6 +120,15 @@ namespace {
             return status;
         }
         return true;
+    }
+
+    auto get_cron_job(const std::string& name) -> std::optional<CronJob> {
+        for (const auto& job : load_cron_jobs()) {
+            if (job.name == name) {
+                return job;
+            }
+        }
+        return std::nullopt;
     }
 
 }  // namespace codeharness::services::cron

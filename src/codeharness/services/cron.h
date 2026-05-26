@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,5 +25,6 @@ namespace codeharness::services::cron {
     [[nodiscard]] auto save_cron_jobs(const std::vector<CronJob>& jobs) -> absl::Status;
     [[nodiscard]] auto upsert_cron_job(CronJob job) -> absl::Status;
     [[nodiscard]] auto delete_cron_job(const std::string& name) -> absl::StatusOr<bool>;
+    [[nodiscard]] auto get_cron_job(const std::string& name) -> std::optional<CronJob>;
 
 }  // namespace codeharness::services::cron

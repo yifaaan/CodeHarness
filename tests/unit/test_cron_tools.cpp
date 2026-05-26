@@ -10,6 +10,7 @@
 #include "codeharness/tools/cron_create_tool.h"
 #include "codeharness/tools/cron_delete_tool.h"
 #include "codeharness/tools/cron_list_tool.h"
+#include "codeharness/tools/remote_trigger_tool.h"
 
 using namespace codeharness;
 
@@ -141,6 +142,29 @@ TEST_CASE("cron tools create list update and delete jobs") {
     CHECK(*final_list == "No cron jobs configured.");
 }
 
+TEST_CASE("remote trigger tool runs a configured cron job") {
+    auto temp = TempDirectory{"codeharness-remote-trigger-test"};
+    auto data_dir = ScopedEnvVar{"CODEHARNESS_DATA_DIR", temp.path().string()};
+    const auto context = tools::ToolExecutionContext{.cwd = temp.path()};
+
+    auto create_tool = tools::CronCreateTool{};
+    const auto created = create_tool.execute(
+        nlohmann::json{
+            {"name", "say-hello"},
+            {"schedule", "manual"},
+            {"command", "echo triggered"},
+        },
+        context);
+    REQUIRE(created.ok());
+
+    auto trigger_tool = tools::RemoteTriggerTool{};
+    const auto triggered = trigger_tool.execute(
+        nlohmann::json{{"name", "say-hello"}, {"timeout_seconds", 5}}, context);
+    REQUIRE(triggered.ok());
+    CHECK(*triggered == "Triggered say-hello\ntriggered");
+    CHECK_FALSE(trigger_tool.is_read_only(nlohmann::json::object()));
+}
+
 TEST_CASE("cron tools validate names and missing deletes") {
     auto temp = TempDirectory{"codeharness-cron-tools-validation-test"};
     auto data_dir = ScopedEnvVar{"CODEHARNESS_DATA_DIR", temp.path().string()};
@@ -157,4 +181,9 @@ TEST_CASE("cron tools validate names and missing deletes") {
     const auto missing = delete_tool.execute(nlohmann::json{{"name", "missing"}}, context);
     REQUIRE_FALSE(missing.ok());
     CHECK(missing.status().message() == "Cron job not found: missing");
+
+    auto trigger_tool = tools::RemoteTriggerTool{};
+    const auto missing_trigger = trigger_tool.execute(nlohmann::json{{"name", "missing"}}, context);
+    REQUIRE_FALSE(missing_trigger.ok());
+    CHECK(missing_trigger.status().message() == "Cron job not found: missing");
 }
