@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "codeharness/logging.h"
+#include "codeharness/tools/ask_user_question_tool.h"
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/brief_tool.h"
 #include "codeharness/tools/config_tool.h"
@@ -19,6 +20,8 @@
 #include "codeharness/tools/sleep_tool.h"
 #include "codeharness/tools/tool_search_tool.h"
 #include "codeharness/tools/todo_write_tool.h"
+#include "codeharness/tools/web_fetch_tool.h"
+#include "codeharness/tools/web_search_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 
 namespace codeharness::app {
@@ -37,6 +40,7 @@ namespace codeharness::app {
 
         auto tools = tools::ToolRegistry{};
         tools.register_tool(std::make_unique<tools::BashTool>());
+        tools.register_tool(std::make_unique<tools::AskUserQuestionTool>());
         tools.register_tool(std::make_unique<tools::ReadFileTool>());
         tools.register_tool(std::make_unique<tools::WriteFileTool>());
         tools.register_tool(std::make_unique<tools::EditFileTool>());
@@ -47,6 +51,8 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::SleepTool>());
         tools.register_tool(std::make_unique<tools::TodoWriteTool>());
         tools.register_tool(std::make_unique<tools::ConfigTool>());
+        tools.register_tool(std::make_unique<tools::WebFetchTool>());
+        tools.register_tool(std::make_unique<tools::WebSearchTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{

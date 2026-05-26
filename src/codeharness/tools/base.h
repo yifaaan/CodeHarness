@@ -4,6 +4,8 @@
 #include <absl/strings/string_view.h>
 
 #include <filesystem>
+#include <functional>
+#include <string>
 #include <nlohmann/json.hpp>
 
 namespace codeharness::tools {
@@ -13,6 +15,7 @@ namespace codeharness::tools {
     struct ToolExecutionContext {
         std::filesystem::path cwd;
         const ToolRegistry* tool_registry = nullptr;
+        std::function<absl::StatusOr<std::string>(absl::string_view)> ask_user_prompt;
     };
 
     class Tool {

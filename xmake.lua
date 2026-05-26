@@ -8,6 +8,9 @@ add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
 add_requires("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "doctest", "libcurl", "date")
 add_requires("glob")
 add_requires("reproc")
+add_requires("cpr", {configs = {ssl = true}})
+add_requires("ada")
+add_requires("cpp-httplib")
 
 if is_mode("debug") then
     set_symbols("debug")
@@ -35,6 +38,8 @@ target("codeharness")
     add_packages("abseil", "cli11", "nlohmann_json", "fmt", "spdlog", "libcurl", "date")
     add_packages("glob")
     add_packages("reproc")
+    add_packages("cpr")
+    add_packages("ada")
 
 target("codeharness_tests")
     set_kind("binary")
@@ -44,3 +49,9 @@ target("codeharness_tests")
     add_packages("abseil", "doctest", "nlohmann_json", "fmt", "spdlog", "libcurl", "date")
     add_packages("glob")
     add_packages("reproc")
+    add_packages("cpr")
+    add_packages("ada")
+    add_packages("cpp-httplib")
+    if is_plat("windows") then
+        add_syslinks("ws2_32")
+    end
