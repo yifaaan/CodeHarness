@@ -13,6 +13,9 @@
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/brief_tool.h"
 #include "codeharness/tools/config_tool.h"
+#include "codeharness/tools/cron_create_tool.h"
+#include "codeharness/tools/cron_delete_tool.h"
+#include "codeharness/tools/cron_list_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
@@ -51,6 +54,9 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::SleepTool>());
         tools.register_tool(std::make_unique<tools::TodoWriteTool>());
         tools.register_tool(std::make_unique<tools::ConfigTool>());
+        tools.register_tool(std::make_unique<tools::CronCreateTool>());
+        tools.register_tool(std::make_unique<tools::CronListTool>());
+        tools.register_tool(std::make_unique<tools::CronDeleteTool>());
         tools.register_tool(std::make_unique<tools::WebFetchTool>());
         tools.register_tool(std::make_unique<tools::WebSearchTool>());
 
