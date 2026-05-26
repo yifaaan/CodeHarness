@@ -10,6 +10,7 @@
 
 #include "codeharness/logging.h"
 #include "codeharness/tools/brief_tool.h"
+#include "codeharness/tools/config_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
@@ -43,6 +44,7 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::BriefTool>());
         tools.register_tool(std::make_unique<tools::SleepTool>());
         tools.register_tool(std::make_unique<tools::TodoWriteTool>());
+        tools.register_tool(std::make_unique<tools::ConfigTool>());
 
         auto permissions = permissions::PermissionChecker{settings.permissions};
         auto api = api::OpenAIClient{
