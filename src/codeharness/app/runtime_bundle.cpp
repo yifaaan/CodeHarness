@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "codeharness/logging.h"
+#include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/brief_tool.h"
 #include "codeharness/tools/config_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
@@ -35,6 +36,7 @@ namespace codeharness::app {
                      !settings.api.api_key.empty());
 
         auto tools = tools::ToolRegistry{};
+        tools.register_tool(std::make_unique<tools::BashTool>());
         tools.register_tool(std::make_unique<tools::ReadFileTool>());
         tools.register_tool(std::make_unique<tools::WriteFileTool>());
         tools.register_tool(std::make_unique<tools::EditFileTool>());
