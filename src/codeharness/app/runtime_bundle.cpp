@@ -17,6 +17,8 @@
 #include "codeharness/tools/cron_delete_tool.h"
 #include "codeharness/tools/cron_list_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
+#include "codeharness/tools/enter_plan_mode_tool.h"
+#include "codeharness/tools/exit_plan_mode_tool.h"
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
@@ -54,6 +56,8 @@ namespace codeharness::app {
         tools.register_tool(std::make_unique<tools::BriefTool>());
         tools.register_tool(std::make_unique<tools::SleepTool>());
         tools.register_tool(std::make_unique<tools::TodoWriteTool>());
+        tools.register_tool(std::make_unique<tools::EnterPlanModeTool>());
+        tools.register_tool(std::make_unique<tools::ExitPlanModeTool>());
         tools.register_tool(std::make_unique<tools::ConfigTool>());
         tools.register_tool(std::make_unique<tools::CronCreateTool>());
         tools.register_tool(std::make_unique<tools::CronListTool>());
