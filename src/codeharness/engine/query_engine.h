@@ -5,13 +5,13 @@
 #include <absl/types/span.h>
 
 #include <filesystem>
-#include <functional>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
 #include "codeharness/api/client.h"
+#include "codeharness/engine/cost_tracker.h"
 #include "codeharness/engine/message.h"
 #include "codeharness/engine/stream_event.h"
 #include "codeharness/permissions/checker.h"
@@ -54,6 +54,6 @@ namespace codeharness::engine {
         int max_tokens_{4096};
         int max_turns_{20};
         std::vector<ConversationMessage> messages_;  // 会话历史
-        UsageSnapshot total_usage_;
+        CostTracker cost_tracker_;
     };
 }  // namespace codeharness::engine

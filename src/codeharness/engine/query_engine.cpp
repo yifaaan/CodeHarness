@@ -79,8 +79,7 @@ namespace codeharness::engine {
             }
 
             messages_.push_back(final_message.message);
-            total_usage_.input_tokens += final_message.usage.input_tokens;
-            total_usage_.output_tokens += final_message.usage.output_tokens;
+            cost_tracker_.add(final_message.usage);
 
             sink(AssistantTurnComplete{
                 .message = final_message.message,
@@ -89,10 +88,11 @@ namespace codeharness::engine {
 
             const auto tool_calls = final_message.message.tool_uses();
             if (tool_calls.empty()) {
+                const auto total_usage = cost_tracker_.total();
                 CH_LOG_DEBUG("QueryEngine::submit_message",
                              "turn={} completed without tool calls total_input_tokens={} "
                              "total_output_tokens={}",
-                             turn, total_usage_.input_tokens, total_usage_.output_tokens);
+                             turn, total_usage.input_tokens, total_usage.output_tokens);
                 return absl::OkStatus();
             }
             CH_LOG_DEBUG("QueryEngine::submit_message", "turn={} tool_calls={}", turn,
@@ -198,13 +198,14 @@ namespace codeharness::engine {
         return messages_;
     }
 
-    auto QueryEngine::total_usage() const noexcept -> UsageSnapshot { return total_usage_; }
+    auto QueryEngine::total_usage() const noexcept -> UsageSnapshot { return cost_tracker_.total(); }
 
     auto QueryEngine::clear() noexcept -> void {
+        const auto total_usage = cost_tracker_.total();
         CH_LOG_DEBUG("QueryEngine::clear", "messages={} input_tokens={} output_tokens={}",
-                     messages_.size(), total_usage_.input_tokens, total_usage_.output_tokens);
+                     messages_.size(), total_usage.input_tokens, total_usage.output_tokens);
         messages_.clear();
-        total_usage_ = UsageSnapshot{};
+        cost_tracker_.clear();
     }
 
     auto QueryEngine::set_model(std::string model) noexcept -> void {
