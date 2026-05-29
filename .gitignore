@@ -7,7 +7,13 @@ compile_commands.json
 *.user
 *.log
 *.tmp
-docs/
 AGENTS.md
 CLAUDE.md
 .claude
+*.pdb
+*.exe
+*.dll
+*.so
+*.o
+__pycache__/
+Thumbs.db
