@@ -1,19 +1,34 @@
-.xmake/
-build/
-compile_commands.json
-.cache/
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+/vendor/
+
+# IDE
 .vs/
 .vscode/
+.idea/
 *.user
 *.log
 *.tmp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Build
+/build/
+/dist/
+/.xmake/
+/.cache/
+compile_commands.json
+
+# Claude/AGENTS
 AGENTS.md
 CLAUDE.md
 .claude
-*.pdb
-*.exe
-*.dll
-*.so
-*.o
-__pycache__/
-Thumbs.db

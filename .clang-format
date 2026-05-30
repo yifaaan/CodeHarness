@@ -1,19 +1,81 @@
 ---
-Language:        Cpp
-BasedOnStyle:  Google
+BasedOnStyle: Microsoft
 AccessModifierOffset: -4
-Standard:        c++23
-IndentWidth:     4
-TabWidth:        4
-UseTab:          Never
-ColumnLimit:     100
-AlignAfterOpenBracket: Align
+AlignAfterOpenBracket: AlwaysBreak
+AlignConsecutiveDeclarations:
+  PadOperators: true
+AlignOperands: true
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+BinPackArguments: false
 BinPackParameters: false
-AlignEscapedNewlines: Left
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: true
+  AfterStruct: true
+  AfterUnion: false
+  AfterExternBlock: true
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+BreakConstructorInitializers: AfterColon
+IncludeCategories:
+  - Regex: ^<ext/.*\.h>
+    Priority: 2
+  - Regex: ^<.*\.h>
+    Priority: 1
+  - Regex: ^<.*
+    Priority: 2
+  - Regex: .*
+    Priority: 3
+InsertBraces: true
+QualifierAlignment: Left
+ReflowComments: true
+SortUsingDeclarations: true
+SpacesInAngles: false
+RawStringFormats:
+  - Language: Cpp
+    Delimiters:
+      - cc
+      - CC
+      - cpp
+      - Cpp
+      - CPP
+      - c++
+      - C++
+    CanonicalDelimiter: ""
+    BasedOnStyle: google
+  - Language: TextProto
+    Delimiters:
+      - pb
+      - PB
+      - proto
+      - PROTO
+    EnclosingFunctions:
+      - EqualsProto
+      - EquivToProto
+      - PARSE_PARTIAL_TEXT_PROTO
+      - PARSE_TEST_PROTO
+      - PARSE_TEXT_PROTO
+      - ParseTextOrDie
+      - ParseTextProtoOrDie
+    CanonicalDelimiter: ""
+    BasedOnStyle: google
+Language: Cpp
+AlwaysBreakAfterReturnType: None
 AlwaysBreakTemplateDeclarations: Yes
-PackConstructorInitializers: Never
-BreakConstructorInitializersBeforeComma: false
-IndentPPDirectives: None
-DerivePointerAlignment: false
-PointerAlignment: Left
-...
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+KeepEmptyLinesAtTheStartOfBlocks: false
+SpaceInEmptyParentheses: false
+SpacesInCStyleCastParentheses: false
+SpacesInParentheses: false
