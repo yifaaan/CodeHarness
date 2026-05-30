@@ -3,7 +3,7 @@
 #include <nonstd/expected.hpp>
 #include <string>
 
-#include "error.h"
+#include "codeharness/core/error.h"
 
 namespace codeharness
 {
