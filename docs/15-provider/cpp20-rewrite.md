@@ -332,7 +332,7 @@ add_requires("openssl")
 add_requires("ada")
 add_requires("zlib")
 add_requires("brotli")
-add_requires("pcre2")
+add_requires("re2")
 ```
 
 然后：
@@ -341,11 +341,11 @@ add_requires("pcre2")
 target("codeharness")
     set_kind("binary")
     add_files("src/**.cpp")
-    add_packages("nlohmann_json", "cli11", "spdlog", "asio", "openssl", "ada", "zlib", "brotli", "pcre2")
+    add_packages("nlohmann_json", "cli11", "spdlog", "asio", "openssl", "ada", "zlib", "brotli", "re2")
     set_languages("c++20")
 ```
 
-说明：外部依赖从 awesome-cpp 收录项目中挑选。`pcre2` 用于 grep/search 正则能力；网络 streaming 不使用 libcurl/cpp-httplib/Beast，统一走 Asio。
+说明：外部依赖从 awesome-cpp 收录项目中挑选。`re2` 用于 grep/search 正则能力；网络 streaming 不使用 libcurl/cpp-httplib/Beast，统一走 Asio。
 
 ## 测试建议
 

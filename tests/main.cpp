@@ -6,6 +6,7 @@
 #include "codeharness/permissions/permission.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/provider/provider.h"
+#include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/tool_registry.h"
 #include "codeharness/tools/write_file_tool.h"
@@ -133,6 +134,75 @@ TEST_CASE("read_file rejects paths outside cwd")
 
     REQUIRE(!result.has_value());
     CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+TEST_CASE("read_file returns requested line range")
+{
+    TempDir temp{"codeharness-read-file-range-test"};
+
+    {
+        std::ofstream file{temp.path / "lines.txt", std::ios::binary};
+        file << "line 1\n";
+        file << "line 2\n";
+        file << "line 3\n";
+        file << "line 4\n";
+    }
+
+    codeharness::ReadFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "tool-use-range";
+    request.name = "read_file";
+    request.input_json = R"({"path":"lines.txt","offset":1,"limit":2})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->content == "line 2\nline 3\n");
+    CHECK(result->is_error == false);
+}
+
+TEST_CASE("grep returns regex matches with file and line")
+{
+    TempDir temp{"codeharness-grep-test"};
+
+    std::filesystem::create_directories(temp.path / "src");
+    std::filesystem::create_directories(temp.path / ".git");
+
+    {
+        std::ofstream file{temp.path / "src" / "main.cpp", std::ios::binary};
+        file << "int main() {\n";
+        file << "    // TODO: wire provider\n";
+        file << "    return 0;\n";
+        file << "}\n";
+    }
+
+    {
+        std::ofstream file{temp.path / ".git" / "ignored.txt", std::ios::binary};
+        file << "TODO: should not be searched\n";
+    }
+
+    codeharness::GrepTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "grep-use-1";
+    request.name = "grep";
+    request.input_json = R"({"pattern":"TODO:.*provider","path":".","max_results":10})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    CHECK(result->content.find("src/main.cpp") != std::string::npos);
+    CHECK(result->content.find("\"line_number\": 2") != std::string::npos);
+    CHECK(result->content.find("TODO: wire provider") != std::string::npos);
+    CHECK(result->content.find("ignored.txt") == std::string::npos);
 }
 
 namespace

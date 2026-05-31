@@ -17,7 +17,7 @@ local runtime_packages = {
     "glob",
     "nlohmann_json",
     "openssl",
-    "pcre2",
+    "re2",
     "reproc",
     "spdlog",
     "sqlite3",

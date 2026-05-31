@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <sstream>
+#include <string_view>
 #include <system_error>
 
 #include "codeharness/tools/workspace_path.h"
@@ -72,6 +73,39 @@ auto parse_read_file_input(const nlohmann::json& input) -> Result<ReadFileInput>
     return parsed;
 }
 
+// 只返回文件中的一段“行范围”。
+//
+//   - content 是完整文件内容；
+//   - offset 表示跳过前多少行，从 0 开始计数；
+//   - limit 表示最多返回多少行。
+auto slice_lines(std::string_view content, int offset, int limit) -> std::string
+{
+    std::string result;
+    int current_line = 0;
+    int selected_lines = 0;
+    std::size_t line_start = 0;
+
+    while (line_start < content.size() && selected_lines < limit)
+    {
+        // line_end 指向当前行的 '\n'；如果没有找到，说明当前行是最后一行。
+        const auto newline = content.find('\n', line_start);
+        const auto line_end = newline == std::string_view::npos ? content.size() : newline + 1;
+
+        if (current_line >= offset)
+        {
+            // substr(line_start, count) 取出 [line_start, line_end) 这段原始内容，
+            // 再 append 到结果里。line_end 可能包含 '\n'，所以输出会保留原来的换行。
+            result.append(content.substr(line_start, line_end - line_start));
+            ++selected_lines;
+        }
+
+        line_start = line_end;
+        ++current_line;
+    }
+
+    return result;
+}
+
 } // namespace
 
 auto ReadFileTool::name() const -> std::string
@@ -125,9 +159,12 @@ auto ReadFileTool::execute(const ToolRequest& request, const ToolContext& contex
         return fail<ToolResponse>(content.error().kind, content.error().message);
     }
 
+    // read_file 一次把文件读入内存，然后再按行截取。
+    auto visible_content = slice_lines(*content, parsed_input->offset, parsed_input->limit);
+
     return ToolResponse{
         .tool_use_id = request.id,
-        .content = std::move(*content),
+        .content = std::move(visible_content),
         .is_error = false,
     };
 }

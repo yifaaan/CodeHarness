@@ -91,7 +91,7 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 | JSON | `nlohmann_json` |
 | HTTP/SSE | `asio` + `openssl` + `ada`，HTTP framing 和 SSE parser 先放在项目内实现 |
 | HTTP 解压 | `zlib` + `brotli` |
-| 搜索 | `pcre2` 通过 xmake 导入，`std::filesystem` 负责遍历 |
+| 搜索 | `re2` 通过 xmake 导入，`std::filesystem` 负责遍历 |
 | 进程 | `reproc`，统一包成 `ProcessRunner` |
 | 异步 | 初版 thread pool + blocking queue，网络 I/O 统一走 standalone Asio |
 | YAML frontmatter | `yaml-cpp` |

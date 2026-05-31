@@ -15,7 +15,7 @@
 | `brotli` | Brotli | br 解压 | 现代 HTTP 常见压缩格式 |
 | `nlohmann_json` | json / JSON for Modern C++ | JSON 模型和协议 | 上手快，适合早期开发和调试 |
 | `yaml-cpp` | yaml-cpp | YAML frontmatter | skills、memory、agent/plugin markdown frontmatter |
-| `pcre2` | PCRE2 | grep/search 正则 | 成熟 PCRE2，xmake 可直接导入 |
+| `re2` | RE2 | grep/search 正则 | C++ API，线性时间匹配，xmake 可直接导入 |
 | `cli11` | CLI11 | CLI 参数解析 | 避免自写复杂命令行解析 |
 | `expected-lite` | 用户确认例外 | `expected`/Result 类型 | C++20 没有 `std::expected`，用它统一错误返回，后续可迁移到 C++23 `std::expected` |
 | `spdlog` | spdlog | 日志 | 成熟、高性能、跨平台 |
@@ -33,7 +33,7 @@
 | `tiny-process-library` | 不导入 | 当前未在 awesome-cpp 命中，已改用 awesome-cpp 收录的 `reproc` |
 | `cpp-httplib` | 暂不默认 | awesome-cpp 收录，但它会形成第二套网络栈；当前约束是网络 I/O 统一走 standalone Asio |
 | `Boost.Beast` | 暂不默认 | awesome-cpp 收录，但会引入 Boost/Boost.Asio；当前先保持 standalone Asio 基础设施 |
-| `re2` | 暂不默认 | 与 `pcre2` 职责重叠，可后续替换为更安全的线性正则引擎 |
+| `pcre2` | 暂不默认 | 功能完整，但直接使用是 C API；当前 grep 先选 RE2 的 C++ API |
 | `websocketpp` | 暂不默认 | 会引入 Boost，MCP WebSocket 当前优先级低 |
 | `libgit2` | 暂不默认 | GPL-2.0-only，许可证和依赖链需要单独评估 |
 | `tomlplusplus` | 不导入 | 当前 xmake 检查显示 missing，且配置先用 JSON/YAML 即可 |
@@ -46,7 +46,7 @@
 | --- | --- |
 | provider/network | `asio`、`openssl`、`ada`、`zlib`、`brotli` |
 | MCP | `asio`、`openssl`、`nlohmann_json` |
-| tools/search | `pcre2`、`std::filesystem` |
+| tools/search | `re2`、`std::filesystem` |
 | tools/bash/tasks | `reproc` |
 | config/skills/memory | `nlohmann_json`、`yaml-cpp`、`sqlite3` |
 | IDs/session/task | `stduuid` |
@@ -60,6 +60,6 @@
 - 外部依赖优先在 awesome-cpp 命中，再确认 xmake 可导入；`expected-lite` 是用户确认可导入的例外。
 - 网络基础设施只基于 standalone Asio，不混用 libcurl、cpp-httplib 或 Beast 作为第二套网络栈。
 - HTTP framing 和 SSE parser 先放在项目内实现，URL 解析交给 `ada`。
-- 搜索正则交给 `pcre2`，文件遍历用 C++20 `std::filesystem`。
+- 搜索正则交给 `re2`，文件遍历用 C++20 `std::filesystem`。
 - 子进程先用 `reproc`，只有在无法满足 timeout/pipe/kill 需求时再补平台代码。
 - 本地结构化索引用 `sqlite3`，但用户可编辑的 memory/skills/plugins 仍保留 Markdown/JSON/YAML 文件格式。
