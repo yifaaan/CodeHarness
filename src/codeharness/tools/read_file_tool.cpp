@@ -8,69 +8,13 @@
 #include <sstream>
 #include <system_error>
 
+#include "codeharness/tools/workspace_path.h"
+
 namespace codeharness
 {
 
 namespace
 {
-
-auto is_under_directory(const std::filesystem::path& base, const std::filesystem::path& target) -> bool
-{
-    std::error_code error;
-    auto relative = std::filesystem::relative(target, base, error);
-    if (error || relative.empty() || relative.is_absolute())
-    {
-        return false;
-    }
-
-    for (auto& part : relative)
-    {
-        if (part == "..")
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-auto resolve_workspace_path(const std::filesystem::path& cwd, const std::filesystem::path& requested)
-    -> Result<std::filesystem::path>
-{
-    if (requested.empty())
-    {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "path is empty");
-    }
-
-    if (requested.is_absolute())
-    {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "absolute paths are not allowed");
-    }
-
-    std::error_code error;
-    // 规范化路径，去除其中的 .. 和 . 等
-    auto base = std::filesystem::weakly_canonical(cwd, error);
-    if (error)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve workspace path: " + error.message());
-    }
-
-    const auto target = std::filesystem::weakly_canonical(base / requested, error);
-    if (error)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve path: " + error.message());
-    }
-
-    auto base_text = base.native();
-    auto target_text = target.native();
-
-    if (!is_under_directory(base, target))
-    {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "path escapes cwd");
-    }
-
-    return target;
-}
 
 auto read_text_file(const std::filesystem::path& path) -> Result<std::string>
 {

@@ -528,3 +528,24 @@ TEST_CASE("permission checker denied_tools wins over allowed_tools")
 
     CHECK(decision.action == codeharness::PermissionAction::Deny);
 }
+
+TEST_CASE("workspace path rejects escaping through nested relative path")
+{
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-workspace-escape";
+    request.name = "write_file";
+
+    // nested/../../outside.txt 会向上跳两级，
+    // 最终逃逸 cwd，所以必须被拒绝。
+    request.input_json = R"({"path":"nested/../../outside.txt","content":"escape"})";
+
+    codeharness::ToolContext context;
+    context.cwd = std::filesystem::temp_directory_path();
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}

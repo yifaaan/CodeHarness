@@ -8,80 +8,13 @@
 #include <sstream>
 #include <system_error>
 
+#include "codeharness/tools/workspace_path.h"
+
 namespace codeharness
 {
 
 namespace
 {
-
-// ----------------------------------------------------------------
-// 以下两个辅助函数与 ReadFileTool 中完全相同：
-//   is_under_directory — 检查 target 是否在 base 目录树下
-//   resolve_workspace_path — 将用户提供的相对路径解析为 cwd 下的绝对路径
-//
-// 在实际项目中，这些应该提取到一个公共头文件（如 core/filesystem.h）
-// 避免重复。这里为了独立可读，先原样复制。
-// ----------------------------------------------------------------
-
-auto is_under_directory(const std::filesystem::path& base, const std::filesystem::path& target) -> bool
-{
-    std::error_code error;
-    auto relative = std::filesystem::relative(target, base, error);
-
-    // 如果解析失败、结果为空、或者结果是绝对路径，说明不在 base 下
-    if (error || relative.empty() || relative.is_absolute())
-    {
-        return false;
-    }
-
-    // 如果路径中包含 ".." 说明逃逸出了 base
-    for (auto& part : relative)
-    {
-        if (part == "..")
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-auto resolve_workspace_path(const std::filesystem::path& cwd, const std::filesystem::path& requested)
-    -> Result<std::filesystem::path>
-{
-    if (requested.empty())
-    {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "path is empty");
-    }
-
-    if (requested.is_absolute())
-    {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "absolute paths are not allowed");
-    }
-
-    std::error_code error;
-
-    // weakly_canonical：规范化路径，去掉 ".." 和 "."
-    // 与 canonical 不同，它不要求路径必须存在
-    auto base = std::filesystem::weakly_canonical(cwd, error);
-    if (error)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve workspace path: " + error.message());
-    }
-
-    auto target = std::filesystem::weakly_canonical(base / requested, error);
-    if (error)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve path: " + error.message());
-    }
-
-    if (!is_under_directory(base, target))
-    {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "path escapes cwd");
-    }
-
-    return target;
-}
 
 // WriteFileTool 的输入参数结构体
 struct WriteFileInput
