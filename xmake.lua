@@ -46,5 +46,9 @@ target("codeharness")
 target("codeharness_tests")
     set_kind("binary")
     add_files("tests/**.cpp")
+    add_files("src/codeharness/**.cpp")
     add_includedirs("src")
     add_packages("doctest")
+    for _, package in ipairs(runtime_packages) do
+        add_packages(package)
+    end
