@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include "codeharness/core/message.h"
+#include "codeharness/engine/engine.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/version.h"
 
@@ -25,4 +26,22 @@ TEST_CASE("echo provider returns latest user text")
     REQUIRE(result.has_value());
     CHECK(result->role == codeharness::Role::Assistant);
     CHECK(codeharness::collect_text(*result) == "hello");
+}
+
+TEST_CASE("engine runs one provider turn")
+{
+    codeharness::EchoProvider provider;
+    codeharness::Engine engine{provider};
+
+    codeharness::RunRequest request;
+    request.prompt = "hello";
+    request.options.max_turns = 1;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text == "hello");
+    REQUIRE(result->messages.size() == 2);
+    CHECK(result->messages[0].role == codeharness::Role::User);
+    CHECK(result->messages[1].role == codeharness::Role::Assistant);
 }
