@@ -7,12 +7,48 @@
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/tool_registry.h"
+#include "codeharness/tools/write_file_tool.h"
 #include "codeharness/version.h"
 
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <vector>
+#include <iterator>
+
+namespace
+{
+
+struct TempDir
+{
+    std::filesystem::path path;
+
+    explicit TempDir(std::string name)
+        : path(std::filesystem::temp_directory_path() / std::move(name))
+    {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+        std::filesystem::create_directories(path);
+    }
+
+    ~TempDir()
+    {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+    }
+};
+
+auto read_file_text(const std::filesystem::path& path) -> std::string
+{
+    std::ifstream file{path, std::ios::binary};
+
+    return std::string(
+        (std::istreambuf_iterator<char>(file)),
+        std::istreambuf_iterator<char>());
+}
+
+} // namespace
+
 
 TEST_CASE("project metadata is available")
 {
@@ -281,4 +317,141 @@ TEST_CASE("provider generate rejects tool input before tool start")
 
     REQUIRE(!result.has_value());
     CHECK(result.error().kind == codeharness::ErrorKind::Provider);
+}
+
+// WriteFileTool
+TEST_CASE("write_file creates a new file")
+{
+    TempDir temp{"codeharness-write-file-test"};
+
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-1";
+    request.name = "write_file";
+    request.input_json = R"({"path":"output.txt","content":"hello world"})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    CHECK(result->tool_use_id == "test-1");
+
+    auto file_path = temp.path / "output.txt";
+    REQUIRE(std::filesystem::exists(file_path));
+
+    // 验证文件内容
+    REQUIRE(std::filesystem::exists(file_path));
+    CHECK(read_file_text(file_path) == "hello world");
+}
+
+TEST_CASE("write_file creates parent directories by default")
+{
+    TempDir temp{"codeharness-write-file-nested-test"};
+
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-2";
+    request.name = "write_file";
+    request.input_json = R"({"path":"deep/nested/dir/file.txt","content":"nested content"})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+
+    // 中间目录应该被自动创建
+    auto file_path = temp.path / "deep" / "nested" / "dir" / "file.txt";
+    REQUIRE(std::filesystem::exists(file_path));
+}
+
+TEST_CASE("write_file rejects paths outside cwd")
+{
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-3";
+    request.name = "write_file";
+    request.input_json = R"({"path":"../outside.txt","content":"escape"})";
+
+    codeharness::ToolContext context;
+    context.cwd = std::filesystem::temp_directory_path();
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+TEST_CASE("write_file rejects absolute paths")
+{
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-4";
+    request.name = "write_file";
+    request.input_json = R"({"path":"/etc/passwd","content":"hacked"})";
+
+    codeharness::ToolContext context;
+    context.cwd = std::filesystem::temp_directory_path();
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+TEST_CASE("write_file overwrites existing file")
+{
+    TempDir temp{"codeharness-write-overwrite-test"};
+
+    // 先创建一个已有文件
+    {
+        std::ofstream file{temp.path / "existing.txt"};
+        file << "old content";
+    }
+
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-5";
+    request.name = "write_file";
+    request.input_json = R"({"path":"existing.txt","content":"new content"})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    // 结果应包含 "Overwrote" 字样
+    CHECK(result->content.find("Overwrote") != std::string::npos);
+    CHECK(read_file_text(temp.path / "existing.txt") == "new content");
+}
+
+TEST_CASE("write_file requires content field")
+{
+    codeharness::WriteFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "test-6";
+    request.name = "write_file";
+    // 缺少 content 字段
+    request.input_json = R"({"path":"test.txt"})";
+
+    codeharness::ToolContext context;
+    context.cwd = std::filesystem::temp_directory_path();
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
 }
