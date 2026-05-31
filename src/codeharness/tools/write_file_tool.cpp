@@ -130,7 +130,7 @@ auto WriteFileTool::description() const -> std::string
            "Uses atomic write (write to temp file then rename) to prevent corruption.";
 }
 
-auto WriteFileTool::execute(const ToolRequest& request, const ToolContext& context) -> Result<ToolResponse>
+auto WriteFileTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
 {
     nlohmann::json input;
     try

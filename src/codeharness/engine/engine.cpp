@@ -1,5 +1,6 @@
 #include "codeharness/engine/engine.h"
 
+#include <nlohmann/json.hpp>
 #include <nonstd/expected.hpp>
 
 #include <filesystem>
@@ -38,7 +39,12 @@ Engine::Engine(Provider& provider) : provider_(provider)
 {
 }
 
-Engine::Engine(Provider& provider, const ToolRegistry& tools) : provider_(provider), tools_(&tools)
+Engine::Engine(Provider& provider, ToolRegistry& tools) : provider_(provider), tools_(&tools)
+{
+}
+
+Engine::Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker& permissions) :
+    provider_(provider), tools_(&tools), permissions_(&permissions)
 {
 }
 
@@ -183,14 +189,62 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
     return message;
 }
 
-auto Engine::execute_tool_use(const ToolUseBlock& tool_use) const -> ToolResultBlock
+auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
 {
-    ToolRequest request{.id = tool_use.id, .name = tool_use.name, .input_json = tool_use.input_json};
+    auto tool = tools_->find(tool_use.name);
+
+    // 权限检查
+    if (permissions_ != nullptr)
+    {
+        // 从工具的 input JSON 里提取 path
+        std::optional<std::filesystem::path> target_path;
+
+        try
+        {
+            auto input = nlohmann::json::parse(tool_use.input_json);
+            if (input.contains("path") && input["path"].is_string())
+            {
+                target_path = input["path"].get<std::string>();
+            }
+        }
+        catch (const nlohmann::json::parse_error&)
+        {
+        }
+
+        auto decision = permissions_->evaluate(tool_use.name, tool->is_read_only(), target_path, std::nullopt);
+
+        // 拒绝
+        if (decision.action == PermissionAction::Deny)
+        {
+            return ToolResultBlock{
+                .tool_use_id = tool_use.id,
+                .content = "permission denied: " + decision.reason,
+                .is_error = true,
+            };
+        }
+
+        // TODO: 需要确认但当前没有 UI → 当成拒绝。
+        if (decision.action == PermissionAction::Ask)
+        {
+            return ToolResultBlock{
+                .tool_use_id = tool_use.id,
+                .content = "permission confirmation required but no prompt is configured: " + decision.reason,
+                .is_error = true,
+            };
+        }
+    }
+
+    // 执行工具
+    ToolRequest request{
+        .id = tool_use.id,
+        .name = tool_use.name,
+        .input_json = tool_use.input_json,
+    };
 
     ToolContext context;
     context.cwd = std::filesystem::current_path();
 
-    auto response = tools_->execute(request, context);
+    auto response = tool->execute(request, context);
     if (!response)
     {
         return ToolResultBlock{

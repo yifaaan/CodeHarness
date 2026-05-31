@@ -84,7 +84,12 @@ auto ReadFileTool::description() const -> std::string
     return "Read a UTF-8 text file under the current workspace directory.";
 }
 
-auto ReadFileTool::execute(const ToolRequest& request, const ToolContext& context) -> Result<ToolResponse>
+auto ReadFileTool::is_read_only() const noexcept -> bool
+{
+    return true;
+}
+
+auto ReadFileTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
 {
     nlohmann::json input;
 

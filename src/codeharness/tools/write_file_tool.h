@@ -15,7 +15,7 @@ class WriteFileTool final : public Tool
 public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
-    auto execute(const ToolRequest& request, const ToolContext& context) -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
 };
 
 } // namespace codeharness

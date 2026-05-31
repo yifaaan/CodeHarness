@@ -2,6 +2,7 @@
 
 #include "codeharness/core/message.h"
 #include "codeharness/core/result.h"
+#include "codeharness/permissions/permission.h"
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/tool_registry.h"
 
@@ -70,19 +71,21 @@ class Engine
 {
 public:
     explicit Engine(Provider& provider);
-    Engine(Provider& provider, const ToolRegistry& tools);
+    Engine(Provider& provider, ToolRegistry& tools);
+    Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker& permissions);
 
     auto run(const RunRequest& request) -> Result<RunResult>;
     auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> Result<RunResult>;
 
 private:
-    auto execute_tool_use(const ToolUseBlock& tool_use) const -> ToolResultBlock;
+    auto execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock;
 
     // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
     auto stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink) const -> Result<Message>;
-    
+
     Provider& provider_;
-    const ToolRegistry *tools_ = nullptr;
+    ToolRegistry *tools_ = nullptr;
+    const PermissionChecker *permissions_ = nullptr;
 };
 
 } // namespace codeharness

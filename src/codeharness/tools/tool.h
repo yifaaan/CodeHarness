@@ -34,7 +34,14 @@ public:
 
     virtual auto name() const -> std::string = 0;
     virtual auto description() const -> std::string = 0;
-    virtual auto execute(const ToolRequest& request, const ToolContext& context) -> Result<ToolResponse> = 0;
+
+    // 工具是否只读。
+    virtual auto is_read_only() const noexcept -> bool
+    {
+        return false;
+    }
+
+    virtual auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> = 0;
 };
 
 } // namespace codeharness

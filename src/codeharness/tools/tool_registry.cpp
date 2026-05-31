@@ -27,6 +27,17 @@ auto ToolRegistry::execute(const ToolRequest& request, const ToolContext& contex
     return it->second->execute(request, context);
 }
 
+auto ToolRegistry::find(std::string_view name) const -> const Tool*
+{
+    auto it = tools_.find(std::string{name});
+    if (it == tools_.end())
+    {
+        return nullptr;
+    }
+
+    return it->second.get();
+}
+
 auto ToolRegistry::names() const -> std::vector<std::string>
 {
     std::vector<std::string> result;
