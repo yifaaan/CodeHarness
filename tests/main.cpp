@@ -247,3 +247,38 @@ TEST_CASE("engine streaming emits assistant text delta")
     CHECK(streamed_text == "hello");
     CHECK(result->output_text == "hello");
 }
+
+namespace
+{
+
+class ToolDeltaBeforeStartProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        sink(
+            codeharness::ToolUseInputDelta{
+                .id = "tool-use-1",
+                .input_json_delta = "{}",
+            });
+        sink(codeharness::MessageFinished{});
+
+        return {};
+    }
+};
+
+} // namespace
+
+TEST_CASE("provider generate rejects tool input before tool start")
+{
+    ToolDeltaBeforeStartProvider provider;
+
+    std::vector<codeharness::Message> messages;
+    messages.push_back(codeharness::make_text_message(codeharness::Role::User, "hello"));
+
+    auto result = provider.generate(std::span<const codeharness::Message>(messages));
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::Provider);
+}
