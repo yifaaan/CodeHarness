@@ -14,6 +14,26 @@ namespace codeharness
 namespace
 {
 
+auto is_under_directory(const std::filesystem::path& base, const std::filesystem::path& target) -> bool
+{
+    std::error_code error;
+    auto relative = std::filesystem::relative(target, base, error);
+    if (error || relative.empty() || relative.is_absolute())
+    {
+        return false;
+    }
+
+    for (auto& part : relative)
+    {
+        if (part == "..")
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 auto resolve_workspace_path(const std::filesystem::path& cwd, const std::filesystem::path& requested)
     -> Result<std::filesystem::path>
 {
@@ -44,7 +64,7 @@ auto resolve_workspace_path(const std::filesystem::path& cwd, const std::filesys
     auto base_text = base.native();
     auto target_text = target.native();
 
-    if (target_text.size() < base_text.size() || target_text.compare(0, base_text.size(), base_text) != 0)
+    if (!is_under_directory(base, target))
     {
         return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "path escapes cwd");
     }
