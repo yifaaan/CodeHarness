@@ -66,7 +66,7 @@ auto run_cli(int argc, char **argv) -> Result<int>
     }
 
     ToolRegistry tools;
-    [[maybe_unused]] auto result = tools.add(std::make_unique<ReadFileTool>());
+    auto _ = tools.add(std::make_unique<ReadFileTool>());
 
     EchoProvider provider;
     Engine engine{provider, tools};
