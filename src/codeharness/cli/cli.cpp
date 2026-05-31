@@ -3,6 +3,7 @@
 #include "codeharness/engine/engine.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/tools/bash_tool.h"
+#include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/tool_registry.h"
 #include "codeharness/version.h"
@@ -68,6 +69,7 @@ auto run_cli(int argc, char **argv) -> Result<int>
 
     ToolRegistry tools;
     tools.add(std::make_unique<ReadFileTool>());
+    tools.add(std::make_unique<GlobTool>());
     tools.add(std::make_unique<BashTool>());
 
     EchoProvider provider;

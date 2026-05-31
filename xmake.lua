@@ -14,6 +14,7 @@ local runtime_packages = {
     "cli11",
     "expected-lite",
     "fmt",
+    "glob",
     "nlohmann_json",
     "openssl",
     "pcre2",
