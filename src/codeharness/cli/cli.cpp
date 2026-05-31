@@ -1,18 +1,19 @@
 #include "codeharness/cli/cli.h"
 
-#include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/provider/echo_provider.h"
+#include "codeharness/tools/read_file_tool.h"
+#include "codeharness/tools/tool_registry.h"
 #include "codeharness/version.h"
 
 #include <CLI/CLI.hpp>
+#include <nonstd/expected.hpp>
 
 #include <filesystem>
 #include <iostream>
-#include <span>
+#include <memory>
 #include <string>
 #include <system_error>
-#include <vector>
 
 namespace codeharness
 {
@@ -63,8 +64,11 @@ auto run_cli(int argc, char **argv) -> Result<int>
         return 0;
     }
 
+    ToolRegistry tools;
+    tools.add(std::make_unique<ReadFileTool>());
+
     EchoProvider provider;
-    Engine engine{provider};
+    Engine engine{provider, tools};
 
     RunRequest request;
     request.prompt = prompt;
