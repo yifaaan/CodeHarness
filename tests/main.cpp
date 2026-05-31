@@ -64,7 +64,8 @@ TEST_CASE("tool registry executes read_file")
     }
 
     codeharness::ToolRegistry registry;
-    registry.add(std::make_unique<codeharness::ReadFileTool>());
+    auto added = registry.add(std::make_unique<codeharness::ReadFileTool>());
+    REQUIRE(added.has_value());
 
     codeharness::ToolRequest request;
     request.id = "test-tool-use-id";
@@ -161,7 +162,8 @@ TEST_CASE("engine executes requested tool and returns final provider text")
     std::filesystem::current_path(temp_dir);
 
     codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::ReadFileTool>());
+    auto added = tools.add(std::make_unique<codeharness::ReadFileTool>());
+    REQUIRE(added.has_value());
 
     ReadFileRequestProvider provider;
     codeharness::Engine engine{provider, tools};
@@ -221,4 +223,27 @@ TEST_CASE("echo provider streams text delta")
     REQUIRE(result.has_value());
     CHECK(streamed_text == "hello");
     CHECK(finished);
+}
+
+TEST_CASE("engine streaming emits assistant text delta")
+{
+    codeharness::EchoProvider provider;
+    codeharness::Engine engine{provider};
+
+    codeharness::RunRequest request;
+    request.prompt = "hello";
+    request.options.max_turns = 1;
+
+    std::string streamed_text;
+
+    auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
+        if (const auto *delta = std::get_if<codeharness::EngineAssistantTextDelta>(&event))
+        {
+            streamed_text += delta->text;
+        }
+    });
+
+    REQUIRE(result.has_value());
+    CHECK(streamed_text == "hello");
+    CHECK(result->output_text == "hello");
 }

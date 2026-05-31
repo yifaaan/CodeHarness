@@ -9,10 +9,11 @@
 namespace codeharness
 {
 
-auto ToolRegistry::add(std::unique_ptr<Tool> tool) -> void
+auto ToolRegistry::add(std::unique_ptr<Tool> tool) -> Result<void>
 {
     auto name = tool->name();
     tools_.emplace(std::move(name), std::move(tool));
+    return {};
 }
 
 auto ToolRegistry::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>

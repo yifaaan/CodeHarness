@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <system_error>
+#include <variant>
 
 namespace codeharness
 {
@@ -25,7 +26,7 @@ auto run_cli(int argc, char **argv) -> Result<int>
     bool show_version = false;
     std::string prompt;
     std::string cwd;
-    int max_turns = 1;
+    int max_turns = 10;
 
     app.add_flag("--version", show_version, "Print version and exit");
     app.add_option("-p,--prompt", prompt, "Prompt to run in non-interactive mode");
@@ -65,7 +66,7 @@ auto run_cli(int argc, char **argv) -> Result<int>
     }
 
     ToolRegistry tools;
-    tools.add(std::make_unique<ReadFileTool>());
+    [[maybe_unused]] auto result = tools.add(std::make_unique<ReadFileTool>());
 
     EchoProvider provider;
     Engine engine{provider, tools};
@@ -74,13 +75,26 @@ auto run_cli(int argc, char **argv) -> Result<int>
     request.prompt = prompt;
     request.options.max_turns = max_turns;
 
-    auto result = engine.run(request);
+    bool printed_text = false;
+
+    auto result = engine.run_streaming(request, [&](const EngineEvent& event) {
+        if (auto delta = std::get_if<EngineAssistantTextDelta>(&event))
+        {
+            std::cout << delta->text << std::flush;
+            printed_text = true;
+        }
+    });
+
     if (!result)
     {
         return nonstd::make_unexpected(result.error());
     }
 
-    std::cout << result->output_text << '\n';
+    if (printed_text)
+    {
+        std::cout << '\n';
+    }
+    
     return 0;
 }
 

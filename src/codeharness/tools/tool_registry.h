@@ -14,7 +14,7 @@ namespace codeharness
 class ToolRegistry
 {
 public:
-    auto add(std::unique_ptr<Tool> tool) -> void;
+    auto add(std::unique_ptr<Tool> tool) -> Result<void>;
     auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>;
     auto names() const -> std::vector<std::string>;
 
