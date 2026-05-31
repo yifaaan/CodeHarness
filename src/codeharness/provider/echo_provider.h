@@ -8,7 +8,8 @@ namespace codeharness
 class EchoProvider final : public Provider
 {
 public:
-    auto generate(std::span<const Message> messages) -> Result<Message> override;
+    auto stream(std::span<const Message> messages, const ProviderEventSink& sink) -> Result<void> override;
 };
+
 
 } // namespace codeharness

@@ -106,9 +106,9 @@ namespace
 class ReadFileRequestProvider final : public codeharness::Provider
 {
 public:
-    auto generate(std::span<const codeharness::Message> messages) -> codeharness::Result<codeharness::Message> override
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
     {
-        // check history for a tool use request, and if found return a message with the tool result.
         for (auto& message : messages)
         {
             if (message.role != codeharness::Role::Tool)
@@ -120,24 +120,31 @@ public:
             {
                 if (auto result = std::get_if<codeharness::ToolResultBlock>(&block))
                 {
-                    return codeharness::make_text_message(codeharness::Role::Assistant, result->content);
+                    sink(codeharness::AssistantTextDelta{result->content});
+                    sink(codeharness::MessageFinished{});
+                    return {};
                 }
             }
         }
 
-        // otherwise return a message with a tool use request for read_file.
-        codeharness::Message message;
-        message.role = codeharness::Role::Assistant;
-        message.content.emplace_back(
-            codeharness::ToolUseBlock{
+        sink(
+            codeharness::ToolUseStarted{
                 .id = "tool-use-1",
                 .name = "read_file",
-                .input_json = R"({"path":"hello.txt"})",
             });
+        sink(
+            codeharness::ToolUseInputDelta{
+                .id = "tool-use-1",
+                .input_json_delta = R"({"path":"hello.txt"})",
+            });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
+        sink(codeharness::MessageFinished{});
 
-        return message;
+        return {};
     }
 };
+
+} // namespace
 
 TEST_CASE("engine executes requested tool and returns final provider text")
 {
@@ -177,10 +184,41 @@ TEST_CASE("engine executes requested tool and returns final provider text")
     REQUIRE(result.has_value());
     CHECK(result->output_text == "hello from engine file");
     REQUIRE(result->messages.size() == 4);
-    CHECK(result->messages[0].role == codeharness::Role::User);      // messages[0] User"read hello.txt"
-    CHECK(result->messages[1].role == codeharness::Role::Assistant); // messages[1] Assistant ToolUseBlock: read_file({"path":"hello.txt"})
-    CHECK(result->messages[2].role == codeharness::Role::Tool);      // messages[2] Tool ToolResultBlock: "hello from engine file"
-    CHECK(result->messages[3].role == codeharness::Role::Assistant); // messages[3] Assistant TextBlock: "hello from engine file"
+    CHECK(result->messages[0].role == codeharness::Role::User); // messages[0] User"read hello.txt"
+    CHECK(
+        result->messages[1].role ==
+        codeharness::Role::Assistant); // messages[1] Assistant ToolUseBlock: read_file({"path":"hello.txt"})
+    CHECK(
+        result->messages[2].role ==
+        codeharness::Role::Tool); // messages[2] Tool ToolResultBlock: "hello from engine file"
+    CHECK(
+        result->messages[3].role ==
+        codeharness::Role::Assistant); // messages[3] Assistant TextBlock: "hello from engine file"
 }
 
-} // namespace
+TEST_CASE("echo provider streams text delta")
+{
+    codeharness::EchoProvider provider;
+
+    std::vector<codeharness::Message> messages;
+    messages.push_back(codeharness::make_text_message(codeharness::Role::User, "hello"));
+
+    std::string streamed_text;
+    bool finished = false;
+
+    auto result = provider.stream(messages, [&](const codeharness::ProviderEvent& event) {
+        if (auto delta = std::get_if<codeharness::AssistantTextDelta>(&event))
+        {
+            streamed_text += delta->text;
+        }
+
+        if (std::holds_alternative<codeharness::MessageFinished>(event))
+        {
+            finished = true;
+        }
+    });
+
+    REQUIRE(result.has_value());
+    CHECK(streamed_text == "hello");
+    CHECK(finished);
+}

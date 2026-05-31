@@ -7,7 +7,7 @@
 namespace codeharness
 {
 
-auto EchoProvider::generate(std::span<const Message> messages) -> Result<Message>
+auto EchoProvider::stream(std::span<const Message> messages, const ProviderEventSink& sink) -> Result<void>
 {
     std::optional<std::string> latest_user_text;
 
@@ -30,10 +30,12 @@ auto EchoProvider::generate(std::span<const Message> messages) -> Result<Message
 
     if (!latest_user_text)
     {
-        return fail<Message>(ErrorKind::InvalidArgument, "prompt is empty");
+        return fail<void>(ErrorKind::InvalidArgument, "prompt is empty");
     }
 
-    return make_text_message(Role::Assistant, *latest_user_text);
+    sink(AssistantTextDelta{*latest_user_text});
+    sink(MessageFinished{});
+    return {};
 }
 
 } // namespace codeharness
