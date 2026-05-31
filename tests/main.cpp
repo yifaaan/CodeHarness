@@ -3,6 +3,7 @@
 
 #include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/permissions/permission.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/read_file_tool.h"
@@ -12,9 +13,10 @@
 
 #include <filesystem>
 #include <fstream>
-#include <memory>
-#include <vector>
 #include <iterator>
+#include <memory>
+#include <optional>
+#include <vector>
 
 namespace
 {
@@ -23,8 +25,7 @@ struct TempDir
 {
     std::filesystem::path path;
 
-    explicit TempDir(std::string name)
-        : path(std::filesystem::temp_directory_path() / std::move(name))
+    explicit TempDir(std::string name) : path(std::filesystem::temp_directory_path() / std::move(name))
     {
         std::error_code ignored;
         std::filesystem::remove_all(path, ignored);
@@ -42,13 +43,10 @@ auto read_file_text(const std::filesystem::path& path) -> std::string
 {
     std::ifstream file{path, std::ios::binary};
 
-    return std::string(
-        (std::istreambuf_iterator<char>(file)),
-        std::istreambuf_iterator<char>());
+    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
 } // namespace
-
 
 TEST_CASE("project metadata is available")
 {
@@ -454,4 +452,79 @@ TEST_CASE("write_file requires content field")
 
     REQUIRE(!result.has_value());
     CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+// PermissionChecker
+TEST_CASE("permission checker allows read-only tools in default mode")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("read_file", true, std::filesystem::path{"hello.txt"}, std::nullopt);
+
+    CHECK(decision.action == codeharness::PermissionAction::Allow);
+}
+
+TEST_CASE("permission checker asks for mutating tools in default mode")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("write_file", false, std::filesystem::path{"output.txt"}, std::nullopt);
+
+    CHECK(decision.action == codeharness::PermissionAction::Ask);
+}
+
+TEST_CASE("permission checker denies mutating tools in plan mode")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Plan;
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("write_file", false, std::filesystem::path{"output.txt"}, std::nullopt);
+
+    CHECK(decision.action == codeharness::PermissionAction::Deny);
+}
+
+TEST_CASE("permission checker allows mutating tools in full_auto mode")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("write_file", false, std::filesystem::path{"output.txt"}, std::nullopt);
+
+    CHECK(decision.action == codeharness::PermissionAction::Allow);
+}
+
+TEST_CASE("permission checker blocks sensitive paths even in full_auto mode")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("read_file", true, std::filesystem::path{".ssh/id_rsa"}, std::nullopt);
+
+    CHECK(decision.action == codeharness::PermissionAction::Deny);
+}
+
+TEST_CASE("permission checker denied_tools wins over allowed_tools")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+    settings.allowed_tools.push_back("write_file");
+    settings.denied_tools.push_back("write_file");
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("write_file", false, std::filesystem::path{"output.txt"}, std::nullopt);
+
+    CHECK(decision.action == codeharness::PermissionAction::Deny);
 }
