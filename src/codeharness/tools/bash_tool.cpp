@@ -1,6 +1,7 @@
 #include "codeharness/tools/bash_tool.h"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <reproc/reproc.h>
 
@@ -121,6 +122,8 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
     argv.push_back(parsed->command.c_str());
     argv.push_back(nullptr);
 
+    spdlog::info("bash command: {}", parsed->command);
+
     // ========== 启动子进程 ==========
     //
     // reproc 的启动原理：
@@ -226,6 +229,7 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         }
         output += std::format("[command timed out after {} seconds]", parsed->timeout_seconds);
 
+        spdlog::warn("bash command timed out after {}s: {}", parsed->timeout_seconds, parsed->command);
         process = reproc_destroy(process);
 
         return ToolResponse{

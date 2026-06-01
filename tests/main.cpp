@@ -1,6 +1,24 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <spdlog/spdlog.h>
+
+namespace
+{
+
+// 测试运行时把 spdlog 调成 off，避免工具调用日志淹没 doctest 输出。
+struct SpdlogQuieter
+{
+    SpdlogQuieter()
+    {
+        spdlog::set_level(spdlog::level::off);
+    }
+};
+
+} // namespace
+
+static SpdlogQuieter g_spdlog_quieter{};
+
 #include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/permissions/permission.h"

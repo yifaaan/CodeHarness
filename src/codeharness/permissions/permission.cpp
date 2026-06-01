@@ -1,5 +1,7 @@
 #include "codeharness/permissions/permission.h"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <cctype>
 #include <span>
@@ -69,6 +71,7 @@ auto PermissionChecker::evaluate(
     // 不能绕过这层
     if (target_path && is_sensitive_path(*target_path))
     {
+        spdlog::debug("permission deny: tool={} reason=sensitive_path path={}", tool_name, target_path->string());
         return PermissionDecision{
             .action = PermissionAction::Deny,
             .reason = "sensitive path is blocked: " + target_path->string(),
@@ -78,6 +81,7 @@ auto PermissionChecker::evaluate(
     // 危险命令拒绝
     if (command && looks_dangerous_command(*command))
     {
+        spdlog::debug("permission deny: tool={} reason=dangerous_command", tool_name);
         return PermissionDecision{
             .action = PermissionAction::Deny,
             .reason = "dangerous command is blocked",
@@ -87,6 +91,7 @@ auto PermissionChecker::evaluate(
     // denied_tools 优先级高于 allowed_tools。
     if (contains_name(settings_.denied_tools, tool_name))
     {
+        spdlog::debug("permission deny: tool={} reason=denied_tool", tool_name);
         return PermissionDecision{
             .action = PermissionAction::Deny,
             .reason = "tool is denied by settings: " + std::string(tool_name),
@@ -96,6 +101,7 @@ auto PermissionChecker::evaluate(
     // 显式允许的工具可以执行。
     if (contains_name(settings_.allowed_tools, tool_name))
     {
+        spdlog::debug("permission allow: tool={} reason=allowed_tool", tool_name);
         return PermissionDecision{
             .action = PermissionAction::Allow,
             .reason = "tool is allowed by settings",
@@ -105,6 +111,7 @@ auto PermissionChecker::evaluate(
     // full_auto 允许普通工具执行。
     if (settings_.mode == PermissionMode::FullAuto)
     {
+        spdlog::debug("permission allow: tool={} reason=full_auto", tool_name);
         return PermissionDecision{
             .action = PermissionAction::Allow,
             .reason = "full_auto mode allows this tool",
@@ -114,6 +121,7 @@ auto PermissionChecker::evaluate(
     // 只读工具在 Default / Plan 下都允许。
     if (is_read_only)
     {
+        spdlog::debug("permission allow: tool={} reason=read_only", tool_name);
         return PermissionDecision{
             .action = PermissionAction::Allow,
             .reason = "read-only tool is allowed",
@@ -123,6 +131,7 @@ auto PermissionChecker::evaluate(
     // Plan 模式阻止修改类工具。
     if (settings_.mode == PermissionMode::Plan)
     {
+        spdlog::debug("permission deny: tool={} reason=plan_mode", tool_name);
         return PermissionDecision{
             .action = PermissionAction::Deny,
             .reason = "plan mode blocks mutating tools",
@@ -130,6 +139,7 @@ auto PermissionChecker::evaluate(
     }
 
     // Default 模式下，修改类工具需要确认。
+    spdlog::debug("permission ask: tool={} reason=default_mode", tool_name);
     return PermissionDecision{
         .action = PermissionAction::Ask,
         .reason = "default mode requires confirmation for mutating tools",

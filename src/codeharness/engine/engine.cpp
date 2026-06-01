@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "codeharness/core/event_collector.h"
+#include "codeharness/core/log.h"
 #include "codeharness/core/overloaded.h"
 #include "codeharness/tools/tool.h"
 
@@ -173,6 +174,7 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         // 拒绝
         if (decision.action == PermissionAction::Deny)
         {
+            spdlog::warn("tool {} denied: {}", tool_use.name, decision.reason);
             return ToolResultBlock{
                 .tool_use_id = tool_use.id,
                 .content = "permission denied: " + decision.reason,
@@ -183,6 +185,7 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         // TODO: 需要确认但当前没有 UI → 当成拒绝。
         if (decision.action == PermissionAction::Ask)
         {
+            spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
             return ToolResultBlock{
                 .tool_use_id = tool_use.id,
                 .content = "permission confirmation required but no prompt is configured: " + decision.reason,
@@ -195,15 +198,18 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
     ToolContext context;
     context.cwd = std::filesystem::current_path();
 
+    spdlog::info("tool {} starting (id={})", tool_use.name, tool_use.id);
     auto response = tool->execute(request, context);
     if (!response)
     {
+        spdlog::warn("tool {} failed: {}", tool_use.name, response.error().message);
         return ToolResultBlock{
             .tool_use_id = tool_use.id,
             .content = response.error().message,
             .is_error = true,
         };
     }
+    spdlog::info("tool {} done (is_error={})", tool_use.name, response->is_error);
 
     return ToolResultBlock{
         .tool_use_id = response->tool_use_id,

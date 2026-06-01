@@ -1,5 +1,6 @@
 #include "codeharness/cli/cli.h"
 
+#include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/tools/bash_tool.h"
@@ -12,6 +13,7 @@
 
 #include <CLI/CLI.hpp>
 #include <nonstd/expected.hpp>
+#include <spdlog/spdlog.h>
 
 #include <filesystem>
 #include <iostream>
@@ -25,6 +27,9 @@ namespace codeharness
 
 auto run_cli(int argc, char **argv) -> Result<int>
 {
+    init_logger();
+    spdlog::info("codeharness starting ({} {})", PROJECT_NAME, VERSION);
+
     CLI::App app{"CodeHarness"};
 
     bool show_version = false;
