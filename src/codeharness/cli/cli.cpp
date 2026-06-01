@@ -1,5 +1,6 @@
 #include "codeharness/cli/cli.h"
 
+#include "codeharness/commands/command_registry.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/provider/echo_provider.h"
@@ -80,6 +81,35 @@ auto run_cli(int argc, char **argv) -> Result<int>
     if (!skills)
     {
         return nonstd::make_unexpected(skills.error());
+    }
+
+    if (!prompt.empty() && prompt.front() == '/')
+    {
+        auto commands = build_builtin_command_registry(*skills);
+        auto command_result = execute_slash_command(commands, prompt);
+        if (!command_result)
+        {
+            return nonstd::make_unexpected(command_result.error());
+        }
+
+        if (command_result->message)
+        {
+            std::cout << *command_result->message;
+            if (!command_result->message->empty() && command_result->message->back() != '\n')
+            {
+                std::cout << '\n';
+            }
+        }
+
+        // message-only commands such as /skills finish inside the command path.
+        // Skill commands return submit_prompt, which is then handed to the
+        // existing engine flow exactly like a normal non-slash prompt.
+        if (!command_result->submit_prompt)
+        {
+            return 0;
+        }
+
+        prompt = *command_result->submit_prompt;
     }
 
     ToolRegistry tools;
