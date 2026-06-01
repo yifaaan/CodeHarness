@@ -62,7 +62,6 @@ inline auto yaml_get_bool(const YAML::Node& node, std::string_view key, bool fal
 }
 
 // 读取 string 列表：
-//   - 键缺失：返回空 vector
 //   - scalar：单元素 vector
 //   - sequence：逐元素读取 trim 后非空的标量
 //   - 其他类型：返回空 vector

@@ -9,6 +9,14 @@
 #include <string_view>
 #include <vector>
 
+
+//  把 SKILL.md 文件加载并解析成 SkillDefinition,并汇总到
+//  SkillRegistry。流程分三层:
+//    1. 解析单个 markdown 文件(parse_frontmatter / parse_skill_markdown)
+//    2. 从一个或多个目录里扫描 SKILL.md(load_skills_from_dirs)
+//    3. 顶层组合器(load_skill_registry)按 "bundled → user → extra → project"
+//       顺序合并,后注册者覆盖先注册者(以 key 冲突为准)。
+
 namespace codeharness
 {
 
