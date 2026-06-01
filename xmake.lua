@@ -7,34 +7,37 @@ set_encodings("utf-8")
 add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
 
+-- 当前 runtime 直接依赖的第三方包。
 local runtime_packages = {
-    "ada",
-    "asio",
-    "brotli",
     "cli11",
     "expected-lite",
     "fmt",
     "glob",
     "nlohmann_json",
-    "openssl",
     "re2",
     "reproc",
     "spdlog",
-    "sqlite3",
-    "stduuid",
-    "yaml-cpp",
-    "zlib"
 }
 
+-- Phase 4/5（MCP、Plugin、ohmo、Gateway）预留依赖。
+-- 启用时移到 runtime_packages，并在对应 target 中 add_packages 即可。
+--[[
+local phase_packages = {
+    "ada",       -- URL parser (Phase 4: HTTP transport)
+    "asio",      -- async I/O (Phase 4: MCP + Phase 5: Mailbox)
+    "brotli",    -- HTTP compression
+    "openssl",   -- TLS
+    "sqlite3",   -- session / memory storage
+    "yaml-cpp",  -- plugin manifest
+    "zlib",      -- HTTP compression
+}
+--]]
+
 for _, package in ipairs(runtime_packages) do
-    if package == "stduuid" then
-        add_requires(package, {configs = {span = true}})
-    else
-        add_requires(package)
-    end
+    add_requires(package)
 end
 
-add_requires("doctest")
+add_requires("doctest", {optional = true})
 
 target("codeharness")
     set_kind("binary")
