@@ -1,10 +1,12 @@
 #include "codeharness/prompts/project_context.h"
 
+#include <nonstd/expected.hpp>
+
 #include <algorithm>
-#include <fstream>
-#include <iterator>
 #include <system_error>
 #include <utility>
+
+#include "codeharness/tools/text_file.h"
 
 namespace codeharness
 {
@@ -12,16 +14,6 @@ namespace codeharness
 namespace
 {
 
-auto read_text_file(const std::filesystem::path& path) -> Result<std::string>
-{
-    std::ifstream file{path, std::ios::binary};
-    if (!file)
-    {
-        return fail<std::string>(ErrorKind::Io, "failed to open context file: " + path.string());
-    }
-
-    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-}
 // 从当前工作目录 cwd 开始，向上找到项目边界，然后生成一组 要搜索上下文文件的目录
 auto collect_search_dirs(const std::filesystem::path& cwd) -> Result<std::vector<std::filesystem::path>>
 {
@@ -94,7 +86,7 @@ auto ProjectContextLoader::load(const std::filesystem::path& cwd) const -> Resul
                 continue;
             }
 
-            auto content = read_text_file(candidate);
+            auto content = codeharness::read_text_file(candidate);
             if (!content)
             {
                 return nonstd::make_unexpected(content.error());
