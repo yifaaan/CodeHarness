@@ -16,6 +16,7 @@ class EditFileTool final : public Tool
 public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
+    auto permission_target(const ToolRequest& request) const -> PermissionTarget override;
     auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
 };
 

@@ -80,6 +80,11 @@ auto BashTool::description() const -> std::string
            "Input: {\"command\": \"...\", \"timeout_seconds\": 600}";
 }
 
+auto BashTool::permission_target(const ToolRequest& request) const -> PermissionTarget
+{
+    return command_permission_target(request.input_json, "command");
+}
+
 // ---- 核心执行逻辑 ----
 //
 // 执行流程（5 步）：

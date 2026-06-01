@@ -108,6 +108,11 @@ auto EditFileTool::description() const -> std::string
     return "Edit an existing text file by replacing old_string with new_string under the current workspace directory.";
 }
 
+auto EditFileTool::permission_target(const ToolRequest& request) const -> PermissionTarget
+{
+    return path_permission_target(request.input_json, "path");
+}
+
 auto EditFileTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
 {
     nlohmann::json input;

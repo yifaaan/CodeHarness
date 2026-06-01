@@ -1,6 +1,5 @@
 #include "codeharness/engine/engine.h"
 
-#include <nlohmann/json.hpp>
 #include <nonstd/expected.hpp>
 
 #include <filesystem>
@@ -31,37 +30,6 @@ auto emit_engine_event(const EngineEventSink& sink, EngineEvent event) -> void
     {
         sink(event);
     }
-}
-
-struct PermissionTarget
-{
-    std::optional<std::filesystem::path> path;
-    std::optional<std::string> command;
-};
-
-auto extract_permission_target(const ToolUseBlock& tool_use) -> PermissionTarget
-{
-    PermissionTarget target;
-
-    try
-    {
-        auto input = nlohmann::json::parse(tool_use.input_json);
-
-        if (input.contains("path") && input["path"].is_string())
-        {
-            target.path = input["path"].get<std::string>();
-        }
-
-        if (tool_use.name == "bash" && input.contains("command") && input["command"].is_string())
-        {
-            target.command = input["command"].get<std::string>();
-        }
-    }
-    catch (const nlohmann::json::parse_error&)
-    {
-    }
-
-    return target;
 }
 
 } // namespace
@@ -232,10 +200,16 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         };
     }
 
+    ToolRequest request{
+        .id = tool_use.id,
+        .name = tool_use.name,
+        .input_json = tool_use.input_json,
+    };
+
     // 权限检查
     if (permissions_ != nullptr)
     {
-        const auto target = extract_permission_target(tool_use);
+        const auto target = tool->permission_target(request);
         auto decision = permissions_->evaluate(tool_use.name, tool->is_read_only(), target.path, target.command);
 
         // 拒绝
@@ -260,12 +234,6 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
     }
 
     // 执行工具
-    ToolRequest request{
-        .id = tool_use.id,
-        .name = tool_use.name,
-        .input_json = tool_use.input_json,
-    };
-
     ToolContext context;
     context.cwd = std::filesystem::current_path();
 

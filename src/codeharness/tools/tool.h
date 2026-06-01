@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/core/result.h"
+#include "codeharness/tools/permission_target.h"
 
 #include <filesystem>
 #include <string>
@@ -39,6 +40,12 @@ public:
     virtual auto is_read_only() const noexcept -> bool
     {
         return false;
+    }
+
+    // 工具作用在哪个权限目标上。
+    virtual auto permission_target(const ToolRequest&) const -> PermissionTarget
+    {
+        return {};
     }
 
     virtual auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> = 0;

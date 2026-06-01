@@ -755,6 +755,31 @@ TEST_CASE("workspace path rejects escaping through nested relative path")
     CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
 }
 
+TEST_CASE("tools expose permission targets for engine checks")
+{
+    codeharness::ReadFileTool read_tool;
+    codeharness::ToolRequest read_request;
+    read_request.id = "target-1";
+    read_request.name = "read_file";
+    read_request.input_json = R"({"path":"secrets.txt"})";
+
+    auto read_target = read_tool.permission_target(read_request);
+    REQUIRE(read_target.path.has_value());
+    CHECK(read_target.path->generic_string() == "secrets.txt");
+    CHECK(!read_target.command.has_value());
+
+    codeharness::BashTool bash_tool;
+    codeharness::ToolRequest bash_request;
+    bash_request.id = "target-2";
+    bash_request.name = "bash";
+    bash_request.input_json = R"({"command":"printf 'rm -rf /'"})";
+
+    auto bash_target = bash_tool.permission_target(bash_request);
+    REQUIRE(bash_target.command.has_value());
+    CHECK(*bash_target.command == "printf 'rm -rf /'");
+    CHECK(!bash_target.path.has_value());
+}
+
 TEST_CASE("read-only metadata works through base tool interface")
 {
     const std::unique_ptr<codeharness::Tool> read_tool = std::make_unique<codeharness::ReadFileTool>();
