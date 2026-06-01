@@ -12,6 +12,7 @@ add_defines("CODEHARNESS_SOURCE_DIR=\"" .. os.projectdir() .. "\"")
 -- 当前 runtime 直接依赖的第三方包。
 local runtime_packages = {
     "cli11",
+    "date",
     "expected-lite",
     "fmt",
     "glob",
@@ -38,6 +39,17 @@ local phase_packages = {
 for _, package in ipairs(runtime_packages) do
     add_requires(package)
 end
+add_requires("libgit2", {configs = {shared = false}})
+add_requires("llhttp", {configs = {shared = false}})
+
+local function add_llhttp_runtime_path()
+    on_load(function (target)
+        local pkg = target:pkg("llhttp")
+        if pkg then
+            target:add("rpathdirs", path.join(pkg:installdir(), "lib"))
+        end
+    end)
+end
 
 add_requires("doctest", {optional = true})
 
@@ -48,6 +60,9 @@ target("codeharness")
     for _, package in ipairs(runtime_packages) do
         add_packages(package)
     end
+    add_packages("libgit2")
+    add_packages("llhttp")
+    add_llhttp_runtime_path()
 
 target("codeharness_tests")
     set_kind("binary")
@@ -58,3 +73,6 @@ target("codeharness_tests")
     for _, package in ipairs(runtime_packages) do
         add_packages(package)
     end
+    add_packages("libgit2")
+    add_packages("llhttp")
+    add_llhttp_runtime_path()

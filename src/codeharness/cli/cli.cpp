@@ -3,6 +3,7 @@
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/prompts/system_prompt.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/skills/skill_loader.h"
 #include "codeharness/tools/bash_tool.h"
@@ -23,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <variant>
 
 namespace codeharness
@@ -83,9 +85,10 @@ auto run_cli(int argc, char **argv) -> Result<int>
         return nonstd::make_unexpected(skills.error());
     }
 
+    auto commands = build_builtin_command_registry(*skills);
+
     if (!prompt.empty() && prompt.front() == '/')
     {
-        auto commands = build_builtin_command_registry(*skills);
         auto command_result = execute_slash_command(commands, prompt);
         if (!command_result)
         {
@@ -112,6 +115,26 @@ auto run_cli(int argc, char **argv) -> Result<int>
         prompt = *command_result->submit_prompt;
     }
 
+    auto project_context_files = load_project_context_files(std::filesystem::current_path());
+    if (!project_context_files)
+    {
+        return nonstd::make_unexpected(project_context_files.error());
+    }
+
+    PromptBuildRequest prompt_request;
+    prompt_request.cwd = std::filesystem::current_path();
+    prompt_request.latest_user_prompt = prompt;
+    prompt_request.available_skills = skills->list();
+    prompt_request.available_commands = commands.list();
+    prompt_request.project_context_files = std::move(*project_context_files);
+    prompt_request.permission_mode = PermissionMode::Default;
+
+    auto system_prompt = SystemPromptBuilder{}.build(prompt_request);
+    if (!system_prompt)
+    {
+        return nonstd::make_unexpected(system_prompt.error());
+    }
+
     ToolRegistry tools;
     tools.add(std::make_unique<ReadFileTool>());
     tools.add(std::make_unique<EditFileTool>());
@@ -125,6 +148,7 @@ auto run_cli(int argc, char **argv) -> Result<int>
 
     RunRequest request;
     request.prompt = prompt;
+    request.system_prompt = *system_prompt;
     request.options.max_turns = max_turns;
 
     bool printed_text = false;

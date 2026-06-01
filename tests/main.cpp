@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <git2.h>
 #include <spdlog/spdlog.h>
 
 namespace
@@ -24,6 +25,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include "codeharness/engine/engine.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/prompts/project_context.h"
+#include "codeharness/prompts/system_prompt.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/provider/provider.h"
 #include "codeharness/skills/skill_loader.h"
@@ -44,6 +46,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace
@@ -83,6 +86,56 @@ auto read_file_text(const std::filesystem::path& path) -> std::string
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
+struct GitTestRuntime
+{
+    GitTestRuntime()
+    {
+        git_libgit2_init();
+    }
+
+    ~GitTestRuntime()
+    {
+        git_libgit2_shutdown();
+    }
+
+    GitTestRuntime(const GitTestRuntime&) = delete;
+    auto operator=(const GitTestRuntime&) -> GitTestRuntime& = delete;
+};
+
+constexpr auto kGitTestRepositoryDeleter = [](git_repository *repository) noexcept {
+    git_repository_free(repository);
+};
+
+auto init_git_repository_with_head(const std::filesystem::path& repo, std::string_view branch) -> void
+{
+    GitTestRuntime runtime;
+
+    git_repository *raw_repository = nullptr;
+    REQUIRE(git_repository_init(&raw_repository, repo.string().c_str(), 0) == 0);
+
+    const std::unique_ptr<git_repository, decltype(kGitTestRepositoryDeleter)> repository{
+        raw_repository,
+        kGitTestRepositoryDeleter,
+    };
+    const auto head_name = std::string{"refs/heads/"} + std::string{branch};
+    REQUIRE(git_repository_set_head(repository.get(), head_name.c_str()) == 0);
+}
+
+class CapturingProvider final : public codeharness::Provider
+{
+public:
+    std::vector<codeharness::Message> seen_messages;
+
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        seen_messages.assign(messages.begin(), messages.end());
+        sink(codeharness::AssistantTextDelta{"ok"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
 } // namespace
 
 TEST_CASE("project metadata is available")
@@ -96,6 +149,7 @@ TEST_CASE("echo provider returns latest user text")
     codeharness::EchoProvider provider;
 
     std::vector<codeharness::Message> messages;
+    messages.push_back(codeharness::make_text_message(codeharness::Role::System, "system rules"));
     messages.push_back(codeharness::make_text_message(codeharness::Role::User, "hello"));
 
     auto result = provider.generate(std::span<const codeharness::Message>(messages));
@@ -121,6 +175,31 @@ TEST_CASE("engine runs one provider turn")
     REQUIRE(result->messages.size() == 2);
     CHECK(result->messages[0].role == codeharness::Role::User);
     CHECK(result->messages[1].role == codeharness::Role::Assistant);
+}
+
+TEST_CASE("engine prepends system prompt when provided")
+{
+    CapturingProvider provider;
+    codeharness::Engine engine{provider};
+
+    codeharness::RunRequest request;
+    request.prompt = "hello";
+    request.system_prompt = "system rules";
+    request.options.max_turns = 1;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text == "ok");
+    REQUIRE(result->messages.size() == 3);
+    CHECK(result->messages[0].role == codeharness::Role::System);
+    CHECK(codeharness::collect_text(result->messages[0]) == "system rules");
+    CHECK(result->messages[1].role == codeharness::Role::User);
+    CHECK(result->messages[2].role == codeharness::Role::Assistant);
+
+    REQUIRE(provider.seen_messages.size() == 2);
+    CHECK(provider.seen_messages[0].role == codeharness::Role::System);
+    CHECK(provider.seen_messages[1].role == codeharness::Role::User);
 }
 
 TEST_CASE("tool registry executes read_file")
@@ -1123,6 +1202,64 @@ TEST_CASE("project context loader applies a total character budget")
     CHECK(files->at(0).content == "abcdef");
     CHECK(files->at(1).path == child / "AGENTS.md");
     CHECK(files->at(1).content == "gh");
+}
+
+TEST_CASE("system prompt builder includes environment skills commands context and memory")
+{
+    TempDir temp{"codeharness-system-prompt-builder-test"};
+
+    const auto repo = temp.path / "repo";
+    const auto child = repo / "src";
+    std::filesystem::create_directories(child);
+    init_git_repository_with_head(repo, "main");
+
+    codeharness::SkillDefinition review_skill;
+    review_skill.name = "review";
+    review_skill.description = "Review code.";
+    review_skill.source = "bundled";
+
+    codeharness::SkillDefinition hidden_skill;
+    hidden_skill.name = "hidden";
+    hidden_skill.description = "Hidden skill.";
+    hidden_skill.source = "user";
+    hidden_skill.disable_model_invocation = true;
+
+    const auto noop_handler = [](std::string_view) -> codeharness::Result<codeharness::CommandResult> {
+        return codeharness::CommandResult{};
+    };
+
+    codeharness::PromptBuildRequest request;
+    request.cwd = child;
+    request.latest_user_prompt = "review this";
+    request.available_skills = {review_skill, hidden_skill};
+    request.available_commands = {
+        codeharness::SlashCommand{.name = "skills", .description = "List loaded skills.", .handler = noop_handler},
+        codeharness::SlashCommand{.name = "review", .description = "Invoke the review skill.", .handler = noop_handler},
+    };
+    request.project_context_files = {
+        codeharness::ContextFile{.path = repo / "AGENTS.md", .content = "repo agents"},
+        codeharness::ContextFile{.path = child / "AGENTS.md", .content = "child agents"},
+    };
+    request.relevant_memories = {codeharness::RelevantMemory{.title = "Build Notes", .content = "Use xmake."}};
+    request.permission_mode = codeharness::PermissionMode::Default;
+
+    auto prompt = codeharness::SystemPromptBuilder{}.build(request);
+
+    REQUIRE(prompt.has_value());
+    CHECK(prompt->find("You are CodeHarness") != std::string::npos);
+    CHECK(prompt->find("# Environment") != std::string::npos);
+    CHECK(prompt->find("- Working directory: " + std::filesystem::weakly_canonical(child).string()) !=
+          std::string::npos);
+    CHECK(prompt->find("- Date: ") != std::string::npos);
+    CHECK(prompt->find("- Git repository: yes") != std::string::npos);
+    CHECK(prompt->find("- Git branch: main") != std::string::npos);
+    CHECK(prompt->find("- review [bundled]: Review code.") != std::string::npos);
+    CHECK(prompt->find("Hidden skill.") == std::string::npos);
+    CHECK(prompt->find("- /skills: List loaded skills.") != std::string::npos);
+    CHECK(prompt->find("- /review: Invoke the review skill.") != std::string::npos);
+    CHECK(prompt->find("repo agents") < prompt->find("child agents"));
+    CHECK(prompt->find("# Relevant Memories") != std::string::npos);
+    CHECK(prompt->find("Use xmake.") != std::string::npos);
 }
 
 TEST_CASE("skill markdown parser reads frontmatter metadata")

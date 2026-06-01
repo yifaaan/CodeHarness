@@ -7,6 +7,7 @@
 #include "codeharness/tools/tool_registry.h"
 
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <variant>
@@ -23,6 +24,7 @@ struct EngineOptions
 struct RunRequest
 {
     std::string prompt;
+    std::optional<std::string> system_prompt;
     EngineOptions options;
 };
 

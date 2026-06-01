@@ -39,6 +39,7 @@ IncludeCategories:
   - Regex: .*
     Priority: 3
 InsertBraces: true
+PointerAlignment: Left
 QualifierAlignment: Left
 ReferenceAlignment: Left
 ReflowComments: true
