@@ -1,5 +1,6 @@
 #include "codeharness/tools/edit_file_tool.h"
 
+#include <nonstd/expected.hpp>
 #include <nlohmann/json.hpp>
 
 #include <cstddef>
@@ -8,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
@@ -30,33 +32,31 @@ auto parse_edit_file_input(const nlohmann::json& input) -> Result<EditFileInput>
 {
     EditFileInput parsed;
 
-    auto path = require_string(input, "path", "edit_file");
-    if (!path)
+    if (auto r = assign(parsed.path, read_json_field<std::string>(input, "path", "edit_file")); !r)
     {
-        return fail<EditFileInput>(path.error().kind, path.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.path = std::move(*path);
 
-    auto old_string = require_string(input, "old_string", "edit_file");
-    if (!old_string)
+    if (auto r = assign(parsed.old_string, read_json_field<std::string>(input, "old_string", "edit_file")); !r)
     {
-        return fail<EditFileInput>(old_string.error().kind, old_string.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.old_string = std::move(*old_string);
 
-    auto new_string = require_string(input, "new_string", "edit_file");
-    if (!new_string)
+    if (auto r = assign(parsed.new_string, read_json_field<std::string>(input, "new_string", "edit_file")); !r)
     {
-        return fail<EditFileInput>(new_string.error().kind, new_string.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.new_string = std::move(*new_string);
 
-    auto replace_all = optional_bool(input, "replace_all", false, "edit_file");
-    if (!replace_all)
+    if (auto r = assign(parsed.replace_all,
+                        read_json_field<bool, JsonFieldMode::optional_with_default>(
+                            input,
+                            "replace_all",
+                            "edit_file",
+                            false));
+        !r)
     {
-        return fail<EditFileInput>(replace_all.error().kind, replace_all.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.replace_all = *replace_all;
 
     if (parsed.old_string.empty())
     {

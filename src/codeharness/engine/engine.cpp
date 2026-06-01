@@ -48,6 +48,17 @@ auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<Engi
         event);
 }
 
+// 构造一个标记为 is_error 的工具结果。execute_tool_use 里
+// 多种失败（找不到工具、JSON 非法、权限拒绝、工具执行失败）都共享同一个形态。
+auto make_error_tool_result(std::string id, std::string content) -> ToolResultBlock
+{
+    return ToolResultBlock{
+        .tool_use_id = std::move(id),
+        .content = std::move(content),
+        .is_error = true,
+    };
+}
+
 } // namespace
 
 Engine::Engine(Provider& provider) : provider_(provider)
@@ -142,11 +153,7 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
     auto tool = tools_->find(tool_use.name);
     if (tool == nullptr)
     {
-        return ToolResultBlock{
-            .tool_use_id = tool_use.id,
-            .content = "tool not found: " + tool_use.name,
-            .is_error = true,
-        };
+        return make_error_tool_result(tool_use.id, "tool not found: " + tool_use.name);
     }
 
     ToolRequest request{
@@ -158,11 +165,7 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
     // 预解析 input_json：permission_target 与 execute 共用 parsed_input，避免重复 parse。
     if (auto parsed = parse_tool_request_input(request, tool_use.name); !parsed)
     {
-        return ToolResultBlock{
-            .tool_use_id = tool_use.id,
-            .content = std::move(parsed.error().message),
-            .is_error = true,
-        };
+        return make_error_tool_result(tool_use.id, std::string{parsed.error().message});
     }
 
     // 权限检查
@@ -175,22 +178,16 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         if (decision.action == PermissionAction::Deny)
         {
             spdlog::warn("tool {} denied: {}", tool_use.name, decision.reason);
-            return ToolResultBlock{
-                .tool_use_id = tool_use.id,
-                .content = "permission denied: " + decision.reason,
-                .is_error = true,
-            };
+            return make_error_tool_result(tool_use.id, "permission denied: " + decision.reason);
         }
 
         // TODO: 需要确认但当前没有 UI → 当成拒绝。
         if (decision.action == PermissionAction::Ask)
         {
             spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
-            return ToolResultBlock{
-                .tool_use_id = tool_use.id,
-                .content = "permission confirmation required but no prompt is configured: " + decision.reason,
-                .is_error = true,
-            };
+            return make_error_tool_result(tool_use.id,
+                                          "permission confirmation required but no prompt is configured: " +
+                                              decision.reason);
         }
     }
 
@@ -203,11 +200,7 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
     if (!response)
     {
         spdlog::warn("tool {} failed: {}", tool_use.name, response.error().message);
-        return ToolResultBlock{
-            .tool_use_id = tool_use.id,
-            .content = response.error().message,
-            .is_error = true,
-        };
+        return make_error_tool_result(tool_use.id, std::string{response.error().message});
     }
     spdlog::info("tool {} done (is_error={})", tool_use.name, response->is_error);
 

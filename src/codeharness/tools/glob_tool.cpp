@@ -1,10 +1,12 @@
 #include "codeharness/tools/glob_tool.h"
 
 #include <glob/glob.h>
+#include <nonstd/expected.hpp>
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
 
+#include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/tools/workspace_path.h"
 
@@ -24,13 +26,16 @@ auto parse_glob_input(const nlohmann::json& input) -> Result<GlobInput>
 {
     GlobInput parsed;
 
-    auto pattern = require_string(input, "pattern", "glob");
-    if (!pattern)
+    if (auto r = assign(parsed.pattern, read_json_field<std::string>(input, "pattern", "glob")); !r)
     {
-        return fail<GlobInput>(pattern.error().kind, pattern.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.pattern = std::move(*pattern);
-    parsed.path = optional_string(input, "path");
+    if (auto r = assign(parsed.path,
+                        read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, "path"));
+        !r)
+    {
+        return nonstd::make_unexpected(r.error());
+    }
 
     return parsed;
 }

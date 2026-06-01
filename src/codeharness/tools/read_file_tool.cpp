@@ -1,10 +1,12 @@
 #include "codeharness/tools/read_file_tool.h"
 
+#include <nonstd/expected.hpp>
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
 #include <string_view>
 
+#include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
@@ -26,26 +28,32 @@ auto parse_read_file_input(const nlohmann::json& input) -> Result<ReadFileInput>
 {
     ReadFileInput parsed;
 
-    auto path = require_string(input, "path", "read_file");
-    if (!path)
+    if (auto r = assign(parsed.path, read_json_field<std::string>(input, "path", "read_file")); !r)
     {
-        return fail<ReadFileInput>(path.error().kind, path.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.path = std::move(*path);
 
-    auto offset = optional_int(input, "offset", 0, "read_file");
-    if (!offset)
+    if (auto r = assign(parsed.offset,
+                        read_json_field<int, JsonFieldMode::optional_with_default>(
+                            input,
+                            "offset",
+                            "read_file",
+                            0));
+        !r)
     {
-        return fail<ReadFileInput>(offset.error().kind, offset.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.offset = *offset;
 
-    auto limit = optional_int(input, "limit", 200, "read_file");
-    if (!limit)
+    if (auto r = assign(parsed.limit,
+                        read_json_field<int, JsonFieldMode::optional_with_default>(
+                            input,
+                            "limit",
+                            "read_file",
+                            200));
+        !r)
     {
-        return fail<ReadFileInput>(limit.error().kind, limit.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.limit = *limit;
 
     if (parsed.offset < 0 || parsed.limit <= 0)
     {

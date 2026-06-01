@@ -1,11 +1,13 @@
 #include "codeharness/tools/write_file_tool.h"
 
+#include <nonstd/expected.hpp>
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
 #include <filesystem>
 #include <format>
 
+#include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
@@ -31,26 +33,26 @@ auto parse_write_file_input(const nlohmann::json& input) -> Result<WriteFileInpu
 {
     WriteFileInput parsed;
 
-    auto path = require_string(input, "path", "write_file");
-    if (!path)
+    if (auto r = assign(parsed.path, read_json_field<std::string>(input, "path", "write_file")); !r)
     {
-        return fail<WriteFileInput>(path.error().kind, path.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.path = std::move(*path);
 
-    auto content = require_string(input, "content", "write_file");
-    if (!content)
+    if (auto r = assign(parsed.content, read_json_field<std::string>(input, "content", "write_file")); !r)
     {
-        return fail<WriteFileInput>(content.error().kind, content.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.content = std::move(*content);
 
-    auto create_directories = optional_bool(input, "create_directories", true, "write_file");
-    if (!create_directories)
+    if (auto r = assign(parsed.create_directories,
+                        read_json_field<bool, JsonFieldMode::optional_with_default>(
+                            input,
+                            "create_directories",
+                            "write_file",
+                            true));
+        !r)
     {
-        return fail<WriteFileInput>(create_directories.error().kind, create_directories.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.create_directories = *create_directories;
 
     return parsed;
 }

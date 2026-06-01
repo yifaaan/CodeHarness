@@ -1,5 +1,6 @@
 #include "codeharness/tools/grep_tool.h"
 
+#include <nonstd/expected.hpp>
 #include <nlohmann/json.hpp>
 #include <re2/re2.h>
 
@@ -11,6 +12,7 @@
 #include <string>
 #include <system_error>
 
+#include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/tools/workspace_path.h"
 
@@ -37,23 +39,30 @@ auto parse_grep_input(const nlohmann::json& input) -> Result<GrepInput>
 {
     GrepInput parsed;
 
-    auto pattern = require_string(input, "pattern", "grep");
-    if (!pattern)
+    if (auto r = assign(parsed.pattern, read_json_field<std::string>(input, "pattern", "grep")); !r)
     {
-        return fail<GrepInput>(pattern.error().kind, pattern.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.pattern = std::move(*pattern);
 
-    auto max_results = optional_int(input, "max_results", 200, "grep");
-    if (!max_results)
+    if (auto r = assign(parsed.max_results,
+                        read_json_field<int, JsonFieldMode::optional_with_default>(
+                            input,
+                            "max_results",
+                            "grep",
+                            200));
+        !r)
     {
-        return fail<GrepInput>(max_results.error().kind, max_results.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.max_results = *max_results;
 
-    if (auto path = optional_string(input, "path"))
+    auto path = read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, "path");
+    if (!path)
     {
-        parsed.path = std::move(*path);
+        return nonstd::make_unexpected(path.error());
+    }
+    if (*path)
+    {
+        parsed.path = std::move(**path);
     }
 
     if (parsed.pattern.empty())

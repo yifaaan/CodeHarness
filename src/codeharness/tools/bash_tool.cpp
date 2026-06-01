@@ -6,11 +6,13 @@
 #include <reproc/reproc.h>
 
 #include <array>
+#include <cstdint>
 #include <cstring>
 #include <format>
 #include <string>
 #include <vector>
 
+#include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
 
 namespace codeharness
@@ -32,19 +34,21 @@ auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
 {
     BashInput parsed;
 
-    auto command = require_string(input, "command", "bash");
-    if (!command)
+    if (auto r = assign(parsed.command, read_json_field<std::string>(input, "command", "bash")); !r)
     {
-        return fail<BashInput>(command.error().kind, command.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.command = std::move(*command);
 
-    auto timeout_seconds = optional_int(input, "timeout_seconds", 600, "bash");
-    if (!timeout_seconds)
+    if (auto r = assign(parsed.timeout_seconds,
+                        read_json_field<int, JsonFieldMode::optional_with_default>(
+                            input,
+                            "timeout_seconds",
+                            "bash",
+                            600));
+        !r)
     {
-        return fail<BashInput>(timeout_seconds.error().kind, timeout_seconds.error().message);
+        return nonstd::make_unexpected(r.error());
     }
-    parsed.timeout_seconds = *timeout_seconds;
 
     if (parsed.timeout_seconds < 1)
     {
@@ -69,6 +73,23 @@ auto get_shell_prefix() -> std::vector<std::string>
 #else
     return {"/bin/sh", "-c"};
 #endif
+}
+
+// 把子进程 stdout 管道里残留的数据全部读出并 append 到 output。
+//
+// nonblocking 模式下 read 在无数据时返回 REPROC_EWOULDBLOCK，跳出循环即可
+auto drain_output(reproc_t& process, std::string& output) -> void
+{
+    std::array<std::uint8_t, 4096> buf;
+    while (true)
+    {
+        const int r = reproc_read(&process, REPROC_STREAM_OUT, buf.data(), buf.size());
+        if (r <= 0)
+        {
+            break;
+        }
+        output.append(reinterpret_cast<const char *>(buf.data()), r);
+    }
 }
 
 } // namespace
@@ -183,44 +204,14 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         //   Windows: TerminateProcess（强制终止）
         //   POSIX:   SIGKILL（不可捕获的终止信号）
         // nonblocking 模式下，无数据时立即返回 REPROC_EWOULDBLOCK
-        {
-            std::array<uint8_t, 4096> buf;
-            while (true)
-            {
-                int r = reproc_read(process, REPROC_STREAM_OUT, buf.data(), buf.size());
-                // reproc_read 返回值规则：
-                //   > 0 → 读到 r 字节
-                if (r > 0)
-                {
-                    output.append(reinterpret_cast<const char *>(buf.data()), r);
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
+        drain_output(*process, output);
 
         // 强制杀进程
         reproc_kill(process);
         reproc_wait(process, 5000);
 
         // 读杀进程后的残留输出
-        {
-            std::array<uint8_t, 4096> buf;
-            while (true)
-            {
-                int r = reproc_read(process, REPROC_STREAM_OUT, buf.data(), buf.size());
-                if (r > 0)
-                {
-                    output.append(reinterpret_cast<const char *>(buf.data()), r);
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
+        drain_output(*process, output);
 
         // 追加超时信息
         if (!output.empty() && output.back() != '\n')
@@ -240,21 +231,7 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
     }
 
     // ---- 正常退出 ----
-    {
-        std::array<uint8_t, 4096> buf;
-        while (true)
-        {
-            int r = reproc_read(process, REPROC_STREAM_OUT, buf.data(), buf.size());
-            if (r > 0)
-            {
-                output.append(reinterpret_cast<const char *>(buf.data()), r);
-            }
-            else
-            {
-                break;
-            }
-        }
-    }
+    drain_output(*process, output);
 
     process = reproc_destroy(process);
 
