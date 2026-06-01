@@ -1217,6 +1217,58 @@ TEST_CASE("project skill closest to cwd overrides parent skill")
     CHECK(registry->get("review")->content.find("child instructions") != std::string::npos);
 }
 
+TEST_CASE("skill registry loads bundled skills by default")
+{
+    TempDir temp{"codeharness-bundled-skill-default-test"};
+
+    codeharness::SkillLoadOptions options;
+    options.load_default_user_skills = false;
+    options.allow_project_skills = false;
+
+    auto registry = codeharness::load_skill_registry(temp.path, std::move(options));
+
+    REQUIRE(registry.has_value());
+    REQUIRE(registry->get("commit") != nullptr);
+    REQUIRE(registry->get("plan") != nullptr);
+    REQUIRE(registry->get("review") != nullptr);
+    REQUIRE(registry->get("debug") != nullptr);
+    REQUIRE(registry->get("diagnose") != nullptr);
+    REQUIRE(registry->get("simplify") != nullptr);
+    REQUIRE(registry->get("skill-creator") != nullptr);
+    REQUIRE(registry->get("test") != nullptr);
+    CHECK(registry->get("review")->source == "bundled");
+    CHECK(registry->get("skill-creator")->description.find("Create, improve, and verify") != std::string::npos);
+}
+
+TEST_CASE("user skill overrides bundled skill")
+{
+    TempDir temp{"codeharness-user-overrides-bundled-skill-test"};
+    const auto skill_dir = temp.path / "skills" / "review";
+    std::filesystem::create_directories(skill_dir);
+
+    {
+        std::ofstream file{skill_dir / "SKILL.md", std::ios::binary};
+        file << "---\n"
+             << "name: review\n"
+             << "description: local review skill\n"
+             << "---\n"
+             << "# Review\n\n"
+             << "user review instructions\n";
+    }
+
+    codeharness::SkillLoadOptions options;
+    options.load_default_user_skills = false;
+    options.allow_project_skills = false;
+    options.user_skill_dirs = {temp.path / "skills"};
+
+    auto registry = codeharness::load_skill_registry(temp.path, std::move(options));
+
+    REQUIRE(registry.has_value());
+    REQUIRE(registry->get("review") != nullptr);
+    CHECK(registry->get("review")->source == "user");
+    CHECK(registry->get("review")->content.find("user review instructions") != std::string::npos);
+}
+
 TEST_CASE("skill tool returns content and reports model invocation restrictions")
 {
     codeharness::SkillRegistry registry;

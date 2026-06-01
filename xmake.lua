@@ -7,6 +7,8 @@ set_encodings("utf-8")
 add_rules("mode.debug", "mode.release")
 add_rules("plugin.compile_commands.autoupdate", {outputdir = "."})
 
+add_defines("CODEHARNESS_SOURCE_DIR=\"" .. os.projectdir() .. "\"")
+
 -- 当前 runtime 直接依赖的第三方包。
 local runtime_packages = {
     "cli11",

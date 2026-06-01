@@ -22,6 +22,7 @@ namespace codeharness
 
 struct SkillLoadOptions
 {
+    bool load_default_bundled_skills = true;
     std::vector<SkillDefinition> bundled_skills;
     std::vector<std::filesystem::path> user_skill_dirs;
     std::vector<std::filesystem::path> extra_skill_dirs;

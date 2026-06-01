@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "codeharness/core/strings.h"
+#include "codeharness/skills/bundled_skills.h"
 #include "codeharness/skills/skill_yaml.h"
 #include "codeharness/tools/text_file.h"
 
@@ -423,6 +424,7 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
 // 顶层组合器:按 "bundled → user → extra → project" 的顺序把所有来源的 skill
 // 注册到同一个 SkillRegistry,后注册者同名时覆盖前注册者。
 // 各来源说明:
+//   - load_default_bundled_skills=true 时,先注册内置 plan/review/debug
 //   - bundled_skills:        编译期/打包期内
 //   - user_skill_dirs:       显式指定的 user 目录
 //   - load_default_user_skills=true 时,会在 user_skill_dirs 前面插入默认 user 目录             
@@ -433,7 +435,25 @@ auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions opti
 {
     SkillRegistry registry;
 
-    // 1) bundled skills(内存传入,直接注册)
+    // 1) bundled skills。
+    //
+    // 先注册默认 bundled,再注册调用方传入的 bundled_skills。这样测试或未来的
+    // 打包层可以用同名 bundled 覆盖默认 bundled,而 user/project 仍会在后面
+    // 覆盖所有 bundled 来源。
+    if (options.load_default_bundled_skills)
+    {
+        auto bundled_skills = default_bundled_skills();
+        if (!bundled_skills)
+        {
+            return nonstd::make_unexpected(bundled_skills.error());
+        }
+
+        for (auto& skill : *bundled_skills)
+        {
+            registry.register_skill(std::move(skill));
+        }
+    }
+
     for (auto& skill : options.bundled_skills)
     {
         registry.register_skill(std::move(skill));
