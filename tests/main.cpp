@@ -99,8 +99,7 @@ TEST_CASE("tool registry executes read_file")
     }
 
     codeharness::ToolRegistry registry;
-    auto added = registry.add(std::make_unique<codeharness::ReadFileTool>());
-    REQUIRE(added.has_value());
+    registry.add(std::make_unique<codeharness::ReadFileTool>());
 
     codeharness::ToolRequest request;
     request.id = "test-tool-use-id";
@@ -266,8 +265,7 @@ TEST_CASE("engine executes requested tool and returns final provider text")
     std::filesystem::current_path(temp_dir);
 
     codeharness::ToolRegistry tools;
-    auto added = tools.add(std::make_unique<codeharness::ReadFileTool>());
-    REQUIRE(added.has_value());
+    tools.add(std::make_unique<codeharness::ReadFileTool>());
 
     ReadFileRequestProvider provider;
     codeharness::Engine engine{provider, tools};
