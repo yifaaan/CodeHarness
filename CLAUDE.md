@@ -37,7 +37,7 @@ User input
 - Tool output truncation and artifact saving
 
 ### Phase 3: Context System
-- System prompt builder, CLAUDE.md discovery
+- System prompt builder, AGENTS.md discovery
 - Skills loader, memory store, slash commands
 
 ### Phase 4: MCP and Plugins
@@ -53,38 +53,74 @@ User input
 - ohmo workspace, MessageBus, Channel adapter
 - Gateway runtime pool
 
-## C++ Coding Standards
+## Coding Conventions
 
-Follows the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines). Specific requirements:
+### General Principles
+- If a narrower `Project.md` exists for the task, obey it first; otherwise this file is the project-level guide.
+- Debug the compiled binary when it crashes, or after one failed speculative fix. Prefer `xmake run codeharness_tests` or a focused test/binary run before continuing to guess.
+- Prefer crash-early behavior for violated internal invariants. Do not hide impossible states with defensive defaults or silent error tolerance.
+- Treat user input, provider failures, file-system failures, permissions, and tool execution errors as expected runtime failures. They must flow through `Result<T>`, events, or `ToolResponse{is_error=true}` as appropriate so the agent loop can continue.
+- DRY is about not repeating project knowledge, protocols, parsing rules, permission rules, or data conversions. It is not a mandate to extract tiny helpers that only restate a constructor or a single obvious operation.
+- Before implementing a feature, search `src/`, `tests/`, and the relevant docs for an existing implementation. If the existing logic is not shareable, prefer a narrow refactor over duplicating the same knowledge in another place.
+- Avoid helper functions used only once unless they remove real complexity or name a meaningful concept. Do not create a helper solely for one destructor.
 
-### Core Principles
-- **RAII everywhere**: Resource lifetime is bound to object lifetime
-- **Immutability by default**: Prefer `const`/`constexpr`; mutability is the exception
-- **Type safety**: Use the type system to prevent errors at compile time
-- **Express intent**: Names, types, and concepts should communicate purpose
-- **Value semantics**: Prefer value semantics over pointer semantics
+### Project Scope
+- Primary editable code lives in `src/` and `tests/`. Project documentation lives in `docs/`.
+- Treat `docs/OpenHarness/` as upstream reference material. Do not modify it unless the task explicitly targets the imported reference project.
+- Do not edit `.xmake/`, `build/`, `.cache/`, generated files, or third-party package sources.
+- CodeHarness is C++20 and should remain cross-platform. If OS-specific behavior is necessary, keep the shared interface cross-platform and put the platform-specific implementation in small `*.Windows.cpp` and `*.Linux.cpp` files.
 
-### Key Conventions
-- `.h` + `.cpp` file structure, `#pragma once`
-- `namespace codeharness { ... }`, inner namespaces such as `codeharness::tools`
-- `snake_case` naming (functions, variables), `PascalCase` for types
-- Class members use `trailing_underscore_`
-- `enum class` instead of `enum`, no ALL_CAPS enum values
-- Single-argument constructors must be `explicit`
-- `nullptr` instead of `0`/`NULL`
-- `{}` initialization syntax, avoid narrowing conversions
-- `'\n'` instead of `std::endl`
-- Base class destructors: `public virtual` or `protected non-virtual`
-- Rule of Zero / Rule of Five
-- Template parameters constrained by concepts (C++20)
-- Locks must use RAII (`scoped_lock`/`lock_guard`)
-- Exceptions: throw by value, catch by reference, custom exception types
+### Core C++ Standards
+- Follow the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines).
+- **RAII everywhere**: resource lifetime is bound to object lifetime.
+- **Immutability by default**: prefer `const` and `constexpr`; mutability is the exception.
+- **Type safety**: use the type system to prevent errors at compile time.
+- **Express intent**: names, types, and concepts should communicate purpose.
+- **Value semantics**: prefer value semantics over pointer semantics.
 
-### Code Style
-- `.clang-format` based on Microsoft style, format before committing
-- No C-style casts; use `static_cast`/`dynamic_cast`, etc.
-- No bare `new`/`delete`; use `make_unique`/`make_shared`
-- Functions should be short with a single responsibility
+### Header and Source Rules
+- Use `.h` + `.cpp` file structure.
+- Keep declarations in `namespace codeharness { ... }`, with inner namespaces such as `codeharness::tools` only when they clarify ownership.
+- Do not use `using namespace` in headers. Prefer fully qualified names for public declarations and cross-module types.
+- Source files may use local `using` declarations or `using namespace` when it removes noisy repetition without obscuring ownership.
+- In class, struct, or union declarations, align member names in the same column within the same access section when doing so stays consistent with `.clang-format`.
+- Keep style consistent with nearby files when touching existing code.
+
+### Naming and Types
+- Use `snake_case` for functions and variables, `PascalCase` for types, and `trailing_underscore_` for class members.
+- Use `enum class` instead of unscoped `enum`; enum values are not ALL_CAPS.
+- Single-argument constructors must be `explicit`.
+- Use `nullptr` instead of `0` or `NULL`.
+- Use `{}` initialization and avoid narrowing conversions.
+- Use `'\n'` instead of `std::endl`.
+- Use `auto` when the initializer makes the type obvious and the exact type is not part of the reader-facing contract.
+- Use `auto&&` for range loops over large values or collections when copying is not intended.
+- Prefer `std::string_view` for non-owning string inputs, `std::filesystem::path` for paths, `std::optional<T>` for optional values, and the project `Result<T>` alias for recoverable failures.
+- Do not use `std::optional<T*>`, nested optionals, or a separate `bool` flag for availability unless null is itself a valid value.
+
+### Resource and Error Handling
+- No C-style casts; use `static_cast`, `dynamic_cast`, `const_cast`, or `reinterpret_cast` only when the intent is correct and explicit.
+- No bare `new` or `delete`; use scope objects, `std::make_unique`, or `std::make_shared`.
+- Base class destructors must be public virtual or protected non-virtual.
+- Prefer Rule of Zero. If a type must manually manage a resource, follow Rule of Five.
+- Throw exceptions by value and catch by reference when exceptions are the right abstraction. For normal project failures, prefer `Result<T>` with `CodeHarnessError`.
+- Permission checks must happen before tool execution. Sensitive path hard-deny behavior must not be bypassable by `full_auto`.
+- Tool failure must not crash the harness. Convert it into a model-visible tool result with `is_error=true` through the engine's normal path.
+
+### Library and Parser Usage
+- Avoid reinventing stable functionality already provided by project dependencies. Current runtime dependencies include `cli11`, `expected-lite`, `fmt`, `glob`, `nlohmann_json`, `re2`, `reproc`, and `spdlog`.
+- Use existing project helpers before adding another implementation, especially JSON field helpers in `codeharness/core/json_parse.*`, workspace path helpers in `codeharness/tools/workspace_path.*`, tool abstractions, permission targets, and event types.
+- Use structured APIs for structured data. For JSON, use `nlohmann_json` and the project helper functions; do not parse JSON with ad hoc string handling or regular expressions.
+- Use `re2` for regular expressions when a regex is actually the right tool. Prefer parsers, path APIs, or structured matching when available.
+- Avoid namespace-scope globals with non-trivial constructors or destructors. Prefer `constexpr`, `std::string_view`, dependency injection, or explicit initialization/finalization where shared state is unavoidable.
+
+### Templates, Concurrency, and Formatting
+- Constrain template parameters with C++20 concepts when the constraint is meaningful.
+- Prefer variadic templates over hard-coded arity solutions when it keeps the code simpler.
+- Most code does not need thread safety. Do not add locks or atomics unless data is actually shared across threads.
+- Locks must use RAII (`std::scoped_lock`, `std::lock_guard`, etc.) and keep critical sections short.
+- Use `std::atomic<T>` precisely when required; avoid unnecessary atomics.
+- `.clang-format` is the formatting source of truth. Format touched C++ files before committing and avoid unrelated whitespace churn.
 
 ## Design Principles
 
