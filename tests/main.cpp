@@ -9,6 +9,7 @@
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
+#include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/tool_registry.h"
@@ -165,6 +166,37 @@ TEST_CASE("read_file returns requested line range")
     REQUIRE(result.has_value());
     CHECK(result->content == "line 2\nline 3\n");
     CHECK(result->is_error == false);
+}
+
+TEST_CASE("glob_tool returns relative paths under search root")
+{
+    TempDir temp{"codeharness-glob-test"};
+
+    std::filesystem::create_directories(temp.path / "src" / "feature");
+    {
+        std::ofstream{temp.path / "src" / "main.cpp"};
+        std::ofstream{temp.path / "src" / "feature" / "x.cpp"};
+    }
+
+    codeharness::GlobTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "glob-use-1";
+    request.name = "glob";
+    request.input_json = R"({"pattern":"**/*.cpp","path":"src"})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+
+    const auto content = result->content;
+    CHECK(content.find("\"main.cpp\"") != std::string::npos);
+    CHECK(content.find("\"feature/x.cpp\"") != std::string::npos);
+    CHECK(content.find(temp.path.string()) == std::string::npos);
 }
 
 TEST_CASE("grep returns regex matches with file and line")

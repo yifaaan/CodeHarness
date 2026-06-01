@@ -98,22 +98,20 @@ auto GlobTool::execute(const ToolRequest& request, const ToolContext& context) c
         search_root = *resolved;
     }
 
-    auto search_root_str = search_root.lexically_normal().string() + '/';
-    auto matches = glob::rglob(search_root_str + parsed_input->pattern);
+    auto matches = glob::rglob(search_root.string() + '/' + parsed_input->pattern);
 
     nlohmann::json result_json = nlohmann::json::array();
 
     for (size_t i = 0; i < matches.size() && i < MAX_RESULTS; ++i)
     {
-        auto& abs_path = matches[i];
-        auto relative = abs_path.lexically_normal().string();
-
-        if (relative.starts_with(search_root_str))
+        std::error_code error;
+        auto relative = std::filesystem::relative(matches[i], search_root, error);
+        if (error)
         {
-            relative = relative.substr(search_root_str.size());
+            continue;
         }
 
-        result_json.push_back(std::move(relative));
+        result_json.push_back(relative.generic_string());
     }
 
     return ToolResponse{
