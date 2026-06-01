@@ -4,6 +4,7 @@
 #include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/permissions/permission.h"
+#include "codeharness/prompts/project_context.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/bash_tool.h"
@@ -984,4 +985,78 @@ TEST_CASE("engine passes bash command to permission checker")
 
     REQUIRE(result.has_value());
     CHECK(result->output_text.find("permission denied: dangerous command is blocked") != std::string::npos);
+}
+
+TEST_CASE("project context loader reads AGENTS and CLAUDE from parent to child")
+{
+    TempDir temp{"codeharness-project-context-order-test"};
+
+    const auto repo = temp.path / "repo";
+    const auto child = repo / "src" / "feature";
+    std::filesystem::create_directories(child);
+    std::filesystem::create_directories(repo / ".git");
+
+    {
+        std::ofstream file{temp.path / "AGENTS.md", std::ios::binary};
+        file << "outside";
+    }
+
+    {
+        std::ofstream file{repo / "AGENTS.md", std::ios::binary};
+        file << "repo agents";
+    }
+
+    {
+        std::ofstream file{repo / "CLAUDE.md", std::ios::binary};
+        file << "repo claude";
+    }
+
+    {
+        std::ofstream file{child / "AGENTS.md", std::ios::binary};
+        file << "child agents";
+    }
+
+    auto files = codeharness::load_project_context_files(child);
+
+    REQUIRE(files.has_value());
+    REQUIRE(files->size() == 3);
+    CHECK(files->at(0).path == repo / "AGENTS.md");
+    CHECK(files->at(0).content == "repo agents");
+    CHECK(files->at(1).path == repo / "CLAUDE.md");
+    CHECK(files->at(1).content == "repo claude");
+    CHECK(files->at(2).path == child / "AGENTS.md");
+    CHECK(files->at(2).content == "child agents");
+}
+
+TEST_CASE("project context loader applies a total character budget")
+{
+    TempDir temp{"codeharness-project-context-budget-test"};
+
+    const auto repo = temp.path / "repo";
+    const auto child = repo / "src";
+    std::filesystem::create_directories(child);
+    std::filesystem::create_directories(repo / ".git");
+
+    {
+        std::ofstream file{repo / "AGENTS.md", std::ios::binary};
+        file << "abcdef";
+    }
+
+    {
+        std::ofstream file{child / "AGENTS.md", std::ios::binary};
+        file << "ghijkl";
+    }
+
+    codeharness::ProjectContextOptions options;
+    options.file_names = {"AGENTS.md"};
+    options.max_total_chars = 8;
+
+    auto files = codeharness::load_project_context_files(child, options);
+
+    REQUIRE(files.has_value());
+    REQUIRE(files->size() == 2);
+    CHECK(files->at(0).path == repo / "AGENTS.md");
+    CHECK(files->at(0).content == "abcdef");
+    CHECK(files->at(1).path == child / "AGENTS.md");
+    CHECK(files->at(1).content == "gh");
 }
