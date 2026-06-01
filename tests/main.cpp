@@ -302,6 +302,30 @@ TEST_CASE("engine executes requested tool and returns final provider text")
         codeharness::Role::Assistant); // messages[3] Assistant TextBlock: "hello from engine file"
 }
 
+TEST_CASE("engine reports unknown tool as a tool error")
+{
+    ReadFileRequestProvider provider;
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "read hello.txt";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->messages.size() == 4);
+    CHECK(result->messages[2].role == codeharness::Role::Tool);
+
+    auto tool_result = std::get_if<codeharness::ToolResultBlock>(&result->messages[2].content.front());
+    REQUIRE(tool_result != nullptr);
+    CHECK(tool_result->tool_use_id == "tool-use-1");
+    CHECK(tool_result->is_error);
+    CHECK(tool_result->content == "tool not found: read_file");
+    CHECK(result->output_text == tool_result->content);
+}
+
 TEST_CASE("echo provider streams text delta")
 {
     codeharness::EchoProvider provider;

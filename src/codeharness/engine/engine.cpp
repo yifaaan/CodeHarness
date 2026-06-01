@@ -192,6 +192,14 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
 auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
 {
     auto tool = tools_->find(tool_use.name);
+    if (tool == nullptr)
+    {
+        return ToolResultBlock{
+            .tool_use_id = tool_use.id,
+            .content = "tool not found: " + tool_use.name,
+            .is_error = true,
+        };
+    }
 
     // 权限检查
     if (permissions_ != nullptr)
