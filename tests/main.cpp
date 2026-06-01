@@ -6,6 +6,7 @@
 #include "codeharness/permissions/permission.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/provider/provider.h"
+#include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
@@ -707,6 +708,18 @@ TEST_CASE("permission checker blocks sensitive paths even in full_auto mode")
     CHECK(decision.action == codeharness::PermissionAction::Deny);
 }
 
+TEST_CASE("permission checker blocks dangerous commands even in full_auto mode")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto decision = checker.evaluate("bash", false, std::nullopt, std::string{"printf 'rm -rf /'"});
+
+    CHECK(decision.action == codeharness::PermissionAction::Deny);
+}
+
 TEST_CASE("permission checker denied_tools wins over allowed_tools")
 {
     codeharness::PermissionSettings settings;
@@ -806,6 +819,47 @@ public:
     }
 };
 
+class DangerousBashRequestProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        for (auto& message : messages)
+        {
+            if (message.role != codeharness::Role::Tool)
+            {
+                continue;
+            }
+
+            for (auto& block : message.content)
+            {
+                if (auto result = std::get_if<codeharness::ToolResultBlock>(&block))
+                {
+                    sink(codeharness::AssistantTextDelta{result->content});
+                    sink(codeharness::MessageFinished{});
+                    return {};
+                }
+            }
+        }
+
+        sink(
+            codeharness::ToolUseStarted{
+                .id = "tool-use-1",
+                .name = "bash",
+            });
+        sink(
+            codeharness::ToolUseInputDelta{
+                .id = "tool-use-1",
+                .input_json_delta = R"({"command":"printf 'rm -rf /'"})",
+            });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
+        sink(codeharness::MessageFinished{});
+
+        return {};
+    }
+};
+
 } // namespace
 
 TEST_CASE("engine blocks write_file in default mode without permission prompt")
@@ -883,4 +937,26 @@ TEST_CASE("engine blocks write_file in plan mode")
 
     REQUIRE(result.has_value());
     CHECK(result->output_text.find("permission denied") != std::string::npos);
+}
+
+TEST_CASE("engine passes bash command to permission checker")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::BashTool>());
+
+    DangerousBashRequestProvider provider;
+    codeharness::Engine engine{provider, tools, checker};
+
+    codeharness::RunRequest request;
+    request.prompt = "run a command";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("permission denied: dangerous command is blocked") != std::string::npos);
 }

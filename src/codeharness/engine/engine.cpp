@@ -33,6 +33,37 @@ auto emit_engine_event(const EngineEventSink& sink, EngineEvent event) -> void
     }
 }
 
+struct PermissionTarget
+{
+    std::optional<std::filesystem::path> path;
+    std::optional<std::string> command;
+};
+
+auto extract_permission_target(const ToolUseBlock& tool_use) -> PermissionTarget
+{
+    PermissionTarget target;
+
+    try
+    {
+        auto input = nlohmann::json::parse(tool_use.input_json);
+
+        if (input.contains("path") && input["path"].is_string())
+        {
+            target.path = input["path"].get<std::string>();
+        }
+
+        if (tool_use.name == "bash" && input.contains("command") && input["command"].is_string())
+        {
+            target.command = input["command"].get<std::string>();
+        }
+    }
+    catch (const nlohmann::json::parse_error&)
+    {
+    }
+
+    return target;
+}
+
 } // namespace
 
 Engine::Engine(Provider& provider) : provider_(provider)
@@ -204,22 +235,8 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
     // 权限检查
     if (permissions_ != nullptr)
     {
-        // 从工具的 input JSON 里提取 path
-        std::optional<std::filesystem::path> target_path;
-
-        try
-        {
-            auto input = nlohmann::json::parse(tool_use.input_json);
-            if (input.contains("path") && input["path"].is_string())
-            {
-                target_path = input["path"].get<std::string>();
-            }
-        }
-        catch (const nlohmann::json::parse_error&)
-        {
-        }
-
-        auto decision = permissions_->evaluate(tool_use.name, tool->is_read_only(), target_path, std::nullopt);
+        const auto target = extract_permission_target(tool_use);
+        auto decision = permissions_->evaluate(tool_use.name, tool->is_read_only(), target.path, target.command);
 
         // 拒绝
         if (decision.action == PermissionAction::Deny)
