@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include "codeharness/core/json_parse.h"
+
 namespace codeharness
 {
 
@@ -27,19 +29,21 @@ struct BashInput
 //   {"command": "git log --oneline -3", "timeout_seconds": 30}
 auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
 {
-    if (!input.contains("command") || !input["command"].is_string())
-    {
-        return fail<BashInput>(ErrorKind::InvalidArgument, "bash requires string field: command");
-    }
-
-    if (input.contains("timeout_seconds") && !input["timeout_seconds"].is_number_integer())
-    {
-        return fail<BashInput>(ErrorKind::InvalidArgument, "bash timeout_seconds must be an integer");
-    }
-
     BashInput parsed;
-    parsed.command = input["command"].get<std::string>();
-    parsed.timeout_seconds = input.value("timeout_seconds", 600);
+
+    auto command = require_string(input, "command", "bash");
+    if (!command)
+    {
+        return fail<BashInput>(command.error().kind, command.error().message);
+    }
+    parsed.command = std::move(*command);
+
+    auto timeout_seconds = optional_int(input, "timeout_seconds", 600, "bash");
+    if (!timeout_seconds)
+    {
+        return fail<BashInput>(timeout_seconds.error().kind, timeout_seconds.error().message);
+    }
+    parsed.timeout_seconds = *timeout_seconds;
 
     if (parsed.timeout_seconds < 1)
     {

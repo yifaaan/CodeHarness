@@ -5,6 +5,7 @@
 
 #include <filesystem>
 
+#include "codeharness/core/json_parse.h"
 #include "codeharness/tools/workspace_path.h"
 
 namespace codeharness
@@ -21,18 +22,15 @@ struct GlobInput
 
 auto parse_glob_input(const nlohmann::json& input) -> Result<GlobInput>
 {
-    if (!input.contains("pattern") || !input["pattern"].is_string())
-    {
-        return fail<GlobInput>(ErrorKind::InvalidArgument, "glob requires string field: pattern");
-    }
-
     GlobInput parsed;
-    parsed.pattern = input["pattern"].get<std::string>();
 
-    if (input.contains("path") && input["path"].is_string())
+    auto pattern = require_string(input, "pattern", "glob");
+    if (!pattern)
     {
-        parsed.path = input["path"].get<std::string>();
+        return fail<GlobInput>(pattern.error().kind, pattern.error().message);
     }
+    parsed.pattern = std::move(*pattern);
+    parsed.path = optional_string(input, "path");
 
     return parsed;
 }

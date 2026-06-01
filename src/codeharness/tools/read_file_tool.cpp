@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string_view>
 
+#include "codeharness/core/json_parse.h"
 #include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
 
@@ -23,25 +24,28 @@ struct ReadFileInput
 
 auto parse_read_file_input(const nlohmann::json& input) -> Result<ReadFileInput>
 {
-    if (!input.contains("path") || !input["path"].is_string())
-    {
-        return fail<ReadFileInput>(ErrorKind::InvalidArgument, "read_file requires string field: path");
-    }
-
-    if (input.contains("offset") && !input["offset"].is_number_integer())
-    {
-        return fail<ReadFileInput>(ErrorKind::InvalidArgument, "read_file offset must be an integer");
-    }
-
-    if (input.contains("limit") && !input["limit"].is_number_integer())
-    {
-        return fail<ReadFileInput>(ErrorKind::InvalidArgument, "read_file limit must be an integer");
-    }
-
     ReadFileInput parsed;
-    parsed.path = input["path"].get<std::string>();
-    parsed.offset = input.value("offset", 0);
-    parsed.limit = input.value("limit", 200);
+
+    auto path = require_string(input, "path", "read_file");
+    if (!path)
+    {
+        return fail<ReadFileInput>(path.error().kind, path.error().message);
+    }
+    parsed.path = std::move(*path);
+
+    auto offset = optional_int(input, "offset", 0, "read_file");
+    if (!offset)
+    {
+        return fail<ReadFileInput>(offset.error().kind, offset.error().message);
+    }
+    parsed.offset = *offset;
+
+    auto limit = optional_int(input, "limit", 200, "read_file");
+    if (!limit)
+    {
+        return fail<ReadFileInput>(limit.error().kind, limit.error().message);
+    }
+    parsed.limit = *limit;
 
     if (parsed.offset < 0 || parsed.limit <= 0)
     {

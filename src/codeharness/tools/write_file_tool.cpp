@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <format>
 
+#include "codeharness/core/json_parse.h"
 #include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
 
@@ -28,25 +29,28 @@ struct WriteFileInput
 // 可选字段：create_directories (bool, 默认 true)
 auto parse_write_file_input(const nlohmann::json& input) -> Result<WriteFileInput>
 {
-    if (!input.contains("path") || !input["path"].is_string())
-    {
-        return fail<WriteFileInput>(ErrorKind::InvalidArgument, "write_file requires string field: path");
-    }
-
-    if (!input.contains("content") || !input["content"].is_string())
-    {
-        return fail<WriteFileInput>(ErrorKind::InvalidArgument, "write_file requires string field: content");
-    }
-
-    if (input.contains("create_directories") && !input["create_directories"].is_boolean())
-    {
-        return fail<WriteFileInput>(ErrorKind::InvalidArgument, "write_file create_directories must be a boolean");
-    }
-
     WriteFileInput parsed;
-    parsed.path = input["path"].get<std::string>();
-    parsed.content = input["content"].get<std::string>();
-    parsed.create_directories = input.value("create_directories", true);
+
+    auto path = require_string(input, "path", "write_file");
+    if (!path)
+    {
+        return fail<WriteFileInput>(path.error().kind, path.error().message);
+    }
+    parsed.path = std::move(*path);
+
+    auto content = require_string(input, "content", "write_file");
+    if (!content)
+    {
+        return fail<WriteFileInput>(content.error().kind, content.error().message);
+    }
+    parsed.content = std::move(*content);
+
+    auto create_directories = optional_bool(input, "create_directories", true, "write_file");
+    if (!create_directories)
+    {
+        return fail<WriteFileInput>(create_directories.error().kind, create_directories.error().message);
+    }
+    parsed.create_directories = *create_directories;
 
     return parsed;
 }

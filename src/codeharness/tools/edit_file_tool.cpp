@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "codeharness/core/json_parse.h"
 #include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
 
@@ -27,31 +28,35 @@ struct EditFileInput
 
 auto parse_edit_file_input(const nlohmann::json& input) -> Result<EditFileInput>
 {
-    if (!input.contains("path") || !input["path"].is_string())
-    {
-        return fail<EditFileInput>(ErrorKind::InvalidArgument, "edit_file requires string field: path");
-    }
-
-    if (!input.contains("old_string") || !input["old_string"].is_string())
-    {
-        return fail<EditFileInput>(ErrorKind::InvalidArgument, "edit_file requires string field: old_string");
-    }
-
-    if (!input.contains("new_string") || !input["new_string"].is_string())
-    {
-        return fail<EditFileInput>(ErrorKind::InvalidArgument, "edit_file requires string field: new_string");
-    }
-
-    if (input.contains("replace_all") && !input["replace_all"].is_boolean())
-    {
-        return fail<EditFileInput>(ErrorKind::InvalidArgument, "edit_file replace_all must be a boolean");
-    }
-
     EditFileInput parsed;
-    parsed.path = input["path"].get<std::string>();
-    parsed.old_string = input["old_string"].get<std::string>();
-    parsed.new_string = input["new_string"].get<std::string>();
-    parsed.replace_all = input.value("replace_all", false);
+
+    auto path = require_string(input, "path", "edit_file");
+    if (!path)
+    {
+        return fail<EditFileInput>(path.error().kind, path.error().message);
+    }
+    parsed.path = std::move(*path);
+
+    auto old_string = require_string(input, "old_string", "edit_file");
+    if (!old_string)
+    {
+        return fail<EditFileInput>(old_string.error().kind, old_string.error().message);
+    }
+    parsed.old_string = std::move(*old_string);
+
+    auto new_string = require_string(input, "new_string", "edit_file");
+    if (!new_string)
+    {
+        return fail<EditFileInput>(new_string.error().kind, new_string.error().message);
+    }
+    parsed.new_string = std::move(*new_string);
+
+    auto replace_all = optional_bool(input, "replace_all", false, "edit_file");
+    if (!replace_all)
+    {
+        return fail<EditFileInput>(replace_all.error().kind, replace_all.error().message);
+    }
+    parsed.replace_all = *replace_all;
 
     if (parsed.old_string.empty())
     {

@@ -11,6 +11,7 @@
 #include <string>
 #include <system_error>
 
+#include "codeharness/core/json_parse.h"
 #include "codeharness/tools/workspace_path.h"
 
 namespace codeharness
@@ -34,28 +35,25 @@ struct GrepInput
 //   }
 auto parse_grep_input(const nlohmann::json& input) -> Result<GrepInput>
 {
-    if (!input.contains("pattern") || !input["pattern"].is_string())
-    {
-        return fail<GrepInput>(ErrorKind::InvalidArgument, "grep requires string field: pattern");
-    }
-
-    if (input.contains("path") && !input["path"].is_string())
-    {
-        return fail<GrepInput>(ErrorKind::InvalidArgument, "grep path must be a string");
-    }
-
-    if (input.contains("max_results") && !input["max_results"].is_number_integer())
-    {
-        return fail<GrepInput>(ErrorKind::InvalidArgument, "grep max_results must be an integer");
-    }
-
     GrepInput parsed;
-    parsed.pattern = input["pattern"].get<std::string>();
-    parsed.max_results = input.value("max_results", 200);
 
-    if (input.contains("path"))
+    auto pattern = require_string(input, "pattern", "grep");
+    if (!pattern)
     {
-        parsed.path = input["path"].get<std::string>();
+        return fail<GrepInput>(pattern.error().kind, pattern.error().message);
+    }
+    parsed.pattern = std::move(*pattern);
+
+    auto max_results = optional_int(input, "max_results", 200, "grep");
+    if (!max_results)
+    {
+        return fail<GrepInput>(max_results.error().kind, max_results.error().message);
+    }
+    parsed.max_results = *max_results;
+
+    if (auto path = optional_string(input, "path"))
+    {
+        parsed.path = std::move(*path);
     }
 
     if (parsed.pattern.empty())
