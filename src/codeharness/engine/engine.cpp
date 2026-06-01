@@ -9,20 +9,13 @@
 #include <utility>
 #include <vector>
 
+#include "codeharness/core/overloaded.h"
+
 namespace codeharness
 {
 
 namespace
 {
-
-template <class... Ts>
-struct Overloaded : Ts...
-{
-    using Ts::operator()...;
-};
-
-template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
 
 auto emit_engine_event(const EngineEventSink& sink, EngineEvent event) -> void
 {

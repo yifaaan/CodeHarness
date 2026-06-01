@@ -9,21 +9,8 @@
 
 #include "codeharness/core/error.h"
 #include "codeharness/core/message.h"
+#include "codeharness/core/overloaded.h"
 #include "codeharness/core/result.h"
-
-namespace
-{
-
-template <class... Ts>
-struct Overloaded : Ts...
-{
-    using Ts::operator()...;
-};
-
-template <class... Ts>
-Overloaded(Ts...) -> Overloaded<Ts...>;
-
-} // namespace
 
 namespace codeharness
 {
