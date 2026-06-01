@@ -10,6 +10,7 @@
 
 #include "codeharness/core/event_collector.h"
 #include "codeharness/core/overloaded.h"
+#include "codeharness/tools/tool.h"
 
 namespace codeharness
 {
@@ -152,6 +153,16 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         .name = tool_use.name,
         .input_json = tool_use.input_json,
     };
+
+    // 预解析 input_json：permission_target 与 execute 共用 parsed_input，避免重复 parse。
+    if (auto parsed = parse_tool_request_input(request, tool_use.name); !parsed)
+    {
+        return ToolResultBlock{
+            .tool_use_id = tool_use.id,
+            .content = std::move(parsed.error().message),
+            .is_error = true,
+        };
+    }
 
     // 权限检查
     if (permissions_ != nullptr)

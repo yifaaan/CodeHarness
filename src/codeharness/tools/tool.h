@@ -3,6 +3,8 @@
 #include "codeharness/core/result.h"
 #include "codeharness/tools/permission_target.h"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <string>
 
@@ -19,6 +21,9 @@ struct ToolRequest
     std::string id;
     std::string name;
     std::string input_json;
+    // 已解析的 input_json；permission_target 与 execute 共用以避免重复 parse。
+    // 缺失表示尚未解析或 JSON 非法（由 execute 自己处理）。
+    nlohmann::json parsed_input;
 };
 
 struct ToolResponse
@@ -50,5 +55,9 @@ public:
 
     virtual auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> = 0;
 };
+
+// 解析 tool request 的 input_json：若 request.parsed_input 已填充则原样返回；
+// 否则尝试 parse input_json 并写入 request.parsed_input。失败时返回错误。
+auto parse_tool_request_input(ToolRequest& request, std::string_view tool_name) -> Result<nlohmann::json*>;
 
 } // namespace codeharness

@@ -86,7 +86,7 @@ auto BashTool::description() const -> std::string
 
 auto BashTool::permission_target(const ToolRequest& request) const -> PermissionTarget
 {
-    return command_permission_target(request.input_json, "command");
+    return command_permission_target(request.parsed_input, "command");
 }
 
 // ---- 核心执行逻辑 ----
@@ -97,17 +97,7 @@ auto BashTool::permission_target(const ToolRequest& request) const -> Permission
 
 auto BashTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
 {
-    nlohmann::json input;
-    try
-    {
-        input = nlohmann::json::parse(request.input_json);
-    }
-    catch (const nlohmann::json::parse_error& e)
-    {
-        return fail<ToolResponse>(ErrorKind::InvalidArgument, e.what());
-    }
-
-    auto parsed = parse_bash_input(input);
+    auto parsed = parse_bash_input(request.parsed_input);
     if (!parsed)
     {
         return fail<ToolResponse>(parsed.error().kind, parsed.error().message);

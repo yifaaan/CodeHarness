@@ -107,23 +107,12 @@ auto ReadFileTool::is_read_only() const noexcept -> bool
 
 auto ReadFileTool::permission_target(const ToolRequest& request) const -> PermissionTarget
 {
-    return path_permission_target(request.input_json, "path");
+    return path_permission_target(request.parsed_input, "path");
 }
 
 auto ReadFileTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
 {
-    nlohmann::json input;
-
-    try
-    {
-        input = nlohmann::json::parse(request.input_json);
-    }
-    catch (const nlohmann::json::parse_error& error)
-    {
-        return fail<ToolResponse>(ErrorKind::InvalidArgument, error.what());
-    }
-
-    auto parsed_input = parse_read_file_input(input);
+    auto parsed_input = parse_read_file_input(request.parsed_input);
     if (!parsed_input)
     {
         return fail<ToolResponse>(parsed_input.error().kind, parsed_input.error().message);

@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <vector>
 
@@ -43,6 +44,15 @@ struct TempDir
         std::filesystem::remove_all(path, ignored);
     }
 };
+
+// 测试 helper：同时设置 ToolRequest 的 input_json 和 parsed_input。
+// production code 中 Engine 会通过 parse_tool_request_input 填充 parsed_input；
+// 直接调用 Tool 的测试需要自己 parse 一次。
+auto set_request_input(codeharness::ToolRequest& request, std::string input_json) -> void
+{
+    request.input_json = input_json;
+    request.parsed_input = nlohmann::json::parse(input_json);
+}
 
 auto read_file_text(const std::filesystem::path& path) -> std::string
 {
@@ -108,7 +118,7 @@ TEST_CASE("tool registry executes read_file")
     codeharness::ToolRequest request;
     request.id = "test-tool-use-id";
     request.name = "read_file";
-    request.input_json = R"({"path": "hello.txt"})";
+    set_request_input(request, R"({"path": "hello.txt"})");
 
     codeharness::ToolContext context;
     context.cwd = temp_dir;
@@ -128,7 +138,7 @@ TEST_CASE("read_file rejects paths outside cwd")
     codeharness::ToolRequest request;
     request.id = "tool-use-1";
     request.name = "read_file";
-    request.input_json = R"({"path":"../outside.txt"})";
+    set_request_input(request, R"({"path":"../outside.txt"})");
 
     codeharness::ToolContext context;
     context.cwd = std::filesystem::temp_directory_path();
@@ -156,7 +166,7 @@ TEST_CASE("read_file returns requested line range")
     codeharness::ToolRequest request;
     request.id = "tool-use-range";
     request.name = "read_file";
-    request.input_json = R"({"path":"lines.txt","offset":1,"limit":2})";
+    set_request_input(request, R"({"path":"lines.txt","offset":1,"limit":2})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -183,7 +193,7 @@ TEST_CASE("glob_tool returns relative paths under search root")
     codeharness::ToolRequest request;
     request.id = "glob-use-1";
     request.name = "glob";
-    request.input_json = R"({"pattern":"**/*.cpp","path":"src"})";
+    set_request_input(request, R"({"pattern":"**/*.cpp","path":"src"})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -224,7 +234,7 @@ TEST_CASE("grep returns regex matches with file and line")
     codeharness::ToolRequest request;
     request.id = "grep-use-1";
     request.name = "grep";
-    request.input_json = R"({"pattern":"TODO:.*provider","path":".","max_results":10})";
+    set_request_input(request, R"({"pattern":"TODO:.*provider","path":".","max_results":10})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -454,7 +464,7 @@ TEST_CASE("write_file creates a new file")
     codeharness::ToolRequest request;
     request.id = "test-1";
     request.name = "write_file";
-    request.input_json = R"({"path":"output.txt","content":"hello world"})";
+    set_request_input(request, R"({"path":"output.txt","content":"hello world"})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -482,7 +492,7 @@ TEST_CASE("write_file creates parent directories by default")
     codeharness::ToolRequest request;
     request.id = "test-2";
     request.name = "write_file";
-    request.input_json = R"({"path":"deep/nested/dir/file.txt","content":"nested content"})";
+    set_request_input(request, R"({"path":"deep/nested/dir/file.txt","content":"nested content"})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -504,7 +514,7 @@ TEST_CASE("write_file rejects paths outside cwd")
     codeharness::ToolRequest request;
     request.id = "test-3";
     request.name = "write_file";
-    request.input_json = R"({"path":"../outside.txt","content":"escape"})";
+    set_request_input(request, R"({"path":"../outside.txt","content":"escape"})");
 
     codeharness::ToolContext context;
     context.cwd = std::filesystem::temp_directory_path();
@@ -522,7 +532,7 @@ TEST_CASE("write_file rejects absolute paths")
     codeharness::ToolRequest request;
     request.id = "test-4";
     request.name = "write_file";
-    request.input_json = R"({"path":"/etc/passwd","content":"hacked"})";
+    set_request_input(request, R"({"path":"/etc/passwd","content":"hacked"})");
 
     codeharness::ToolContext context;
     context.cwd = std::filesystem::temp_directory_path();
@@ -548,7 +558,7 @@ TEST_CASE("write_file overwrites existing file")
     codeharness::ToolRequest request;
     request.id = "test-5";
     request.name = "write_file";
-    request.input_json = R"({"path":"existing.txt","content":"new content"})";
+    set_request_input(request, R"({"path":"existing.txt","content":"new content"})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -570,7 +580,7 @@ TEST_CASE("write_file requires content field")
     request.id = "test-6";
     request.name = "write_file";
     // 缺少 content 字段
-    request.input_json = R"({"path":"test.txt"})";
+    set_request_input(request, R"({"path":"test.txt"})");
 
     codeharness::ToolContext context;
     context.cwd = std::filesystem::temp_directory_path();
@@ -595,7 +605,7 @@ TEST_CASE("edit_file replaces a unique string")
     codeharness::ToolRequest request;
     request.id = "edit-1";
     request.name = "edit_file";
-    request.input_json = R"({"path":"note.txt","old_string":"beta","new_string":"BETA"})";
+    set_request_input(request, R"({"path":"note.txt","old_string":"beta","new_string":"BETA"})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -623,7 +633,7 @@ TEST_CASE("edit_file rejects multiple matches by default")
     codeharness::ToolRequest request;
     request.id = "edit-2";
     request.name = "edit_file";
-    request.input_json = R"({"path":"words.txt","old_string":"red","new_string":"green"})";
+    set_request_input(request, R"({"path":"words.txt","old_string":"red","new_string":"green"})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -649,7 +659,7 @@ TEST_CASE("edit_file can replace all matches explicitly")
     codeharness::ToolRequest request;
     request.id = "edit-3";
     request.name = "edit_file";
-    request.input_json = R"({"path":"words.txt","old_string":"red","new_string":"green","replace_all":true})";
+    set_request_input(request, R"({"path":"words.txt","old_string":"red","new_string":"green","replace_all":true})");
 
     codeharness::ToolContext context;
     context.cwd = temp.path;
@@ -669,7 +679,7 @@ TEST_CASE("edit_file rejects paths outside cwd")
     codeharness::ToolRequest request;
     request.id = "edit-4";
     request.name = "edit_file";
-    request.input_json = R"({"path":"../outside.txt","old_string":"old","new_string":"new"})";
+    set_request_input(request, R"({"path":"../outside.txt","old_string":"old","new_string":"new"})");
 
     codeharness::ToolContext context;
     context.cwd = std::filesystem::temp_directory_path();
@@ -777,7 +787,7 @@ TEST_CASE("workspace path rejects escaping through nested relative path")
 
     // nested/../../outside.txt 会向上跳两级，
     // 最终逃逸 cwd，所以必须被拒绝。
-    request.input_json = R"({"path":"nested/../../outside.txt","content":"escape"})";
+    set_request_input(request, R"({"path":"nested/../../outside.txt","content":"escape"})");
 
     codeharness::ToolContext context;
     context.cwd = std::filesystem::temp_directory_path();
@@ -794,7 +804,7 @@ TEST_CASE("tools expose permission targets for engine checks")
     codeharness::ToolRequest read_request;
     read_request.id = "target-1";
     read_request.name = "read_file";
-    read_request.input_json = R"({"path":"secrets.txt"})";
+    set_request_input(read_request, R"({"path":"secrets.txt"})");
 
     auto read_target = read_tool.permission_target(read_request);
     REQUIRE(read_target.path.has_value());
@@ -805,7 +815,7 @@ TEST_CASE("tools expose permission targets for engine checks")
     codeharness::ToolRequest bash_request;
     bash_request.id = "target-2";
     bash_request.name = "bash";
-    bash_request.input_json = R"({"command":"printf 'rm -rf /'"})";
+    set_request_input(bash_request, R"({"command":"printf 'rm -rf /'"})");
 
     auto bash_target = bash_tool.permission_target(bash_request);
     REQUIRE(bash_target.command.has_value());
