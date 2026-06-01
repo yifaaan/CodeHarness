@@ -17,6 +17,7 @@ local runtime_packages = {
     "re2",
     "reproc",
     "spdlog",
+    "yaml-cpp",
 }
 
 -- Phase 4/5（MCP、Plugin、ohmo、Gateway）预留依赖。
@@ -28,7 +29,6 @@ local phase_packages = {
     "brotli",    -- HTTP compression
     "openssl",   -- TLS
     "sqlite3",   -- session / memory storage
-    "yaml-cpp",  -- plugin manifest
     "zlib",      -- HTTP compression
 }
 --]]

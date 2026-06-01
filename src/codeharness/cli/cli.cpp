@@ -3,11 +3,13 @@
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/provider/echo_provider.h"
+#include "codeharness/skills/skill_loader.h"
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/glob_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
+#include "codeharness/tools/skill_tool.h"
 #include "codeharness/tools/tool_registry.h"
 #include "codeharness/version.h"
 
@@ -74,12 +76,19 @@ auto run_cli(int argc, char **argv) -> Result<int>
         return 0;
     }
 
+    auto skills = load_skill_registry(std::filesystem::current_path());
+    if (!skills)
+    {
+        return nonstd::make_unexpected(skills.error());
+    }
+
     ToolRegistry tools;
     tools.add(std::make_unique<ReadFileTool>());
     tools.add(std::make_unique<EditFileTool>());
     tools.add(std::make_unique<GlobTool>());
     tools.add(std::make_unique<GrepTool>());
     tools.add(std::make_unique<BashTool>());
+    tools.add(std::make_unique<SkillTool>(*skills));
 
     EchoProvider provider;
     Engine engine{provider, tools};
@@ -107,7 +116,7 @@ auto run_cli(int argc, char **argv) -> Result<int>
     {
         std::cout << '\n';
     }
-    
+
     return 0;
 }
 
