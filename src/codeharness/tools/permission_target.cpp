@@ -1,33 +1,21 @@
 #include "codeharness/tools/permission_target.h"
 
+#include "codeharness/core/json_parse.h"
+
 #include <filesystem>
 #include <utility>
 
 namespace codeharness
 {
 
-namespace
-{
-
-auto string_field(const nlohmann::json& input, std::string_view field_name) -> std::optional<std::string>
-{
-    const std::string key{field_name};
-    if (input.contains(key) && input[key].is_string())
-    {
-        return input[key].get<std::string>();
-    }
-    return std::nullopt;
-}
-
-} // namespace
-
 auto path_permission_target(const nlohmann::json& input, std::string_view field_name) -> PermissionTarget
 {
     PermissionTarget target;
 
-    if (auto value = string_field(input, field_name))
+    auto value = read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, field_name);
+    if (value && *value)
     {
-        target.path = std::filesystem::path{*value};
+        target.path = std::filesystem::path{**value};
     }
 
     return target;
@@ -37,9 +25,10 @@ auto command_permission_target(const nlohmann::json& input, std::string_view fie
 {
     PermissionTarget target;
 
-    if (auto value = string_field(input, field_name))
+    auto value = read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, field_name);
+    if (value && *value)
     {
-        target.command = std::move(*value);
+        target.command = std::move(**value);
     }
 
     return target;

@@ -1,11 +1,11 @@
 #include "codeharness/tools/edit_file_tool.h"
 
-#include <nonstd/expected.hpp>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
+#include <nonstd/expected.hpp>
 
 #include <cstddef>
 #include <filesystem>
-#include <format>
 #include <string>
 #include <utility>
 
@@ -47,12 +47,9 @@ auto parse_edit_file_input(const nlohmann::json& input) -> Result<EditFileInput>
         return nonstd::make_unexpected(r.error());
     }
 
-    if (auto r = assign(parsed.replace_all,
-                        read_json_field<bool, JsonFieldMode::optional_with_default>(
-                            input,
-                            "replace_all",
-                            "edit_file",
-                            false));
+    if (auto r = assign(
+            parsed.replace_all,
+            read_json_field<bool, JsonFieldMode::optional_with_default>(input, "replace_all", "edit_file", false));
         !r)
     {
         return nonstd::make_unexpected(r.error());
@@ -170,7 +167,7 @@ auto EditFileTool::execute(const ToolRequest& request, const ToolContext& contex
 
     return ToolResponse{
         .tool_use_id = request.id,
-        .content = std::format("Edited {} ({} {})", resolved->string(), match_count, unit),
+        .content = fmt::format("Edited {} ({} {})", resolved->string(), match_count, unit),
         .is_error = false,
     };
 }

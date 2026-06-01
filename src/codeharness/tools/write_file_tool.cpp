@@ -1,11 +1,11 @@
 #include "codeharness/tools/write_file_tool.h"
 
-#include <nonstd/expected.hpp>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
+#include <nonstd/expected.hpp>
 
 #include <cstdint>
 #include <filesystem>
-#include <format>
 
 #include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
@@ -43,12 +43,10 @@ auto parse_write_file_input(const nlohmann::json& input) -> Result<WriteFileInpu
         return nonstd::make_unexpected(r.error());
     }
 
-    if (auto r = assign(parsed.create_directories,
-                        read_json_field<bool, JsonFieldMode::optional_with_default>(
-                            input,
-                            "create_directories",
-                            "write_file",
-                            true));
+    if (auto r = assign(
+            parsed.create_directories,
+            read_json_field<bool, JsonFieldMode::optional_with_default>(
+                input, "create_directories", "write_file", true));
         !r)
     {
         return nonstd::make_unexpected(r.error());
@@ -61,19 +59,19 @@ auto format_size(std::uint64_t bytes) -> std::string
 {
     if (bytes < 1024)
     {
-        return std::format("{} B", bytes);
+        return fmt::format("{} B", bytes);
     }
     else if (bytes < 1024 * 1024)
     {
-        return std::format("{} KB", bytes / 1024);
+        return fmt::format("{} KB", bytes / 1024);
     }
     else if (bytes < 1024 * 1024 * 1024)
     {
-        return std::format("{} MB", bytes / (1024 * 1024));
+        return fmt::format("{} MB", bytes / (1024 * 1024));
     }
     else
     {
-        return std::format("{} GB", bytes / (1024 * 1024 * 1024));
+        return fmt::format("{} GB", bytes / (1024 * 1024 * 1024));
     }
 }
 
@@ -141,11 +139,11 @@ auto WriteFileTool::execute(const ToolRequest& request, const ToolContext& conte
     std::string result_text;
     if (is_overwrite)
     {
-        result_text = std::format("Overwrote {} ({})", resolved->string(), size_str);
+        result_text = fmt::format("Overwrote {} ({})", resolved->string(), size_str);
     }
     else
     {
-        result_text = std::format("Created {} ({})", resolved->string(), size_str);
+        result_text = fmt::format("Created {} ({})", resolved->string(), size_str);
     }
 
     return ToolResponse{

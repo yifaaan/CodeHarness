@@ -1,15 +1,14 @@
 #include "codeharness/tools/bash_tool.h"
 
-#include <nlohmann/json.hpp>
+#include <fmt/format.h>
 #include <spdlog/spdlog.h>
-
-#include <reproc/reproc.h>
+#include <nlohmann/json.hpp>
+#include <reproc++/reproc.hpp>
 
 #include <array>
 #include <cstdint>
-#include <cstring>
-#include <format>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "codeharness/core/assign.h"
@@ -39,12 +38,9 @@ auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
         return nonstd::make_unexpected(r.error());
     }
 
-    if (auto r = assign(parsed.timeout_seconds,
-                        read_json_field<int, JsonFieldMode::optional_with_default>(
-                            input,
-                            "timeout_seconds",
-                            "bash",
-                            600));
+    if (auto r = assign(
+            parsed.timeout_seconds,
+            read_json_field<int, JsonFieldMode::optional_with_default>(input, "timeout_seconds", "bash", 600));
         !r)
     {
         return nonstd::make_unexpected(r.error());
@@ -75,20 +71,29 @@ auto get_shell_prefix() -> std::vector<std::string>
 #endif
 }
 
-// 把子进程 stdout 管道里残留的数据全部读出并 append 到 output。
-//
-// nonblocking 模式下 read 在无数据时返回 REPROC_EWOULDBLOCK，跳出循环即可
-auto drain_output(reproc_t& process, std::string& output) -> void
+auto drain_output(reproc::process& process, std::string& output) -> void
 {
     std::array<std::uint8_t, 4096> buf;
     while (true)
     {
-        const int r = reproc_read(&process, REPROC_STREAM_OUT, buf.data(), buf.size());
-        if (r <= 0)
+        auto [bytes_read, error] = process.read(reproc::stream::out, buf.data(), buf.size());
+        if (bytes_read > 0)
         {
-            break;
+            output.append(reinterpret_cast<const char *>(buf.data()), bytes_read);
         }
-        output.append(reinterpret_cast<const char *>(buf.data()), r);
+
+        if (!error && bytes_read > 0)
+        {
+            continue;
+        }
+
+        if (error && error != std::errc::resource_unavailable_try_again && error != std::errc::operation_would_block &&
+            error != std::errc::broken_pipe)
+        {
+            spdlog::warn("failed to read bash output: {}", error.message());
+        }
+
+        break;
     }
 }
 
@@ -125,103 +130,50 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         return fail<ToolResponse>(parsed.error().kind, parsed.error().message);
     }
 
-    // ========== 构建进程参数 ==========
-    //
-    // 命令结构（Windows）：
-    //   argv[0] = "cmd.exe"        ← shell 程序
-    //   argv[1] = "/c"             ← 执行后退出
-    //   argv[2] = "echo hello"     ← 原始命令字符串
-    //
-    // reproc 要求 argv 以 NULL 结尾。
-
-    auto prefix = get_shell_prefix();
-    std::vector<const char *> argv;
-    for (const auto& part : prefix)
-    {
-        argv.push_back(part.c_str());
-    }
-    argv.push_back(parsed->command.c_str());
-    argv.push_back(nullptr);
+    auto argv = get_shell_prefix();
+    argv.push_back(parsed->command);
 
     spdlog::info("bash command: {}", parsed->command);
 
-    // ========== 启动子进程 ==========
-    //
-    // reproc 的启动原理：
-    //   1. 内部调用 CreateProcess / fork+exec
-    //   2. 根据 options 设置工作目录、管道等
-    //   3. 返回后子进程已经开始运行
+    reproc::process process;
+    reproc::options opts{};
 
-    auto process = reproc_new();
-    if (!process)
-    {
-        return fail<ToolResponse>(ErrorKind::Io, "failed to create subprocess handle");
-    }
-
-    // 配置子进程选项
-    reproc_options opts{};
-
-    // 工作目录：设为项目根目录
-    // LLM 以相对路径操作文件
     auto cwd_str = context.cwd.string();
     opts.working_directory = cwd_str.c_str();
-
-    // 重定向 stdin 到 /dev/null（不给子进程输入）
-    opts.redirect.in.type = REPROC_REDIRECT_DISCARD;
-    // 捕获 stdout（通过 pipe 读取子进程输出）
-    opts.redirect.out.type = REPROC_REDIRECT_PIPE;
-    // stderr 合并到 stdout
-    opts.redirect.err.type = REPROC_REDIRECT_STDOUT;
-
-    // 非阻塞模式：read 无数据时立即返回 REPROC_EWOULDBLOCK
+    opts.redirect.in.type = reproc::redirect::discard;
+    opts.redirect.out.type = reproc::redirect::pipe;
+    opts.redirect.err.type = reproc::redirect::stdout_;
     opts.nonblocking = true;
 
-    // 启动
-    auto r = reproc_start(process, argv.data(), opts);
-    if (r < 0)
+    if (auto error = process.start(argv, opts))
     {
-        process = reproc_destroy(process);
-        return fail<ToolResponse>(ErrorKind::Io, std::format("failed to start process: {}", reproc_strerror(r)));
+        return fail<ToolResponse>(ErrorKind::Io, fmt::format("failed to start process: {}", error.message()));
     }
 
-    // ========== 等待进程结束 + 超时控制 ==========
-    //
-    // reproc_wait 返回值规则：
-    //   0-255              → 子进程退出码（正常退出）
-    //   REPROC_ETIMEDOUT   → 超时（子进程还在运行）
-    //   < 0                → 系统错误
-
-    int timeout_ms = parsed->timeout_seconds * 1000;
-    int exit_status = reproc_wait(process, timeout_ms);
+    const auto timeout = reproc::milliseconds{parsed->timeout_seconds * 1000};
+    auto [exit_status, wait_error] = process.wait(timeout);
 
     std::string output;
 
-    if (exit_status == REPROC_ETIMEDOUT)
+    if (wait_error == std::errc::timed_out)
     {
-        // 超时 子进程还在跑，强制杀死。
-        //
-        // 杀进程的原理：
-        //   Windows: TerminateProcess（强制终止）
-        //   POSIX:   SIGKILL（不可捕获的终止信号）
-        // nonblocking 模式下，无数据时立即返回 REPROC_EWOULDBLOCK
-        drain_output(*process, output);
+        drain_output(process, output);
 
-        // 强制杀进程
-        reproc_kill(process);
-        reproc_wait(process, 5000);
+        if (auto error = process.kill())
+        {
+            spdlog::warn("failed to kill timed-out bash process: {}", error.message());
+        }
+        process.wait(reproc::milliseconds{5000});
 
-        // 读杀进程后的残留输出
-        drain_output(*process, output);
+        drain_output(process, output);
 
-        // 追加超时信息
         if (!output.empty() && output.back() != '\n')
         {
             output += '\n';
         }
-        output += std::format("[command timed out after {} seconds]", parsed->timeout_seconds);
+        output += fmt::format("[command timed out after {} seconds]", parsed->timeout_seconds);
 
         spdlog::warn("bash command timed out after {}s: {}", parsed->timeout_seconds, parsed->command);
-        process = reproc_destroy(process);
 
         return ToolResponse{
             .tool_use_id = request.id,
@@ -230,10 +182,12 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         };
     }
 
-    // ---- 正常退出 ----
-    drain_output(*process, output);
+    if (wait_error)
+    {
+        return fail<ToolResponse>(ErrorKind::Io, fmt::format("failed to wait for process: {}", wait_error.message()));
+    }
 
-    process = reproc_destroy(process);
+    drain_output(process, output);
 
     constexpr std::size_t max_length = 12000;
     if (output.size() > max_length)
@@ -247,7 +201,7 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
     std::string result;
     if (is_error)
     {
-        result = std::format("Exit code: {}\n\n{}", exit_status, output);
+        result = fmt::format("Exit code: {}\n\n{}", exit_status, output);
     }
     else
     {

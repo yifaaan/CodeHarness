@@ -1,8 +1,9 @@
 #include "codeharness/tools/grep_tool.h"
 
-#include <nonstd/expected.hpp>
-#include <nlohmann/json.hpp>
+#include <glob/glob.h>
 #include <re2/re2.h>
+#include <nlohmann/json.hpp>
+#include <nonstd/expected.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -44,12 +45,9 @@ auto parse_grep_input(const nlohmann::json& input) -> Result<GrepInput>
         return nonstd::make_unexpected(r.error());
     }
 
-    if (auto r = assign(parsed.max_results,
-                        read_json_field<int, JsonFieldMode::optional_with_default>(
-                            input,
-                            "max_results",
-                            "grep",
-                            200));
+    if (auto r = assign(
+            parsed.max_results,
+            read_json_field<int, JsonFieldMode::optional_with_default>(input, "max_results", "grep", 200));
         !r)
     {
         return nonstd::make_unexpected(r.error());
@@ -128,7 +126,8 @@ auto canonical_workspace(const std::filesystem::path& cwd) -> Result<std::filesy
     return workspace;
 }
 
-auto resolve_search_root(const std::filesystem::path& workspace, const GrepInput& input) -> Result<std::filesystem::path>
+auto resolve_search_root(const std::filesystem::path& workspace, const GrepInput& input)
+    -> Result<std::filesystem::path>
 {
     if (!input.path || *input.path == ".")
     {
@@ -138,11 +137,31 @@ auto resolve_search_root(const std::filesystem::path& workspace, const GrepInput
     return resolve_workspace_path(workspace, *input.path);
 }
 
-auto is_skipped_directory(const std::filesystem::path& path) -> bool
+auto is_skipped_directory_name(const std::filesystem::path& path) -> bool
 {
     const auto name = path.filename().string();
 
     return name == ".git" || name == "build";
+}
+
+auto is_under_skipped_directory(const std::filesystem::path& root, const std::filesystem::path& path) -> bool
+{
+    std::error_code error;
+    const auto relative = std::filesystem::relative(path, root, error);
+    if (error)
+    {
+        return false;
+    }
+
+    for (const auto& part : relative.parent_path())
+    {
+        if (is_skipped_directory_name(part))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 auto is_small_regular_file(const std::filesystem::path& path) -> bool
@@ -227,44 +246,22 @@ auto search_directory(
     int max_results,
     nlohmann::json& results) -> Result<void>
 {
-    std::error_code error;
-    std::filesystem::recursive_directory_iterator iterator{
-        directory,
-        std::filesystem::directory_options::skip_permission_denied,
-        error};
+    const auto matches = glob::rglob(directory.string() + "/**/*");
 
-    if (error)
+    for (const auto& match : matches)
     {
-        return fail<void>(ErrorKind::Io, "failed to search directory: " + error.message());
-    }
-
-    const std::filesystem::recursive_directory_iterator end;
-
-    while (iterator != end && static_cast<int>(results.size()) < max_results)
-    {
-        const auto& entry = *iterator;
-        const auto entry_path = entry.path();
-
-        if (entry.is_directory(error) && !error)
+        if (static_cast<int>(results.size()) >= max_results)
         {
-            if (is_skipped_directory(entry_path))
-            {
-                iterator.disable_recursion_pending();
-            }
-        }
-        else if (entry.is_regular_file(error) && !error)
-        {
-            search_file(workspace, entry_path, regex, max_results, results);
+            break;
         }
 
-        // 遍历某个文件失败时不要让整个 grep 失败。
-        // 例如权限不够、文件被删除，都只影响当前 entry。
-        error.clear();
-        iterator.increment(error);
-        if (error)
+        const auto entry_path = std::filesystem::path{match};
+        if (is_under_skipped_directory(directory, entry_path))
         {
-            error.clear();
+            continue;
         }
+
+        search_file(workspace, entry_path, regex, max_results, results);
     }
 
     return {};
