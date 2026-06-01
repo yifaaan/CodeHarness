@@ -6,6 +6,7 @@
 #include "codeharness/permissions/permission.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/provider/provider.h"
+#include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/tool_registry.h"
@@ -546,6 +547,105 @@ TEST_CASE("write_file requires content field")
     CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
 }
 
+TEST_CASE("edit_file replaces a unique string")
+{
+    TempDir temp{"codeharness-edit-file-test"};
+
+    {
+        std::ofstream file{temp.path / "note.txt", std::ios::binary};
+        file << "alpha beta gamma\n";
+    }
+
+    codeharness::EditFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "edit-1";
+    request.name = "edit_file";
+    request.input_json = R"({"path":"note.txt","old_string":"beta","new_string":"BETA"})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    CHECK(result->tool_use_id == "edit-1");
+    CHECK(result->content.find("1 replacement") != std::string::npos);
+    CHECK(read_file_text(temp.path / "note.txt") == "alpha BETA gamma\n");
+}
+
+TEST_CASE("edit_file rejects multiple matches by default")
+{
+    TempDir temp{"codeharness-edit-file-multiple-test"};
+
+    {
+        std::ofstream file{temp.path / "words.txt", std::ios::binary};
+        file << "red blue red\n";
+    }
+
+    codeharness::EditFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "edit-2";
+    request.name = "edit_file";
+    request.input_json = R"({"path":"words.txt","old_string":"red","new_string":"green"})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+    CHECK(read_file_text(temp.path / "words.txt") == "red blue red\n");
+}
+
+TEST_CASE("edit_file can replace all matches explicitly")
+{
+    TempDir temp{"codeharness-edit-file-replace-all-test"};
+
+    {
+        std::ofstream file{temp.path / "words.txt", std::ios::binary};
+        file << "red blue red\n";
+    }
+
+    codeharness::EditFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "edit-3";
+    request.name = "edit_file";
+    request.input_json = R"({"path":"words.txt","old_string":"red","new_string":"green","replace_all":true})";
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    CHECK(result->content.find("2 replacements") != std::string::npos);
+    CHECK(read_file_text(temp.path / "words.txt") == "green blue green\n");
+}
+
+TEST_CASE("edit_file rejects paths outside cwd")
+{
+    codeharness::EditFileTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "edit-4";
+    request.name = "edit_file";
+    request.input_json = R"({"path":"../outside.txt","old_string":"old","new_string":"new"})";
+
+    codeharness::ToolContext context;
+    context.cwd = std::filesystem::temp_directory_path();
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
 // PermissionChecker
 TEST_CASE("permission checker allows read-only tools in default mode")
 {
@@ -642,28 +742,17 @@ TEST_CASE("workspace path rejects escaping through nested relative path")
     CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
 }
 
-TEST_CASE("read_file tool is marked read-only")
-{
-    codeharness::ReadFileTool tool;
-
-    CHECK(tool.is_read_only() == true);
-}
-
-TEST_CASE("write_file tool defaults to mutating")
-{
-    codeharness::WriteFileTool tool;
-
-    CHECK(tool.is_read_only() == false);
-}
-
 TEST_CASE("read-only metadata works through base tool interface")
 {
     const std::unique_ptr<codeharness::Tool> read_tool = std::make_unique<codeharness::ReadFileTool>();
 
     const std::unique_ptr<codeharness::Tool> write_tool = std::make_unique<codeharness::WriteFileTool>();
 
+    const std::unique_ptr<codeharness::Tool> edit_tool = std::make_unique<codeharness::EditFileTool>();
+
     CHECK(read_tool->is_read_only() == true);
     CHECK(write_tool->is_read_only() == false);
+    CHECK(edit_tool->is_read_only() == false);
 }
 
 // 请求 write_file 的 mock provider。

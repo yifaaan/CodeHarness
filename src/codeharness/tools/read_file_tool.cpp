@@ -3,12 +3,9 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <sstream>
 #include <string_view>
-#include <system_error>
 
+#include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
 
 namespace codeharness
@@ -16,25 +13,6 @@ namespace codeharness
 
 namespace
 {
-
-auto read_text_file(const std::filesystem::path& path) -> Result<std::string>
-{
-    std::ifstream file{path, std::ios::binary};
-    if (!file)
-    {
-        return fail<std::string>(ErrorKind::Io, "failed to open file " + path.string());
-    }
-
-    std::ostringstream oss;
-    oss << file.rdbuf();
-
-    if (!file.good() && !file.eof())
-    {
-        return fail<std::string>(ErrorKind::Io, "failed to read file " + path.string());
-    }
-
-    return oss.str();
-}
 
 struct ReadFileInput
 {

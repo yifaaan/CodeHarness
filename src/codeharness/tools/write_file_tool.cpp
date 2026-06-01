@@ -2,12 +2,11 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <sstream>
-#include <system_error>
 
+#include "codeharness/tools/text_file.h"
 #include "codeharness/tools/workspace_path.h"
 
 namespace codeharness
@@ -52,52 +51,7 @@ auto parse_write_file_input(const nlohmann::json& input) -> Result<WriteFileInpu
     return parsed;
 }
 
-// Atomic write原子写入
-//
-// 原理：
-//   1. 在目标文件同目录下创建一个临时文件
-//   2. 将内容写入临时文件
-//   3. 刷盘确保内容写入磁盘
-//   4. 将临时文件 rename 为目标文件
-auto atomic_write_file(const std::filesystem::path& target_path, std::string_view content) -> Result<void>
-{
-    // 创建临时文件路径
-    auto tmp_path = target_path;
-    tmp_path += ".tmp";
-
-    // 打开临时文件进行写入
-    std::ofstream file{tmp_path, std::ios::binary};
-    if (!file)
-    {
-        return fail<void>(ErrorKind::Io, "failed to create temp file: " + tmp_path.string());
-    }
-
-    file << content;
-    file.flush();
-
-    if (!file.good())
-    {
-        std::error_code ignored;
-        std::filesystem::remove(tmp_path, ignored);
-        return fail<void>(ErrorKind::Io, "failed to write file content");
-    }
-
-    file.close();
-
-    std::error_code error;
-    std::filesystem::rename(tmp_path, target_path, error);
-    if (error)
-    {
-        std::error_code ignored;
-        std::filesystem::remove(tmp_path, ignored);
-
-        return fail<void>(ErrorKind::Io, "failed to rename temp file: " + error.message());
-    }
-
-    return {};
-}
-
-constexpr auto format_size(std::uint64_t bytes) -> std::string
+auto format_size(std::uint64_t bytes) -> std::string
 {
     if (bytes < 1024)
     {
@@ -175,7 +129,7 @@ auto WriteFileTool::execute(const ToolRequest& request, const ToolContext& conte
     bool is_overwrite = std::filesystem::exists(*resolved);
 
     // 原子写入
-    auto write_result = atomic_write_file(*resolved, parsed->content);
+    auto write_result = atomic_write_text_file(*resolved, parsed->content);
     if (!write_result)
     {
         return fail<ToolResponse>(write_result.error().kind, write_result.error().message);
