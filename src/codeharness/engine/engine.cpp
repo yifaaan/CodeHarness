@@ -5,10 +5,10 @@
 #include <filesystem>
 #include <optional>
 #include <span>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "codeharness/core/event_collector.h"
 #include "codeharness/core/overloaded.h"
 
 namespace codeharness
@@ -23,6 +23,27 @@ auto emit_engine_event(const EngineEventSink& sink, EngineEvent event) -> void
     {
         sink(event);
     }
+}
+
+// 把 ProviderEvent 翻译成对应的 EngineEvent。
+// ToolUseInputDelta / MessageFinished 没有对应的引擎事件，返回 nullopt。
+auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<EngineEvent>
+{
+    return std::visit(
+        Overloaded{
+            [](const AssistantTextDelta& delta) -> std::optional<EngineEvent> {
+                return EngineAssistantTextDelta{delta.text};
+            },
+            [](const ToolUseStarted& started) -> std::optional<EngineEvent> {
+                return EngineToolStarted{.id = started.id, .name = started.name};
+            },
+            [](const ToolUseInputDelta&) -> std::optional<EngineEvent> { return std::nullopt; },
+            [](const ToolUseFinished& finished) -> std::optional<EngineEvent> {
+                return EngineToolFinished{.id = finished.id};
+            },
+            [](const MessageFinished&) -> std::optional<EngineEvent> { return std::nullopt; },
+        },
+        event);
 }
 
 } // namespace
@@ -95,77 +116,15 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 auto Engine::stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink) const
     -> Result<Message>
 {
-    Message message;
-    message.role = Role::Assistant;
-
-    std::unordered_map<std::string, std::size_t> tool_block_by_id;
-    std::optional<CodeHarnessError> event_error;
-
-    auto set_event_error = [&](ErrorKind kind, std::string text) {
-        if (!event_error)
-        {
-            event_error = CodeHarnessError{kind, std::move(text)};
-        }
-    };
+    ProviderEventCollector collector;
+    collector.message().role = Role::Assistant;
 
     auto streamed = provider_.stream(messages, [&](const ProviderEvent& event) {
-        std::visit(
-            Overloaded{
-                [&](const AssistantTextDelta& delta) {
-                    message.content.emplace_back(TextBlock{delta.text});
-
-                    emit_engine_event(sink, EngineAssistantTextDelta{delta.text});
-                },
-                [&](const ToolUseStarted& started) {
-                    if (tool_block_by_id.contains(started.id))
-                    {
-                        set_event_error(ErrorKind::Provider, "duplicate tool use id: " + started.id);
-                        return;
-                    }
-
-                    tool_block_by_id[started.id] = message.content.size();
-                    message.content.emplace_back(
-                        ToolUseBlock{.id = started.id, .name = started.name, .input_json = ""});
-
-                    emit_engine_event(
-                        sink,
-                        EngineToolStarted{
-                            .id = started.id,
-                            .name = started.name,
-                        });
-                },
-                [&](const ToolUseInputDelta& delta) {
-                    auto found = tool_block_by_id.find(delta.id);
-                    if (found == tool_block_by_id.end())
-                    {
-                        set_event_error(ErrorKind::Provider, "tool input delta before tool start: " + delta.id);
-                        return;
-                    }
-
-                    auto tool_use = std::get_if<ToolUseBlock>(&message.content[found->second]);
-                    if (tool_use == nullptr)
-                    {
-                        set_event_error(ErrorKind::Internal, "tool block type mismatch");
-                        return;
-                    }
-
-                    tool_use->input_json += delta.input_json_delta;
-                },
-                [&](const ToolUseFinished& finished) {
-                    if (!tool_block_by_id.contains(finished.id))
-                    {
-                        set_event_error(ErrorKind::Provider, "tool finished before tool start: " + finished.id);
-                        return;
-                    }
-
-                    emit_engine_event(
-                        sink,
-                        EngineToolFinished{
-                            .id = finished.id,
-                        });
-                },
-                [&](const MessageFinished&) {}},
-            event);
+        collector.on_event(event);
+        if (auto engine_event = translate_to_engine_event(event))
+        {
+            emit_engine_event(sink, *engine_event);
+        }
     });
 
     if (!streamed)
@@ -173,12 +132,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
         return nonstd::make_unexpected(streamed.error());
     }
 
-    if (event_error)
-    {
-        return nonstd::make_unexpected(*event_error);
-    }
-
-    return message;
+    return collector.finalize();
 }
 
 auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
