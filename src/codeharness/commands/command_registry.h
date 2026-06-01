@@ -19,7 +19,7 @@ struct CommandResult
 {
     std::optional<std::string> message; // 直接展示给用户(如 /skills)
     std::optional<std::string> submit_prompt; // 把渲染好的 prompt 投回 agent 循环
-    std::optional<std::string> submit_model;
+    std::optional<std::string> submit_model; // 换模型
 };
 
 // 命令回调:
@@ -58,6 +58,7 @@ public:
     auto list() const -> std::vector<SlashCommand>;
 
 private:
+    // 同一个 SlashCommand 实例可以有 name + N 个 alias 共用
     std::unordered_map<std::string, std::shared_ptr<SlashCommand>> by_key_;
 };
 

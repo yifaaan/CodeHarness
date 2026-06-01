@@ -16,7 +16,7 @@ namespace codeharness
 namespace
 {
 
-// 去掉输入首部的空白和可选的 '/':
+// 去掉command首部的空白和可选的 '/':
 //   "   /skills"    -> "skills"
 //   "/skills"       -> "skills"
 //   "skills"        -> "skills"
