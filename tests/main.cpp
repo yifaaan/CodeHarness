@@ -2322,6 +2322,63 @@ TEST_CASE("hook executor skips unmatched tool matcher")
     CHECK(!called);
 }
 
+TEST_CASE("command hook receives payload in environment")
+{
+#if defined(_WIN32)
+    const std::string command = "echo %CODEHARNESS_HOOK_PAYLOAD%";
+#else
+    const std::string command = "printf '%s\\n' \"$CODEHARNESS_HOOK_PAYLOAD\"";
+#endif
+
+    codeharness::HookRegistry registry;
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .type = codeharness::HookType::Command,
+            .matcher = std::string{"write_file"},
+            .config = nlohmann::json{{"command", command}},
+        });
+
+    codeharness::HookExecutor executor{registry};
+    auto result = executor.execute(
+        codeharness::HookEvent::PreToolUse,
+        nlohmann::json{
+            {"tool_use_id", "tool-use-1"},
+            {"tool_name", "write_file"},
+        });
+
+    REQUIRE(result.results.size() == 1);
+    CHECK(!result.blocked);
+    CHECK(result.results.front().success);
+    CHECK(result.results.front().output.find("write_file") != std::string::npos);
+}
+
+TEST_CASE("blocking command hook failure blocks execution")
+{
+#if defined(_WIN32)
+    const std::string command = "exit /b 7";
+#else
+    const std::string command = "exit 7";
+#endif
+
+    codeharness::HookRegistry registry;
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .type = codeharness::HookType::Command,
+            .block_on_failure = true,
+            .config = nlohmann::json{{"command", command}},
+        });
+
+    codeharness::HookExecutor executor{registry};
+    auto result = executor.execute(codeharness::HookEvent::PreToolUse, nlohmann::json{{"tool_name", "bash"}});
+
+    REQUIRE(result.results.size() == 1);
+    CHECK(result.blocked);
+    CHECK(!result.results.front().success);
+    CHECK(!result.reason.empty());
+}
+
 TEST_CASE("engine lets pre-tool hook block tool execution")
 {
     codeharness::PermissionSettings settings;
