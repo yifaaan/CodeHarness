@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace codeharness
 {
@@ -115,6 +116,30 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
     {
         return value.template get<T>();
     }
+}
+
+// 严格 optional 字段 helper:
+//   - 字段缺失:返回 nullopt
+//   - 字段存在:复用 read_json_field<T> 的类型检查和错误消息
+template <typename T>
+auto read_optional_json_field(const nlohmann::json& input, std::string_view field_name, std::string_view tool_name = {})
+    -> Result<std::optional<T>>
+{
+    static_assert(std::is_same_v<T, std::string> || std::is_same_v<T, int> || std::is_same_v<T, bool>,
+                  "unsupported JSON field type");
+
+    if (!input.contains(std::string{field_name}))
+    {
+        return std::optional<T>{};
+    }
+
+    auto value = read_json_field<T>(input, field_name, tool_name);
+    if (!value)
+    {
+        return nonstd::make_unexpected(value.error());
+    }
+
+    return std::optional<T>{std::move(*value)};
 }
 
 } // namespace codeharness

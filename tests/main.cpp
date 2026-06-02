@@ -22,6 +22,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 
 #include "codeharness/cli/cli.h"
 #include "codeharness/commands/command_registry.h"
+#include "codeharness/core/json_parse.h"
 #include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/memory/memory_store.h"
@@ -159,6 +160,28 @@ TEST_CASE("echo provider returns latest user text")
     REQUIRE(result.has_value());
     CHECK(result->role == codeharness::Role::Assistant);
     CHECK(codeharness::collect_text(*result) == "hello");
+}
+
+TEST_CASE("strict optional json field validates present values")
+{
+    const auto input = nlohmann::json{
+        {"name", "deploy-pack"},
+        {"enabled", "yes"},
+    };
+
+    auto missing = codeharness::read_optional_json_field<std::string>(input, "description", "plugin manifest");
+    REQUIRE(missing.has_value());
+    CHECK(!missing->has_value());
+
+    auto name = codeharness::read_optional_json_field<std::string>(input, "name", "plugin manifest");
+    REQUIRE(name.has_value());
+    REQUIRE(name->has_value());
+    CHECK(**name == "deploy-pack");
+
+    auto invalid = codeharness::read_optional_json_field<bool>(input, "enabled", "plugin manifest");
+    REQUIRE(!invalid.has_value());
+    CHECK(invalid.error().kind == codeharness::ErrorKind::InvalidArgument);
+    CHECK(invalid.error().message == "plugin manifest requires boolean field: enabled");
 }
 
 TEST_CASE("engine runs one provider turn")

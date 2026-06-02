@@ -53,40 +53,6 @@ auto is_safe_relative_path(const std::filesystem::path& path) -> bool
     return !path.empty() && !path.is_absolute() && !path.has_root_name() && !has_parent_reference(path);
 }
 
-auto optional_json_string(const nlohmann::json& object, std::string_view field_name, std::string_view plugin_name)
-    -> Result<std::optional<std::string>>
-{
-    if (!object.contains(std::string{field_name}))
-    {
-        return std::optional<std::string>{};
-    }
-
-    auto value = read_json_field<std::string>(object, field_name, plugin_name);
-    if (!value)
-    {
-        return nonstd::make_unexpected(value.error());
-    }
-
-    return std::optional<std::string>{std::move(*value)};
-}
-
-auto optional_json_bool(const nlohmann::json& object, std::string_view field_name, std::string_view plugin_name)
-    -> Result<std::optional<bool>>
-{
-    if (!object.contains(std::string{field_name}))
-    {
-        return std::optional<bool>{};
-    }
-
-    auto value = read_json_field<bool>(object, field_name, plugin_name);
-    if (!value)
-    {
-        return nonstd::make_unexpected(value.error());
-    }
-
-    return std::optional<bool>{*value};
-}
-
 auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path& manifest_path)
     -> Result<PluginManifest>
 {
@@ -105,7 +71,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
 
     auto manifest = PluginManifest{.name = std::move(*name)};
 
-    auto version = optional_json_string(json, "version", "plugin manifest");
+    auto version = read_optional_json_field<std::string>(json, "version", "plugin manifest");
     if (!version)
     {
         return nonstd::make_unexpected(version.error());
@@ -115,7 +81,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.version = std::move(**version);
     }
 
-    auto description = optional_json_string(json, "description", "plugin manifest");
+    auto description = read_optional_json_field<std::string>(json, "description", "plugin manifest");
     if (!description)
     {
         return nonstd::make_unexpected(description.error());
@@ -125,7 +91,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.description = std::move(**description);
     }
 
-    auto enabled = optional_json_bool(json, "enabled_by_default", "plugin manifest");
+    auto enabled = read_optional_json_field<bool>(json, "enabled_by_default", "plugin manifest");
     if (!enabled)
     {
         return nonstd::make_unexpected(enabled.error());
@@ -135,7 +101,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.enabled_by_default = **enabled;
     }
 
-    auto enabled_camel = optional_json_bool(json, "enabledByDefault", "plugin manifest");
+    auto enabled_camel = read_optional_json_field<bool>(json, "enabledByDefault", "plugin manifest");
     if (!enabled_camel)
     {
         return nonstd::make_unexpected(enabled_camel.error());
@@ -145,7 +111,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.enabled_by_default = **enabled_camel;
     }
 
-    auto skills_dir = optional_json_string(json, "skills_dir", "plugin manifest");
+    auto skills_dir = read_optional_json_field<std::string>(json, "skills_dir", "plugin manifest");
     if (!skills_dir)
     {
         return nonstd::make_unexpected(skills_dir.error());
@@ -155,7 +121,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.skills_dir = **skills_dir;
     }
 
-    auto skills_dir_camel = optional_json_string(json, "skillsDir", "plugin manifest");
+    auto skills_dir_camel = read_optional_json_field<std::string>(json, "skillsDir", "plugin manifest");
     if (!skills_dir_camel)
     {
         return nonstd::make_unexpected(skills_dir_camel.error());
