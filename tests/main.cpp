@@ -20,9 +20,11 @@ struct SpdlogQuieter
 
 static SpdlogQuieter g_spdlog_quieter{};
 
-#include "codeharness/core/message.h"
+#include "codeharness/cli/cli.h"
 #include "codeharness/commands/command_registry.h"
+#include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/memory/memory_store.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/prompts/project_context.h"
 #include "codeharness/prompts/system_prompt.h"
@@ -102,15 +104,13 @@ struct GitTestRuntime
     auto operator=(const GitTestRuntime&) -> GitTestRuntime& = delete;
 };
 
-constexpr auto kGitTestRepositoryDeleter = [](git_repository *repository) noexcept {
-    git_repository_free(repository);
-};
+constexpr auto kGitTestRepositoryDeleter = [](git_repository* repository) noexcept { git_repository_free(repository); };
 
 auto init_git_repository_with_head(const std::filesystem::path& repo, std::string_view branch) -> void
 {
     GitTestRuntime runtime;
 
-    git_repository *raw_repository = nullptr;
+    git_repository* raw_repository = nullptr;
     REQUIRE(git_repository_init(&raw_repository, repo.string().c_str(), 0) == 0);
 
     const std::unique_ptr<git_repository, decltype(kGitTestRepositoryDeleter)> repository{
@@ -509,7 +509,7 @@ TEST_CASE("engine streaming emits assistant text delta")
     std::string streamed_text;
 
     auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
-        if (const auto *delta = std::get_if<codeharness::EngineAssistantTextDelta>(&event))
+        if (const auto* delta = std::get_if<codeharness::EngineAssistantTextDelta>(&event))
         {
             streamed_text += delta->text;
         }
@@ -1248,8 +1248,8 @@ TEST_CASE("system prompt builder includes environment skills commands context an
     REQUIRE(prompt.has_value());
     CHECK(prompt->find("You are CodeHarness") != std::string::npos);
     CHECK(prompt->find("# Environment") != std::string::npos);
-    CHECK(prompt->find("- Working directory: " + std::filesystem::weakly_canonical(child).string()) !=
-          std::string::npos);
+    CHECK(
+        prompt->find("- Working directory: " + std::filesystem::weakly_canonical(child).string()) != std::string::npos);
     CHECK(prompt->find("- Date: ") != std::string::npos);
     CHECK(prompt->find("- Git repository: yes") != std::string::npos);
     CHECK(prompt->find("- Git branch: main") != std::string::npos);
@@ -1260,6 +1260,208 @@ TEST_CASE("system prompt builder includes environment skills commands context an
     CHECK(prompt->find("repo agents") < prompt->find("child agents"));
     CHECK(prompt->find("# Relevant Memories") != std::string::npos);
     CHECK(prompt->find("Use xmake.") != std::string::npos);
+}
+
+TEST_CASE("project memory dir uses injected root and stable hash")
+{
+    TempDir temp{"codeharness-memory-path-test"};
+    const auto repo = temp.path / "repo";
+    const auto root = temp.path / "memory-root";
+    std::filesystem::create_directories(repo);
+
+    auto path = codeharness::memory::project_memory_dir(repo, root);
+    auto again = codeharness::memory::project_memory_dir(repo, root);
+
+    REQUIRE(path.has_value());
+    REQUIRE(again.has_value());
+    CHECK(*path == *again);
+    CHECK(path->parent_path() == root);
+    CHECK(path->filename().string().starts_with("repo-"));
+    CHECK(path->filename().string().size() == std::string{"repo-"}.size() + 12);
+}
+
+TEST_CASE("memory store adds and scans markdown metadata")
+{
+    TempDir temp{"codeharness-memory-add-scan-test"};
+    codeharness::memory::MemoryStore store{temp.path / "memory"};
+
+    auto added = store.add(
+        codeharness::memory::AddMemoryRequest{
+            .title = "Build Notes",
+            .body = "Use xmake.\nDo not generate go.mod.",
+            .tags = {"build", "xmake"},
+        });
+
+    REQUIRE(added.has_value());
+    CHECK(added->title == "Build Notes");
+    CHECK(added->metadata.type == "project");
+    CHECK(added->metadata.scope == "project");
+    CHECK(added->metadata.category == "knowledge");
+    CHECK(added->metadata.importance == 1);
+    CHECK(added->metadata.tags == std::vector<std::string>{"build", "xmake"});
+
+    auto memories = store.scan();
+    REQUIRE(memories.has_value());
+    REQUIRE(memories->size() == 1);
+    CHECK(memories->front().title == "Build Notes");
+    CHECK(memories->front().description == "Use xmake.");
+
+    const auto raw = read_file_text(added->path);
+    CHECK(raw.find("schema_version: 1") != std::string::npos);
+    CHECK(raw.find("source: \"manual\"") != std::string::npos);
+    CHECK(raw.find("Use xmake.") != std::string::npos);
+}
+
+TEST_CASE("memory store refreshes duplicate content by signature")
+{
+    TempDir temp{"codeharness-memory-duplicate-test"};
+    codeharness::memory::MemoryStore store{temp.path / "memory"};
+
+    auto first = store.add(
+        codeharness::memory::AddMemoryRequest{
+            .title = "Build Notes",
+            .body = "Use xmake for builds.",
+        });
+    auto second = store.add(
+        codeharness::memory::AddMemoryRequest{
+            .title = "Build Notes Updated",
+            .body = "Use xmake for builds.",
+        });
+
+    REQUIRE(first.has_value());
+    REQUIRE(second.has_value());
+    CHECK(first->path == second->path);
+
+    auto memories = store.scan();
+    REQUIRE(memories.has_value());
+    REQUIRE(memories->size() == 1);
+    CHECK(memories->front().title == "Build Notes Updated");
+    CHECK(memories->front().metadata.id == first->metadata.id);
+}
+
+TEST_CASE("memory store soft removes entries and updates index")
+{
+    TempDir temp{"codeharness-memory-remove-test"};
+    codeharness::memory::MemoryStore store{temp.path / "memory"};
+
+    auto added = store.add(
+        codeharness::memory::AddMemoryRequest{
+            .title = "Build Notes",
+            .body = "Use xmake.",
+        });
+    REQUIRE(added.has_value());
+
+    auto removed = store.soft_remove(added->metadata.id);
+
+    REQUIRE(removed.has_value());
+    CHECK(*removed);
+
+    auto visible = store.scan();
+    REQUIRE(visible.has_value());
+    CHECK(visible->empty());
+
+    auto all = store.scan(codeharness::memory::MemoryScanOptions{.include_disabled = true});
+    REQUIRE(all.has_value());
+    REQUIRE(all->size() == 1);
+    CHECK(all->front().metadata.disabled);
+
+    const auto index_text = read_file_text(store.root() / "MEMORY.md");
+    CHECK(index_text.find(added->relative_path.string()) == std::string::npos);
+}
+
+TEST_CASE("memory store search ranks relevant memories")
+{
+    TempDir temp{"codeharness-memory-search-test"};
+    codeharness::memory::MemoryStore store{temp.path / "memory"};
+
+    REQUIRE(store
+                .add(
+                    codeharness::memory::AddMemoryRequest{
+                        .title = "Build Notes",
+                        .body = "Use xmake as the build tool.",
+                    })
+                .has_value());
+    REQUIRE(store
+                .add(
+                    codeharness::memory::AddMemoryRequest{
+                        .title = "Provider Notes",
+                        .body = "Anthropic streaming returns deltas.",
+                    })
+                .has_value());
+
+    auto results = store.search("xmake build", 5);
+
+    REQUIRE(results.has_value());
+    REQUIRE(!results->empty());
+    CHECK(results->front().header.title == "Build Notes");
+    CHECK(results->front().body.find("Use xmake") != std::string::npos);
+}
+
+TEST_CASE("memory slash command adds lists searches and removes entries")
+{
+    TempDir temp{"codeharness-memory-command-test"};
+    codeharness::memory::MemoryStore store{temp.path / "memory"};
+    codeharness::SkillRegistry skills;
+    auto commands = codeharness::build_builtin_command_registry(skills, &store);
+
+    auto invalid = codeharness::execute_slash_command(commands, "/memory add missing separator");
+    REQUIRE(!invalid.has_value());
+    CHECK(invalid.error().message == "usage: /memory add TITLE :: BODY");
+
+    auto added = codeharness::execute_slash_command(commands, "/memory add Build Notes :: Use xmake for builds");
+    REQUIRE(added.has_value());
+    REQUIRE(added->message.has_value());
+    CHECK(added->message->find("Added memory: Build Notes") != std::string::npos);
+
+    auto listed = codeharness::execute_slash_command(commands, "/memory list");
+    REQUIRE(listed.has_value());
+    REQUIRE(listed->message.has_value());
+    CHECK(listed->message->find("Build Notes") != std::string::npos);
+
+    auto found = codeharness::execute_slash_command(commands, "/memory search xmake build");
+    REQUIRE(found.has_value());
+    REQUIRE(found->message.has_value());
+    CHECK(found->message->find("Matching memories:") != std::string::npos);
+    CHECK(found->message->find("Build Notes") != std::string::npos);
+
+    auto removed = codeharness::execute_slash_command(commands, "/memory remove Build Notes");
+    REQUIRE(removed.has_value());
+    REQUIRE(removed->message.has_value());
+    CHECK(removed->message == "Removed memory: Build Notes\n");
+
+    listed = codeharness::execute_slash_command(commands, "/memory list");
+    REQUIRE(listed.has_value());
+    REQUIRE(listed->message.has_value());
+    CHECK(*listed->message == "No memories.\n");
+}
+
+TEST_CASE("CLI memory helper injects relevant memories into system prompt")
+{
+    TempDir temp{"codeharness-memory-prompt-injection-test"};
+    codeharness::memory::MemoryStore store{temp.path / "memory"};
+    REQUIRE(store
+                .add(
+                    codeharness::memory::AddMemoryRequest{
+                        .title = "Build Notes",
+                        .body = "Use xmake when building CodeHarness.",
+                    })
+                .has_value());
+
+    auto memories = codeharness::load_relevant_memories_for_prompt(store, "How should I build with xmake?");
+    REQUIRE(memories.has_value());
+    REQUIRE(memories->size() == 1);
+
+    codeharness::PromptBuildRequest request;
+    request.cwd = temp.path;
+    request.latest_user_prompt = "How should I build with xmake?";
+    request.relevant_memories = std::move(*memories);
+
+    auto prompt = codeharness::SystemPromptBuilder{}.build(request);
+
+    REQUIRE(prompt.has_value());
+    CHECK(prompt->find("# Relevant Memories") != std::string::npos);
+    CHECK(prompt->find("## Build Notes") != std::string::npos);
+    CHECK(prompt->find("Use xmake when building CodeHarness.") != std::string::npos);
 }
 
 TEST_CASE("skill markdown parser reads frontmatter metadata")

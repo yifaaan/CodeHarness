@@ -3,6 +3,7 @@
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/memory/memory_store.h"
 #include "codeharness/prompts/system_prompt.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/skills/skill_loader.h"
@@ -15,10 +16,11 @@
 #include "codeharness/tools/tool_registry.h"
 #include "codeharness/version.h"
 
+#include <spdlog/spdlog.h>
 #include <CLI/CLI.hpp>
 #include <nonstd/expected.hpp>
-#include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -30,7 +32,29 @@
 namespace codeharness
 {
 
-auto run_cli(int argc, char **argv) -> Result<int>
+auto load_relevant_memories_for_prompt(
+    const memory::MemoryStore& store, std::string_view prompt, std::size_t max_results)
+    -> Result<std::vector<RelevantMemory>>
+{
+    auto entries = store.search(prompt, max_results);
+    if (!entries)
+    {
+        return nonstd::make_unexpected(entries.error());
+    }
+
+    std::vector<RelevantMemory> memories;
+    memories.resize(entries->size());
+    std::ranges::transform(*entries, memories.begin(), [](const auto& entry) {
+        return RelevantMemory{
+            .title = entry.header.title,
+            .content = entry.body,
+        };
+    });
+
+    return memories;
+}
+
+auto run_cli(int argc, char** argv) -> Result<int>
 {
     init_logger();
     spdlog::info("codeharness starting ({} {})", PROJECT_NAME, VERSION);
@@ -85,7 +109,13 @@ auto run_cli(int argc, char **argv) -> Result<int>
         return nonstd::make_unexpected(skills.error());
     }
 
-    auto commands = build_builtin_command_registry(*skills);
+    auto memory_store = memory::MemoryStore::for_project(std::filesystem::current_path());
+    if (!memory_store)
+    {
+        return nonstd::make_unexpected(memory_store.error());
+    }
+
+    auto commands = build_builtin_command_registry(*skills, &*memory_store);
 
     if (!prompt.empty() && prompt.front() == '/')
     {
@@ -128,6 +158,12 @@ auto run_cli(int argc, char **argv) -> Result<int>
     prompt_request.available_commands = commands.list();
     prompt_request.project_context_files = std::move(*project_context_files);
     prompt_request.permission_mode = PermissionMode::Default;
+    auto relevant_memories = load_relevant_memories_for_prompt(*memory_store, prompt);
+    if (!relevant_memories)
+    {
+        return nonstd::make_unexpected(relevant_memories.error());
+    }
+    prompt_request.relevant_memories = std::move(*relevant_memories);
 
     auto system_prompt = SystemPromptBuilder{}.build(prompt_request);
     if (!system_prompt)

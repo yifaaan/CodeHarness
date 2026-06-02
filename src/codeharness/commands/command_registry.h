@@ -14,12 +14,17 @@
 namespace codeharness
 {
 
+namespace memory
+{
+class MemoryStore;
+}
+
 // slash command result
 struct CommandResult
 {
-    std::optional<std::string> message; // 直接展示给用户(如 /skills)
+    std::optional<std::string> message;       // 直接展示给用户(如 /skills)
     std::optional<std::string> submit_prompt; // 把渲染好的 prompt 投回 agent 循环
-    std::optional<std::string> submit_model; // 换模型
+    std::optional<std::string> submit_model;  // 换模型
 };
 
 // 命令回调:
@@ -29,16 +34,16 @@ using CommandHandler = std::function<Result<CommandResult>(std::string_view args
 // slash command
 struct SlashCommand
 {
-    std::string name;           // /help 列表中显示的默认名
-    std::string description;    // 命令用途说明
-    CommandHandler handler;     // 命令体
-    std::vector<std::string> aliases;  // 备用名,同样可触发该命令
+    std::string name;                 // /help 列表中显示的默认名
+    std::string description;          // 命令用途说明
+    CommandHandler handler;           // 命令体
+    std::vector<std::string> aliases; // 备用名,同样可触发该命令
 };
 
 struct CommandLookup
 {
-    const SlashCommand* command = nullptr;  // nullptr 表示未找到
-    std::string args;                       // 解析后的参数串
+    const SlashCommand* command = nullptr; // nullptr 表示未找到
+    std::string args;                      // 解析后的参数串
 };
 
 // 用 shared_ptr 而非值类型,避免每个 alias 都复制 handler 闭包;
@@ -65,6 +70,7 @@ private:
 // 内置 slash command 的注册点。新增内置命令只改这一处,
 // handlers 通过 lambda 捕获共用一个 SkillRegistry 引用。
 auto build_builtin_command_registry(const SkillRegistry& skills) -> CommandRegistry;
+auto build_builtin_command_registry(const SkillRegistry& skills, memory::MemoryStore* memory_store) -> CommandRegistry;
 
 // CLI 用的顶层入口:"解析 + 查找 + 调用"一次完成。
 // 未找到命令时返回 InvalidArgument 错误,行为与其它模块的失败约定一致。

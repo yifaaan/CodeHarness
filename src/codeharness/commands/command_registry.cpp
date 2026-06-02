@@ -1,5 +1,7 @@
 #include "codeharness/commands/command_registry.h"
 
+#include <nonstd/expected.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <memory>
@@ -9,6 +11,7 @@
 #include <utility>
 
 #include "codeharness/core/strings.h"
+#include "codeharness/memory/memory_store.h"
 
 namespace codeharness
 {
@@ -106,9 +109,8 @@ auto skill_command_name(const SkillDefinition& skill) -> std::string
 
 auto is_valid_skill_command_name(std::string_view name) -> bool
 {
-    return !name.empty() && std::ranges::none_of(name, [](unsigned char character) {
-        return std::isspace(character) != 0;
-    });
+    return !name.empty() &&
+           std::ranges::none_of(name, [](unsigned char character) { return std::isspace(character) != 0; });
 }
 
 // 把一次用户 slash 调用转成真正发给模型的 prompt。
@@ -150,6 +152,181 @@ auto make_skill_slash_command(SkillDefinition skill) -> SlashCommand
             };
         },
     };
+}
+
+auto split_memory_command(std::string_view args) -> std::pair<std::string_view, std::string>
+{
+    args = trim(args);
+    if (args.empty())
+    {
+        return {"list", {}};
+    }
+
+    const auto separator = args.find_first_of(" \t\r\n");
+    if (separator == std::string_view::npos)
+    {
+        return {args, {}};
+    }
+
+    return {args.substr(0, separator), std::string{trim(args.substr(separator + 1))}};
+}
+
+auto format_memory_list(const std::vector<memory::MemoryHeader>& memories) -> std::string
+{
+    if (memories.empty())
+    {
+        return "No memories.\n";
+    }
+
+    std::ostringstream output;
+    output << "Memories:\n";
+    for (const auto& memory : memories)
+    {
+        output << "- " << memory.title << " [" << memory.metadata.id << "] " << memory.relative_path.string();
+        if (!memory.description.empty())
+        {
+            output << ": " << memory.description;
+        }
+        output << '\n';
+    }
+
+    return output.str();
+}
+
+auto format_memory_search_results(const std::vector<memory::MemoryEntry>& memories) -> std::string
+{
+    if (memories.empty())
+    {
+        return "No matching memories.\n";
+    }
+
+    std::ostringstream output;
+    output << "Matching memories:\n";
+    for (const auto& memory : memories)
+    {
+        output << "- " << memory.header.title << " [" << memory.header.metadata.id << "]";
+        if (!memory.header.description.empty())
+        {
+            output << ": " << memory.header.description;
+        }
+        output << '\n';
+    }
+
+    return output.str();
+}
+
+auto parse_add_memory_request(std::string_view args) -> Result<memory::AddMemoryRequest>
+{
+    const auto separator = args.find("::");
+    if (separator == std::string_view::npos)
+    {
+        return fail<memory::AddMemoryRequest>(ErrorKind::InvalidArgument, "usage: /memory add TITLE :: BODY");
+    }
+
+    auto title = std::string{trim(args.substr(0, separator))};
+    auto body = std::string{trim(args.substr(separator + 2))};
+    if (title.empty() || body.empty())
+    {
+        return fail<memory::AddMemoryRequest>(ErrorKind::InvalidArgument, "usage: /memory add TITLE :: BODY");
+    }
+
+    return memory::AddMemoryRequest{
+        .title = std::move(title),
+        .body = std::move(body),
+    };
+}
+
+auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -> Result<CommandResult>
+{
+    const auto [subcommand, rest] = split_memory_command(args);
+
+    if (subcommand == "list")
+    {
+        auto memories = store.scan();
+        if (!memories)
+        {
+            return nonstd::make_unexpected(memories.error());
+        }
+
+        return CommandResult{.message = format_memory_list(*memories)};
+    }
+
+    if (subcommand == "add")
+    {
+        auto request = parse_add_memory_request(rest);
+        if (!request)
+        {
+            return nonstd::make_unexpected(request.error());
+        }
+
+        auto memory = store.add(*request);
+        if (!memory)
+        {
+            return nonstd::make_unexpected(memory.error());
+        }
+
+        return CommandResult{
+            .message = "Added memory: " + memory->title + " (" + memory->relative_path.string() + ")\n",
+        };
+    }
+
+    if (subcommand == "search")
+    {
+        const auto query = std::string{trim(rest)};
+        if (query.empty())
+        {
+            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /memory search QUERY");
+        }
+
+        auto memories = store.search(query);
+        if (!memories)
+        {
+            return nonstd::make_unexpected(memories.error());
+        }
+
+        return CommandResult{.message = format_memory_search_results(*memories)};
+    }
+
+    if (subcommand == "remove")
+    {
+        const auto target = std::string{trim(rest)};
+        if (target.empty())
+        {
+            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /memory remove NAME_OR_ID");
+        }
+
+        auto removed = store.soft_remove(target);
+        if (!removed)
+        {
+            return nonstd::make_unexpected(removed.error());
+        }
+
+        if (*removed)
+        {
+            return CommandResult{.message = "Removed memory: " + target + "\n"};
+        }
+
+        return CommandResult{.message = "No memory found: " + target + "\n"};
+    }
+
+    return fail<CommandResult>(ErrorKind::InvalidArgument, "unknown memory command: " + std::string{subcommand});
+}
+
+auto register_memory_command(CommandRegistry& registry, memory::MemoryStore* memory_store) -> void
+{
+    if (memory_store == nullptr)
+    {
+        return;
+    }
+
+    registry.register_command(
+        SlashCommand{
+            .name = "memory",
+            .description = "Manage project memory.",
+            .handler = [memory_store](std::string_view args) -> Result<CommandResult> {
+                return execute_memory_command(*memory_store, args);
+            },
+        });
 }
 
 } // namespace
@@ -208,6 +385,11 @@ auto CommandRegistry::list() const -> std::vector<SlashCommand>
 // 内置命令注册点。新增内置命令只在这里加一个 register_command 调用;
 auto build_builtin_command_registry(const SkillRegistry& skills) -> CommandRegistry
 {
+    return build_builtin_command_registry(skills, nullptr);
+}
+
+auto build_builtin_command_registry(const SkillRegistry& skills, memory::MemoryStore* memory_store) -> CommandRegistry
+{
     CommandRegistry registry;
     registry.register_command(
         SlashCommand{
@@ -217,6 +399,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills) -> CommandRegis
                 return CommandResult{.message = format_skills_list(skills)};
             },
         });
+    register_memory_command(registry, memory_store);
 
     for (auto skill : skills.list())
     {
