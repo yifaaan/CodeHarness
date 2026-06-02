@@ -4,6 +4,7 @@
 #include "codeharness/skills/skill.h"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,19 @@ struct PluginManifest
     std::string description;
     bool enabled_by_default = true;
     std::filesystem::path skills_dir = "skills";
+    std::filesystem::path commands_dir = "commands";
+};
+
+struct PluginCommandDefinition
+{
+    std::string name;
+    std::string command_name;
+    std::string description;
+    std::string content;
+    std::string source_plugin;
+    std::filesystem::path path;
+    bool disable_model_invocation = false;
+    std::optional<std::string> model;
 };
 
 struct LoadedPlugin
@@ -26,6 +40,7 @@ struct LoadedPlugin
     std::filesystem::path manifest_path;
     bool enabled = false;
     std::vector<SkillDefinition> skills;
+    std::vector<PluginCommandDefinition> commands;
 };
 
 struct PluginLoadOptions

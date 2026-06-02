@@ -131,11 +131,38 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.skills_dir = **skills_dir_camel;
     }
 
+    auto commands_dir = read_optional_json_field<std::string>(json, "commands_dir", "plugin manifest");
+    if (!commands_dir)
+    {
+        return nonstd::make_unexpected(commands_dir.error());
+    }
+    if (*commands_dir)
+    {
+        manifest.commands_dir = **commands_dir;
+    }
+
+    auto commands_dir_camel = read_optional_json_field<std::string>(json, "commandsDir", "plugin manifest");
+    if (!commands_dir_camel)
+    {
+        return nonstd::make_unexpected(commands_dir_camel.error());
+    }
+    if (*commands_dir_camel)
+    {
+        manifest.commands_dir = **commands_dir_camel;
+    }
+
     if (!is_safe_relative_path(manifest.skills_dir))
     {
         return fail<PluginManifest>(
             ErrorKind::InvalidArgument,
             "plugin skills_dir must be a safe relative path: " + manifest_path.string());
+    }
+
+    if (!is_safe_relative_path(manifest.commands_dir))
+    {
+        return fail<PluginManifest>(
+            ErrorKind::InvalidArgument,
+            "plugin commands_dir must be a safe relative path: " + manifest_path.string());
     }
 
     return manifest;
@@ -206,6 +233,74 @@ auto source_for_plugin(const PluginManifest& manifest) -> std::string
     return "plugin:" + manifest.name;
 }
 
+auto command_name_for_plugin(const PluginManifest& manifest, std::string_view command_name) -> std::string
+{
+    return manifest.name + ":" + std::string{command_name};
+}
+
+auto load_plugin_command_file(const std::filesystem::path& path, const PluginManifest& manifest)
+    -> Result<PluginCommandDefinition>
+{
+    auto content = read_text_file(path);
+    if (!content)
+    {
+        return nonstd::make_unexpected(content.error());
+    }
+
+    const auto name = path.stem().string();
+    auto parsed = parse_skill_markdown(name, std::move(*content), source_for_plugin(manifest));
+
+    return PluginCommandDefinition{
+        .name = name,
+        .command_name = command_name_for_plugin(manifest, name),
+        .description = std::move(parsed.description),
+        .content = std::move(parsed.content),
+        .source_plugin = manifest.name,
+        .path = path,
+        .disable_model_invocation = parsed.disable_model_invocation,
+        .model = std::move(parsed.model),
+    };
+}
+
+auto load_plugin_commands(const std::filesystem::path& root, const PluginManifest& manifest)
+    -> Result<std::vector<PluginCommandDefinition>>
+{
+    std::error_code error;
+    if (!std::filesystem::is_directory(root, error))
+    {
+        return std::vector<PluginCommandDefinition>{};
+    }
+
+    std::vector<std::filesystem::path> matches;
+    try
+    {
+        matches = glob::glob(root.string() + "/*.md");
+    }
+    catch (const std::exception& e)
+    {
+        return fail<std::vector<PluginCommandDefinition>>(
+            ErrorKind::Io,
+            fmt::format("failed to scan plugin command directory {}: {}", root.string(), e.what()));
+    }
+
+    std::ranges::sort(matches);
+
+    std::vector<PluginCommandDefinition> commands;
+    commands.reserve(matches.size());
+    for (const auto& candidate : matches)
+    {
+        auto command = load_plugin_command_file(candidate, manifest);
+        if (!command)
+        {
+            return nonstd::make_unexpected(command.error());
+        }
+
+        commands.push_back(std::move(*command));
+    }
+
+    return commands;
+}
+
 auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlugin>
 {
     auto manifest = load_plugin_manifest(manifest_path);
@@ -235,6 +330,15 @@ auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlu
     }
 
     plugin.skills = std::move(*skills);
+
+    const auto command_root = plugin.path / plugin.manifest.commands_dir;
+    auto commands = load_plugin_commands(command_root, plugin.manifest);
+    if (!commands)
+    {
+        return nonstd::make_unexpected(commands.error());
+    }
+
+    plugin.commands = std::move(*commands);
     return plugin;
 }
 

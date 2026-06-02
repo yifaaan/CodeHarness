@@ -1641,7 +1641,9 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
     TempDir temp{"codeharness-plugin-skill-test"};
     const auto plugin_dir = temp.path / "plugins" / "deploy-pack";
     const auto skill_dir = plugin_dir / "skills" / "deploy";
+    const auto command_dir = plugin_dir / "commands";
     std::filesystem::create_directories(skill_dir);
+    std::filesystem::create_directories(command_dir);
 
     {
         std::ofstream manifest{plugin_dir / "plugin.json", std::ios::binary};
@@ -1649,7 +1651,8 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
                  << R"(  "name": "deploy-pack",)" << '\n'
                  << R"(  "version": "1.2.3",)" << '\n'
                  << R"(  "description": "Deployment helpers",)" << '\n'
-                 << R"(  "skillsDir": "skills")" << '\n'
+                 << R"(  "skillsDir": "skills",)" << '\n'
+                 << R"(  "commandsDir": "commands")" << '\n'
                  << "}\n";
     }
 
@@ -1661,6 +1664,16 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
               << "---\n\n"
               << "# Deploy\n\n"
               << "plugin deploy instructions\n";
+    }
+
+    {
+        std::ofstream command{command_dir / "release.md", std::ios::binary};
+        command << "---\n"
+                << "description: Release from plugin.\n"
+                << "model: release-model\n"
+                << "---\n\n"
+                << "# Release\n\n"
+                << "release $ARGUMENTS\n";
     }
 
     codeharness::PluginLoadOptions options;
@@ -1677,6 +1690,11 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
     REQUIRE(plugins->front().skills.size() == 1);
     CHECK(plugins->front().skills.front().source == "plugin:deploy-pack");
     CHECK(plugins->front().skills.front().content.find("plugin deploy instructions") != std::string::npos);
+    REQUIRE(plugins->front().commands.size() == 1);
+    CHECK(plugins->front().commands.front().name == "release");
+    CHECK(plugins->front().commands.front().command_name == "deploy-pack:release");
+    CHECK(plugins->front().commands.front().description == "Release from plugin.");
+    CHECK(plugins->front().commands.front().model == "release-model");
 }
 
 TEST_CASE("disabled plugin does not contribute skills")
@@ -1709,6 +1727,7 @@ TEST_CASE("disabled plugin does not contribute skills")
     REQUIRE(plugins->size() == 1);
     CHECK(!plugins->front().enabled);
     CHECK(plugins->front().skills.empty());
+    CHECK(plugins->front().commands.empty());
 }
 
 TEST_CASE("plugin skills are merged into skill registry when plugin roots are enabled")
@@ -1882,6 +1901,41 @@ TEST_CASE("plugin command lists loaded plugins")
     REQUIRE(result.has_value());
     REQUIRE(result->message.has_value());
     CHECK(result->message->find("- deploy-pack [enabled] 1.2.3: Deployment helpers") != std::string::npos);
+}
+
+TEST_CASE("plugin markdown commands register as namespaced slash commands")
+{
+    codeharness::SkillRegistry skills;
+    std::vector<codeharness::LoadedPlugin> plugins;
+    plugins.push_back(
+        codeharness::LoadedPlugin{
+            .manifest = codeharness::PluginManifest{.name = "deploy-pack"},
+            .enabled = true,
+            .commands =
+                {
+                    codeharness::PluginCommandDefinition{
+                        .name = "release",
+                        .command_name = "deploy-pack:release",
+                        .description = "Release from plugin.",
+                        .content = "release $ARGUMENTS",
+                        .source_plugin = "deploy-pack",
+                        .model = "release-model",
+                    },
+                },
+        });
+
+    auto commands = codeharness::build_builtin_command_registry(
+        skills,
+        codeharness::BuiltinCommandRegistryOptions{
+            .plugins = std::span<const codeharness::LoadedPlugin>{plugins},
+        });
+    auto result = codeharness::execute_slash_command(commands, "/deploy-pack:release staging");
+
+    REQUIRE(result.has_value());
+    CHECK(!result->message.has_value());
+    REQUIRE(result->submit_prompt.has_value());
+    CHECK(*result->submit_prompt == "release staging");
+    CHECK(result->submit_model == "release-model");
 }
 
 TEST_CASE("unknown slash command returns a clear error")

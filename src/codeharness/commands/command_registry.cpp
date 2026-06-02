@@ -103,6 +103,21 @@ auto has_argument_placeholder(std::string_view content) -> bool
            content.find("$ARGUMENTS") != std::string_view::npos;
 }
 
+auto apply_argument_placeholders(std::string prompt, std::string_view args, std::string_view placeholder_source)
+    -> std::string
+{
+    const auto raw_args = std::string{trim(args)};
+    prompt = replace_all(std::move(prompt), "${ARGUMENTS}", raw_args);
+    prompt = replace_all(std::move(prompt), "$ARGUMENTS", raw_args);
+
+    if (!raw_args.empty() && !has_argument_placeholder(placeholder_source))
+    {
+        prompt += "\n\nArguments: " + raw_args;
+    }
+
+    return prompt;
+}
+
 // command-name/frontmatter 优先,否则用目录/skill name 作为 /<name>。
 auto skill_command_name(const SkillDefinition& skill) -> std::string
 {
@@ -119,7 +134,6 @@ auto is_valid_skill_command_name(std::string_view name) -> bool
 auto render_skill_command_prompt(const SkillDefinition& skill, std::string_view args) -> std::string
 {
     auto prompt = skill.content;
-    const auto raw_args = std::string{trim(args)};
 
     if (skill.base_dir)
     {
@@ -128,15 +142,7 @@ auto render_skill_command_prompt(const SkillDefinition& skill, std::string_view 
         prompt = replace_all(std::move(prompt), "${CLAUDE_SKILL_DIR}", base_dir);
     }
 
-    prompt = replace_all(std::move(prompt), "${ARGUMENTS}", raw_args);
-    prompt = replace_all(std::move(prompt), "$ARGUMENTS", raw_args);
-
-    if (!raw_args.empty() && !has_argument_placeholder(skill.content))
-    {
-        prompt += "\n\nArguments: " + raw_args;
-    }
-
-    return prompt;
+    return apply_argument_placeholders(std::move(prompt), args, skill.content);
 }
 
 auto make_skill_slash_command(SkillDefinition skill) -> SlashCommand
@@ -380,6 +386,63 @@ auto register_plugin_command(CommandRegistry& registry, std::span<const LoadedPl
         });
 }
 
+auto render_plugin_command_prompt(const PluginCommandDefinition& command, std::string_view args) -> std::string
+{
+    return apply_argument_placeholders(command.content, args, command.content);
+}
+
+auto make_plugin_slash_command(PluginCommandDefinition command) -> SlashCommand
+{
+    auto description = command.description;
+    if (description.empty())
+    {
+        description = "Invoke the " + command.command_name + " plugin command.";
+    }
+
+    return SlashCommand{
+        .name = command.command_name,
+        .description = std::move(description),
+        .handler = [command = std::move(command)](std::string_view args) -> Result<CommandResult> {
+            auto prompt = render_plugin_command_prompt(command, args);
+            if (command.disable_model_invocation)
+            {
+                return CommandResult{.message = std::move(prompt)};
+            }
+
+            return CommandResult{
+                .submit_prompt = std::move(prompt),
+                .submit_model = command.model,
+            };
+        },
+    };
+}
+
+auto register_plugin_slash_commands(CommandRegistry& registry, std::span<const LoadedPlugin> plugins) -> void
+{
+    for (const auto& plugin : plugins)
+    {
+        if (!plugin.enabled)
+        {
+            continue;
+        }
+
+        for (auto command : plugin.commands)
+        {
+            if (!is_valid_skill_command_name(command.command_name))
+            {
+                continue;
+            }
+
+            if (registry.lookup(std::string{"/"} + command.command_name).command != nullptr)
+            {
+                continue;
+            }
+
+            registry.register_command(make_plugin_slash_command(std::move(command)));
+        }
+    }
+}
+
 } // namespace
 
 auto CommandRegistry::register_command(SlashCommand command) -> void
@@ -448,6 +511,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         });
     register_memory_command(registry, options.memory_store);
     register_plugin_command(registry, options.plugins);
+    register_plugin_slash_commands(registry, options.plugins);
 
     for (auto skill : skills.list())
     {
