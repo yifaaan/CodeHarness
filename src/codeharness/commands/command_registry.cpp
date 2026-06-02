@@ -354,6 +354,8 @@ auto format_plugin_list(std::span<const LoadedPlugin> plugins) -> std::string
         {
             output << ": " << plugin.manifest.description;
         }
+        output << " (skills: " << plugin.skills.size() << ", commands: " << plugin.commands.size() << ", mcp: "
+               << plugin.mcp_servers.size() << ")";
         output << '\n';
     }
 

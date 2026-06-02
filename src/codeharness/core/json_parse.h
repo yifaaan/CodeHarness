@@ -5,11 +5,13 @@
 
 #include <nlohmann/json.hpp>
 
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace codeharness
 {
@@ -21,6 +23,12 @@ enum class JsonFieldMode
     optional_if_valid,
 };
 
+template <typename T>
+inline constexpr bool is_supported_json_field_v = std::is_same_v<T, std::string> || std::is_same_v<T, int> ||
+                                                  std::is_same_v<T, bool> ||
+                                                  std::is_same_v<T, std::vector<std::string>> ||
+                                                  std::is_same_v<T, std::map<std::string, std::string>>;
+
 // 解析工具 JSON 字段的统一 helper。
 // 错误信息格式：`"<tool> requires <kind> field: <field_name>"` 或
 // `"<tool> <field_name> must be a <kind>"`，由调用方提供 tool_name。
@@ -29,8 +37,7 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
                      T default_value = {})
     -> std::conditional_t<mode == JsonFieldMode::optional_if_valid, Result<std::optional<T>>, Result<T>>
 {
-    static_assert(std::is_same_v<T, std::string> || std::is_same_v<T, int> || std::is_same_v<T, bool>,
-                  "unsupported JSON field type");
+    static_assert(is_supported_json_field_v<T>, "unsupported JSON field type");
 
     auto required_name = std::string_view{};
     auto optional_name = std::string_view{};
@@ -47,10 +54,20 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
         required_name = "integer";
         optional_name = "an integer";
     }
-    else
+    else if constexpr (std::is_same_v<T, bool>)
     {
         required_name = "boolean";
         optional_name = "a boolean";
+    }
+    else if constexpr (std::is_same_v<T, std::vector<std::string>>)
+    {
+        required_name = "array";
+        optional_name = "an array of strings";
+    }
+    else
+    {
+        required_name = "object";
+        optional_name = "an object of strings";
     }
 
     using ResultValue = std::conditional_t<mode == JsonFieldMode::optional_if_valid, std::optional<T>, T>;
@@ -83,9 +100,31 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
     {
         matches_type = value.is_number_integer();
     }
-    else
+    else if constexpr (std::is_same_v<T, bool>)
     {
         matches_type = value.is_boolean();
+    }
+    else if constexpr (std::is_same_v<T, std::vector<std::string>>)
+    {
+        matches_type = value.is_array();
+        if (matches_type)
+        {
+            for (const auto& item : value)
+            {
+                matches_type = matches_type && item.is_string();
+            }
+        }
+    }
+    else
+    {
+        matches_type = value.is_object();
+        if (matches_type)
+        {
+            for (const auto& [_, item] : value.items())
+            {
+                matches_type = matches_type && item.is_string();
+            }
+        }
     }
 
     if (!matches_type)
@@ -125,8 +164,7 @@ template <typename T>
 auto read_optional_json_field(const nlohmann::json& input, std::string_view field_name, std::string_view tool_name = {})
     -> Result<std::optional<T>>
 {
-    static_assert(std::is_same_v<T, std::string> || std::is_same_v<T, int> || std::is_same_v<T, bool>,
-                  "unsupported JSON field type");
+    static_assert(is_supported_json_field_v<T>, "unsupported JSON field type");
 
     if (!input.contains(std::string{field_name}))
     {

@@ -151,6 +151,26 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         manifest.commands_dir = **commands_dir_camel;
     }
 
+    auto mcp_file = read_optional_json_field<std::string>(json, "mcp_file", "plugin manifest");
+    if (!mcp_file)
+    {
+        return nonstd::make_unexpected(mcp_file.error());
+    }
+    if (*mcp_file)
+    {
+        manifest.mcp_file = **mcp_file;
+    }
+
+    auto mcp_file_camel = read_optional_json_field<std::string>(json, "mcpFile", "plugin manifest");
+    if (!mcp_file_camel)
+    {
+        return nonstd::make_unexpected(mcp_file_camel.error());
+    }
+    if (*mcp_file_camel)
+    {
+        manifest.mcp_file = **mcp_file_camel;
+    }
+
     if (!is_safe_relative_path(manifest.skills_dir))
     {
         return fail<PluginManifest>(
@@ -163,6 +183,13 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
         return fail<PluginManifest>(
             ErrorKind::InvalidArgument,
             "plugin commands_dir must be a safe relative path: " + manifest_path.string());
+    }
+
+    if (!is_safe_relative_path(manifest.mcp_file))
+    {
+        return fail<PluginManifest>(
+            ErrorKind::InvalidArgument,
+            "plugin mcp_file must be a safe relative path: " + manifest_path.string());
     }
 
     return manifest;
@@ -301,6 +328,222 @@ auto load_plugin_commands(const std::filesystem::path& root, const PluginManifes
     return commands;
 }
 
+auto read_json_file(const std::filesystem::path& path, std::string_view label) -> Result<nlohmann::json>
+{
+    auto content = read_text_file(path);
+    if (!content)
+    {
+        return nonstd::make_unexpected(content.error());
+    }
+
+    try
+    {
+        return nlohmann::json::parse(*content);
+    }
+    catch (const nlohmann::json::parse_error& error)
+    {
+        return fail<nlohmann::json>(
+            ErrorKind::InvalidArgument,
+            fmt::format("failed to parse {} {}: {}", label, path.string(), error.what()));
+    }
+}
+
+auto parse_stdio_mcp_server(std::string name, const nlohmann::json& json, std::string_view context)
+    -> Result<McpServerConfig>
+{
+    auto command = read_json_field<std::string>(json, "command", context);
+    if (!command)
+    {
+        return nonstd::make_unexpected(command.error());
+    }
+
+    auto args = read_json_field<std::vector<std::string>, JsonFieldMode::optional_with_default>(
+        json,
+        "args",
+        context,
+        {});
+    if (!args)
+    {
+        return nonstd::make_unexpected(args.error());
+    }
+
+    auto env = read_json_field<std::map<std::string, std::string>, JsonFieldMode::optional_with_default>(
+        json,
+        "env",
+        context,
+        {});
+    if (!env)
+    {
+        return nonstd::make_unexpected(env.error());
+    }
+
+    auto cwd = read_optional_json_field<std::string>(json, "cwd", context);
+    if (!cwd)
+    {
+        return nonstd::make_unexpected(cwd.error());
+    }
+
+    auto config = McpStdioServerConfig{
+        .name = std::move(name),
+        .command = std::move(*command),
+        .args = std::move(*args),
+        .env = std::move(*env),
+    };
+    if (*cwd)
+    {
+        config.cwd = std::filesystem::path{**cwd};
+    }
+
+    return McpServerConfig{std::move(config)};
+}
+
+auto parse_http_mcp_server(std::string name, const nlohmann::json& json, std::string_view context)
+    -> Result<McpServerConfig>
+{
+    auto url = read_json_field<std::string>(json, "url", context);
+    if (!url)
+    {
+        return nonstd::make_unexpected(url.error());
+    }
+
+    auto headers = read_json_field<std::map<std::string, std::string>, JsonFieldMode::optional_with_default>(
+        json,
+        "headers",
+        context,
+        {});
+    if (!headers)
+    {
+        return nonstd::make_unexpected(headers.error());
+    }
+
+    return McpServerConfig{
+        McpHttpServerConfig{
+            .name = std::move(name),
+            .url = std::move(*url),
+            .headers = std::move(*headers),
+        },
+    };
+}
+
+auto parse_mcp_server(std::string name, const nlohmann::json& json) -> Result<McpServerConfig>
+{
+    const auto context = "MCP server " + name;
+    if (!json.is_object())
+    {
+        return fail<McpServerConfig>(ErrorKind::InvalidArgument, context + " must be a JSON object");
+    }
+
+    auto type = read_optional_json_field<std::string>(json, "type", context);
+    if (!type)
+    {
+        return nonstd::make_unexpected(type.error());
+    }
+
+    const auto transport = *type ? **type : std::string{"stdio"};
+    if (transport == "stdio")
+    {
+        return parse_stdio_mcp_server(std::move(name), json, context);
+    }
+
+    if (transport == "http")
+    {
+        return parse_http_mcp_server(std::move(name), json, context);
+    }
+
+    return fail<McpServerConfig>(ErrorKind::InvalidArgument, context + " has unsupported type: " + transport);
+}
+
+auto mcp_servers_json(const nlohmann::json& json, const std::filesystem::path& path) -> Result<const nlohmann::json*>
+{
+    if (!json.is_object())
+    {
+        return fail<const nlohmann::json*>(
+            ErrorKind::InvalidArgument,
+            "plugin MCP config must be a JSON object: " + path.string());
+    }
+
+    if (json.contains("mcpServers"))
+    {
+        const auto& servers = json.at("mcpServers");
+        if (!servers.is_object())
+        {
+            return fail<const nlohmann::json*>(
+                ErrorKind::InvalidArgument,
+                "plugin MCP config mcpServers must be a JSON object: " + path.string());
+        }
+
+        return &servers;
+    }
+
+    if (json.contains("mcp_servers"))
+    {
+        const auto& servers = json.at("mcp_servers");
+        if (!servers.is_object())
+        {
+            return fail<const nlohmann::json*>(
+                ErrorKind::InvalidArgument,
+                "plugin MCP config mcp_servers must be a JSON object: " + path.string());
+        }
+
+        return &servers;
+    }
+
+    return static_cast<const nlohmann::json*>(nullptr);
+}
+
+auto load_plugin_mcp_servers(const std::filesystem::path& path) -> Result<std::vector<McpServerConfig>>
+{
+    std::error_code error;
+    if (!std::filesystem::exists(path, error))
+    {
+        return std::vector<McpServerConfig>{};
+    }
+
+    auto json = read_json_file(path, "plugin MCP config");
+    if (!json)
+    {
+        return nonstd::make_unexpected(json.error());
+    }
+
+    auto servers_json = mcp_servers_json(*json, path);
+    if (!servers_json)
+    {
+        return nonstd::make_unexpected(servers_json.error());
+    }
+
+    if (*servers_json == nullptr)
+    {
+        return std::vector<McpServerConfig>{};
+    }
+
+    std::vector<McpServerConfig> servers;
+    servers.reserve((*servers_json)->size());
+    for (const auto& [name, server_json] : (*servers_json)->items())
+    {
+        auto server = parse_mcp_server(name, server_json);
+        if (!server)
+        {
+            return nonstd::make_unexpected(server.error());
+        }
+
+        servers.push_back(std::move(*server));
+    }
+
+    return servers;
+}
+
+auto plugin_mcp_path(const LoadedPlugin& plugin) -> std::filesystem::path
+{
+    auto path = plugin.path / plugin.manifest.mcp_file;
+    std::error_code error;
+    if (std::filesystem::exists(path, error) || plugin.manifest.mcp_file != std::filesystem::path{"mcp.json"})
+    {
+        return path;
+    }
+
+    return plugin.path / ".mcp.json";
+}
+
 auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlugin>
 {
     auto manifest = load_plugin_manifest(manifest_path);
@@ -339,6 +582,14 @@ auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlu
     }
 
     plugin.commands = std::move(*commands);
+
+    auto mcp_servers = load_plugin_mcp_servers(plugin_mcp_path(plugin));
+    if (!mcp_servers)
+    {
+        return nonstd::make_unexpected(mcp_servers.error());
+    }
+
+    plugin.mcp_servers = std::move(*mcp_servers);
     return plugin;
 }
 

@@ -4,8 +4,10 @@
 #include "codeharness/skills/skill.h"
 
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace codeharness
@@ -19,6 +21,7 @@ struct PluginManifest
     bool enabled_by_default = true;
     std::filesystem::path skills_dir = "skills";
     std::filesystem::path commands_dir = "commands";
+    std::filesystem::path mcp_file = "mcp.json";
 };
 
 struct PluginCommandDefinition
@@ -33,6 +36,24 @@ struct PluginCommandDefinition
     std::optional<std::string> model;
 };
 
+struct McpStdioServerConfig
+{
+    std::string name;
+    std::string command;
+    std::vector<std::string> args;
+    std::map<std::string, std::string> env;
+    std::optional<std::filesystem::path> cwd;
+};
+
+struct McpHttpServerConfig
+{
+    std::string name;
+    std::string url;
+    std::map<std::string, std::string> headers;
+};
+
+using McpServerConfig = std::variant<McpStdioServerConfig, McpHttpServerConfig>;
+
 struct LoadedPlugin
 {
     PluginManifest manifest;
@@ -41,6 +62,7 @@ struct LoadedPlugin
     bool enabled = false;
     std::vector<SkillDefinition> skills;
     std::vector<PluginCommandDefinition> commands;
+    std::vector<McpServerConfig> mcp_servers;
 };
 
 struct PluginLoadOptions

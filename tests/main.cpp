@@ -52,6 +52,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include <optional>
 #include <span>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace
@@ -1676,6 +1677,21 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
                 << "release $ARGUMENTS\n";
     }
 
+    {
+        std::ofstream mcp{plugin_dir / "mcp.json", std::ios::binary};
+        mcp << "{\n"
+            << R"(  "mcpServers": {)" << '\n'
+            << R"(    "demo": {"type": "stdio", "command": "python", "args": ["demo.py"], "env": {"TOKEN": "abc"}},)"
+            << '\n'
+            << R"(    "docs": {)"
+            << R"("type": "http", "url": "https://mcp.example.test", )"
+            << R"("headers": {"Authorization": "Bearer token"})"
+            << "}"
+            << '\n'
+            << "  }\n"
+            << "}\n";
+    }
+
     codeharness::PluginLoadOptions options;
     options.load_default_user_plugins = false;
     options.user_plugin_roots = {temp.path / "plugins"};
@@ -1695,6 +1711,32 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
     CHECK(plugins->front().commands.front().command_name == "deploy-pack:release");
     CHECK(plugins->front().commands.front().description == "Release from plugin.");
     CHECK(plugins->front().commands.front().model == "release-model");
+    REQUIRE(plugins->front().mcp_servers.size() == 2);
+
+    const codeharness::McpStdioServerConfig* stdio_server = nullptr;
+    const codeharness::McpHttpServerConfig* http_server = nullptr;
+    for (const auto& server : plugins->front().mcp_servers)
+    {
+        if (const auto* config = std::get_if<codeharness::McpStdioServerConfig>(&server);
+            config != nullptr && config->name == "demo")
+        {
+            stdio_server = config;
+        }
+        if (const auto* config = std::get_if<codeharness::McpHttpServerConfig>(&server);
+            config != nullptr && config->name == "docs")
+        {
+            http_server = config;
+        }
+    }
+
+    REQUIRE(stdio_server != nullptr);
+    CHECK(stdio_server->command == "python");
+    CHECK(stdio_server->args == std::vector<std::string>{"demo.py"});
+    CHECK(stdio_server->env.at("TOKEN") == "abc");
+
+    REQUIRE(http_server != nullptr);
+    CHECK(http_server->url == "https://mcp.example.test");
+    CHECK(http_server->headers.at("Authorization") == "Bearer token");
 }
 
 TEST_CASE("disabled plugin does not contribute skills")
@@ -1728,6 +1770,7 @@ TEST_CASE("disabled plugin does not contribute skills")
     CHECK(!plugins->front().enabled);
     CHECK(plugins->front().skills.empty());
     CHECK(plugins->front().commands.empty());
+    CHECK(plugins->front().mcp_servers.empty());
 }
 
 TEST_CASE("plugin skills are merged into skill registry when plugin roots are enabled")
@@ -1889,6 +1932,24 @@ TEST_CASE("plugin command lists loaded plugins")
                     .description = "Deployment helpers",
                 },
             .enabled = true,
+            .skills =
+                {
+                    codeharness::SkillDefinition{.name = "deploy"},
+                },
+            .commands =
+                {
+                    codeharness::PluginCommandDefinition{
+                        .name = "release",
+                        .command_name = "deploy-pack:release",
+                    },
+                },
+            .mcp_servers =
+                {
+                    codeharness::McpStdioServerConfig{
+                        .name = "demo",
+                        .command = "python",
+                    },
+                },
         });
 
     auto commands = codeharness::build_builtin_command_registry(
@@ -1901,6 +1962,7 @@ TEST_CASE("plugin command lists loaded plugins")
     REQUIRE(result.has_value());
     REQUIRE(result->message.has_value());
     CHECK(result->message->find("- deploy-pack [enabled] 1.2.3: Deployment helpers") != std::string::npos);
+    CHECK(result->message->find("(skills: 1, commands: 1, mcp: 1)") != std::string::npos);
 }
 
 TEST_CASE("plugin markdown commands register as namespaced slash commands")
