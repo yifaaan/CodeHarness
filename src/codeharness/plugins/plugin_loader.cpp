@@ -1,0 +1,404 @@
+#include "codeharness/plugins/plugin_loader.h"
+
+#include <glob/glob.h>
+#include <nlohmann/json.hpp>
+#include <nonstd/expected.hpp>
+
+#include <fmt/format.h>
+
+#include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <optional>
+#include <set>
+#include <span>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+
+#include "codeharness/core/json_parse.h"
+#include "codeharness/skills/skill_loader.h"
+#include "codeharness/tools/text_file.h"
+
+namespace codeharness
+{
+
+namespace
+{
+
+auto home_directory() -> std::optional<std::filesystem::path>
+{
+#ifdef _WIN32
+    const auto* home = std::getenv("USERPROFILE");
+#else
+    const auto* home = std::getenv("HOME");
+#endif
+
+    if (home == nullptr || *home == '\0')
+    {
+        return std::nullopt;
+    }
+
+    return std::filesystem::path{home};
+}
+
+auto has_parent_reference(const std::filesystem::path& path) -> bool
+{
+    return std::ranges::any_of(path, [](const auto& part) { return part == ".."; });
+}
+
+auto is_safe_relative_path(const std::filesystem::path& path) -> bool
+{
+    return !path.empty() && !path.is_absolute() && !path.has_root_name() && !has_parent_reference(path);
+}
+
+auto optional_json_string(const nlohmann::json& object, std::string_view field_name, std::string_view plugin_name)
+    -> Result<std::optional<std::string>>
+{
+    if (!object.contains(std::string{field_name}))
+    {
+        return std::optional<std::string>{};
+    }
+
+    auto value = read_json_field<std::string>(object, field_name, plugin_name);
+    if (!value)
+    {
+        return nonstd::make_unexpected(value.error());
+    }
+
+    return std::optional<std::string>{std::move(*value)};
+}
+
+auto optional_json_bool(const nlohmann::json& object, std::string_view field_name, std::string_view plugin_name)
+    -> Result<std::optional<bool>>
+{
+    if (!object.contains(std::string{field_name}))
+    {
+        return std::optional<bool>{};
+    }
+
+    auto value = read_json_field<bool>(object, field_name, plugin_name);
+    if (!value)
+    {
+        return nonstd::make_unexpected(value.error());
+    }
+
+    return std::optional<bool>{*value};
+}
+
+auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path& manifest_path)
+    -> Result<PluginManifest>
+{
+    if (!json.is_object())
+    {
+        return fail<PluginManifest>(
+            ErrorKind::InvalidArgument,
+            "plugin manifest must be a JSON object: " + manifest_path.string());
+    }
+
+    auto name = read_json_field<std::string>(json, "name", "plugin manifest");
+    if (!name)
+    {
+        return nonstd::make_unexpected(name.error());
+    }
+
+    auto manifest = PluginManifest{.name = std::move(*name)};
+
+    auto version = optional_json_string(json, "version", "plugin manifest");
+    if (!version)
+    {
+        return nonstd::make_unexpected(version.error());
+    }
+    if (*version)
+    {
+        manifest.version = std::move(**version);
+    }
+
+    auto description = optional_json_string(json, "description", "plugin manifest");
+    if (!description)
+    {
+        return nonstd::make_unexpected(description.error());
+    }
+    if (*description)
+    {
+        manifest.description = std::move(**description);
+    }
+
+    auto enabled = optional_json_bool(json, "enabled_by_default", "plugin manifest");
+    if (!enabled)
+    {
+        return nonstd::make_unexpected(enabled.error());
+    }
+    if (*enabled)
+    {
+        manifest.enabled_by_default = **enabled;
+    }
+
+    auto enabled_camel = optional_json_bool(json, "enabledByDefault", "plugin manifest");
+    if (!enabled_camel)
+    {
+        return nonstd::make_unexpected(enabled_camel.error());
+    }
+    if (*enabled_camel)
+    {
+        manifest.enabled_by_default = **enabled_camel;
+    }
+
+    auto skills_dir = optional_json_string(json, "skills_dir", "plugin manifest");
+    if (!skills_dir)
+    {
+        return nonstd::make_unexpected(skills_dir.error());
+    }
+    if (*skills_dir)
+    {
+        manifest.skills_dir = **skills_dir;
+    }
+
+    auto skills_dir_camel = optional_json_string(json, "skillsDir", "plugin manifest");
+    if (!skills_dir_camel)
+    {
+        return nonstd::make_unexpected(skills_dir_camel.error());
+    }
+    if (*skills_dir_camel)
+    {
+        manifest.skills_dir = **skills_dir_camel;
+    }
+
+    if (!is_safe_relative_path(manifest.skills_dir))
+    {
+        return fail<PluginManifest>(
+            ErrorKind::InvalidArgument,
+            "plugin skills_dir must be a safe relative path: " + manifest_path.string());
+    }
+
+    return manifest;
+}
+
+auto discover_manifest_paths(std::span<const std::filesystem::path> roots) -> Result<std::vector<std::filesystem::path>>
+{
+    std::vector<std::filesystem::path> manifests;
+    std::set<std::filesystem::path> seen;
+
+    for (const auto& root : roots)
+    {
+        std::error_code error;
+        if (!std::filesystem::is_directory(root, error))
+        {
+            continue;
+        }
+
+        std::vector<std::filesystem::path> candidates;
+        try
+        {
+            auto direct = glob::glob(root.string() + "/*/plugin.json");
+            auto claude = glob::glob(root.string() + "/*/.claude-plugin/plugin.json");
+            candidates.insert(candidates.end(), direct.begin(), direct.end());
+            candidates.insert(candidates.end(), claude.begin(), claude.end());
+        }
+        catch (const std::exception& e)
+        {
+            return fail<std::vector<std::filesystem::path>>(
+                ErrorKind::Io,
+                fmt::format("failed to scan plugin root {}: {}", root.string(), e.what()));
+        }
+
+        std::ranges::sort(candidates);
+
+        for (const auto& candidate : candidates)
+        {
+            const auto canonical = std::filesystem::weakly_canonical(candidate, error);
+            if (error)
+            {
+                return fail<std::vector<std::filesystem::path>>(
+                    ErrorKind::Io,
+                    fmt::format("failed to resolve plugin manifest {}: {}", candidate.string(), error.message()));
+            }
+
+            if (seen.emplace(canonical).second)
+            {
+                manifests.push_back(canonical);
+            }
+        }
+    }
+
+    return manifests;
+}
+
+auto plugin_base_dir(const std::filesystem::path& manifest_path) -> std::filesystem::path
+{
+    if (manifest_path.parent_path().filename() == ".claude-plugin")
+    {
+        return manifest_path.parent_path().parent_path();
+    }
+
+    return manifest_path.parent_path();
+}
+
+auto source_for_plugin(const PluginManifest& manifest) -> std::string
+{
+    return "plugin:" + manifest.name;
+}
+
+auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlugin>
+{
+    auto manifest = load_plugin_manifest(manifest_path);
+    if (!manifest)
+    {
+        return nonstd::make_unexpected(manifest.error());
+    }
+
+    auto plugin = LoadedPlugin{
+        .manifest = std::move(*manifest),
+        .path = plugin_base_dir(manifest_path),
+        .manifest_path = manifest_path,
+    };
+
+    plugin.enabled = plugin.manifest.enabled_by_default;
+    if (!plugin.enabled)
+    {
+        return plugin;
+    }
+
+    const auto skill_root = plugin.path / plugin.manifest.skills_dir;
+    const std::array skill_dirs{skill_root};
+    auto skills = load_skills_from_dirs(skill_dirs, source_for_plugin(plugin.manifest));
+    if (!skills)
+    {
+        return nonstd::make_unexpected(skills.error());
+    }
+
+    plugin.skills = std::move(*skills);
+    return plugin;
+}
+
+auto discover_project_plugin_roots(const std::filesystem::path& cwd,
+                                   std::span<const std::filesystem::path> relative_dirs)
+    -> Result<std::vector<std::filesystem::path>>
+{
+    std::error_code error;
+    const auto start = std::filesystem::weakly_canonical(cwd, error);
+    if (error)
+    {
+        return fail<std::vector<std::filesystem::path>>(
+            ErrorKind::Io,
+            fmt::format("failed to resolve cwd: {}", error.message()));
+    }
+
+    std::vector<std::filesystem::path> roots;
+    for (const auto& relative_dir : relative_dirs)
+    {
+        if (!is_safe_relative_path(relative_dir))
+        {
+            continue;
+        }
+
+        const auto candidate = start / relative_dir;
+        if (!std::filesystem::is_directory(candidate, error))
+        {
+            continue;
+        }
+
+        auto canonical = std::filesystem::weakly_canonical(candidate, error);
+        if (error)
+        {
+            return fail<std::vector<std::filesystem::path>>(
+                ErrorKind::Io,
+                fmt::format("failed to resolve plugin directory {}: {}", candidate.string(), error.message()));
+        }
+
+        roots.push_back(std::move(canonical));
+    }
+
+    return roots;
+}
+
+} // namespace
+
+auto default_user_plugin_roots() -> std::vector<std::filesystem::path>
+{
+    const auto home = home_directory();
+    if (!home)
+    {
+        return {};
+    }
+
+    return {
+        *home / ".codeharness" / "plugins",
+        *home / ".openharness" / "plugins",
+        *home / ".agents" / "plugins",
+    };
+}
+
+auto load_plugin_manifest(const std::filesystem::path& manifest_path) -> Result<PluginManifest>
+{
+    auto content = read_text_file(manifest_path);
+    if (!content)
+    {
+        return nonstd::make_unexpected(content.error());
+    }
+
+    nlohmann::json json;
+    try
+    {
+        json = nlohmann::json::parse(*content);
+    }
+    catch (const nlohmann::json::parse_error& error)
+    {
+        return fail<PluginManifest>(
+            ErrorKind::InvalidArgument,
+            fmt::format("failed to parse plugin manifest {}: {}", manifest_path.string(), error.what()));
+    }
+
+    return parse_manifest_json(json, manifest_path);
+}
+
+auto load_plugins(const std::filesystem::path& cwd, PluginLoadOptions options) -> Result<std::vector<LoadedPlugin>>
+{
+    auto roots = std::move(options.user_plugin_roots);
+    if (options.load_default_user_plugins)
+    {
+        auto defaults = default_user_plugin_roots();
+        roots.insert(roots.begin(), defaults.begin(), defaults.end());
+    }
+
+    roots.insert(roots.end(), options.extra_plugin_roots.begin(), options.extra_plugin_roots.end());
+
+    if (options.allow_project_plugins)
+    {
+        auto project_roots = discover_project_plugin_roots(cwd, options.project_plugin_dirs);
+        if (!project_roots)
+        {
+            return nonstd::make_unexpected(project_roots.error());
+        }
+
+        roots.insert(roots.end(), project_roots->begin(), project_roots->end());
+    }
+
+    auto manifests = discover_manifest_paths(roots);
+    if (!manifests)
+    {
+        return nonstd::make_unexpected(manifests.error());
+    }
+
+    std::vector<LoadedPlugin> plugins;
+    plugins.reserve(manifests->size());
+
+    for (const auto& manifest_path : *manifests)
+    {
+        auto plugin = load_plugin(manifest_path);
+        if (!plugin)
+        {
+            return nonstd::make_unexpected(plugin.error());
+        }
+
+        plugins.push_back(std::move(*plugin));
+    }
+
+    std::ranges::sort(plugins, [](const auto& left, const auto& right) {
+        return left.manifest.name < right.manifest.name;
+    });
+    return plugins;
+}
+
+} // namespace codeharness

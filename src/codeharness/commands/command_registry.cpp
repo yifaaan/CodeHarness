@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -12,6 +13,7 @@
 
 #include "codeharness/core/strings.h"
 #include "codeharness/memory/memory_store.h"
+#include "codeharness/plugins/plugin_loader.h"
 
 namespace codeharness
 {
@@ -329,6 +331,55 @@ auto register_memory_command(CommandRegistry& registry, memory::MemoryStore* mem
         });
 }
 
+auto format_plugin_list(std::span<const LoadedPlugin> plugins) -> std::string
+{
+    if (plugins.empty())
+    {
+        return "No plugins.\n";
+    }
+
+    std::ostringstream output;
+    output << "Plugins:\n";
+    for (const auto& plugin : plugins)
+    {
+        output << "- " << plugin.manifest.name << " [" << (plugin.enabled ? "enabled" : "disabled") << "] "
+               << plugin.manifest.version;
+        if (!plugin.manifest.description.empty())
+        {
+            output << ": " << plugin.manifest.description;
+        }
+        output << '\n';
+    }
+
+    return output.str();
+}
+
+auto execute_plugin_command(std::string_view plugin_list, std::string_view args) -> Result<CommandResult>
+{
+    const auto [subcommand, rest] = split_memory_command(args);
+    (void)rest;
+
+    if (subcommand == "list")
+    {
+        return CommandResult{.message = std::string{plugin_list}};
+    }
+
+    return fail<CommandResult>(ErrorKind::InvalidArgument, "unknown plugin command: " + std::string{subcommand});
+}
+
+auto register_plugin_command(CommandRegistry& registry, std::span<const LoadedPlugin> plugins) -> void
+{
+    auto plugin_list = format_plugin_list(plugins);
+    registry.register_command(
+        SlashCommand{
+            .name = "plugin",
+            .description = "List loaded plugins.",
+            .handler = [plugin_list = std::move(plugin_list)](std::string_view args) -> Result<CommandResult> {
+                return execute_plugin_command(plugin_list, args);
+            },
+        });
+}
+
 } // namespace
 
 auto CommandRegistry::register_command(SlashCommand command) -> void
@@ -383,12 +434,8 @@ auto CommandRegistry::list() const -> std::vector<SlashCommand>
 }
 
 // 内置命令注册点。新增内置命令只在这里加一个 register_command 调用;
-auto build_builtin_command_registry(const SkillRegistry& skills) -> CommandRegistry
-{
-    return build_builtin_command_registry(skills, nullptr);
-}
-
-auto build_builtin_command_registry(const SkillRegistry& skills, memory::MemoryStore* memory_store) -> CommandRegistry
+auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandRegistryOptions options)
+    -> CommandRegistry
 {
     CommandRegistry registry;
     registry.register_command(
@@ -399,7 +446,8 @@ auto build_builtin_command_registry(const SkillRegistry& skills, memory::MemoryS
                 return CommandResult{.message = format_skills_list(skills)};
             },
         });
-    register_memory_command(registry, memory_store);
+    register_memory_command(registry, options.memory_store);
+    register_plugin_command(registry, options.plugins);
 
     for (auto skill : skills.list())
     {

@@ -26,6 +26,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include "codeharness/engine/engine.h"
 #include "codeharness/memory/memory_store.h"
 #include "codeharness/permissions/permission.h"
+#include "codeharness/plugins/plugin_loader.h"
 #include "codeharness/prompts/project_context.h"
 #include "codeharness/prompts/system_prompt.h"
 #include "codeharness/provider/echo_provider.h"
@@ -48,6 +49,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 
@@ -1402,7 +1404,9 @@ TEST_CASE("memory slash command adds lists searches and removes entries")
     TempDir temp{"codeharness-memory-command-test"};
     codeharness::memory::MemoryStore store{temp.path / "memory"};
     codeharness::SkillRegistry skills;
-    auto commands = codeharness::build_builtin_command_registry(skills, &store);
+    auto commands = codeharness::build_builtin_command_registry(
+        skills,
+        codeharness::BuiltinCommandRegistryOptions{.memory_store = &store});
 
     auto invalid = codeharness::execute_slash_command(commands, "/memory add missing separator");
     REQUIRE(!invalid.has_value());
@@ -1609,6 +1613,152 @@ TEST_CASE("user skill overrides bundled skill")
     CHECK(registry->get("review")->content.find("user review instructions") != std::string::npos);
 }
 
+TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
+{
+    TempDir temp{"codeharness-plugin-skill-test"};
+    const auto plugin_dir = temp.path / "plugins" / "deploy-pack";
+    const auto skill_dir = plugin_dir / "skills" / "deploy";
+    std::filesystem::create_directories(skill_dir);
+
+    {
+        std::ofstream manifest{plugin_dir / "plugin.json", std::ios::binary};
+        manifest << "{\n"
+                 << R"(  "name": "deploy-pack",)" << '\n'
+                 << R"(  "version": "1.2.3",)" << '\n'
+                 << R"(  "description": "Deployment helpers",)" << '\n'
+                 << R"(  "skillsDir": "skills")" << '\n'
+                 << "}\n";
+    }
+
+    {
+        std::ofstream skill{skill_dir / "SKILL.md", std::ios::binary};
+        skill << "---\n"
+              << "name: deploy\n"
+              << "description: Deploy from plugin.\n"
+              << "---\n\n"
+              << "# Deploy\n\n"
+              << "plugin deploy instructions\n";
+    }
+
+    codeharness::PluginLoadOptions options;
+    options.load_default_user_plugins = false;
+    options.user_plugin_roots = {temp.path / "plugins"};
+
+    auto plugins = codeharness::load_plugins(temp.path, std::move(options));
+
+    REQUIRE(plugins.has_value());
+    REQUIRE(plugins->size() == 1);
+    CHECK(plugins->front().manifest.name == "deploy-pack");
+    CHECK(plugins->front().manifest.version == "1.2.3");
+    CHECK(plugins->front().enabled);
+    REQUIRE(plugins->front().skills.size() == 1);
+    CHECK(plugins->front().skills.front().source == "plugin:deploy-pack");
+    CHECK(plugins->front().skills.front().content.find("plugin deploy instructions") != std::string::npos);
+}
+
+TEST_CASE("disabled plugin does not contribute skills")
+{
+    TempDir temp{"codeharness-disabled-plugin-test"};
+    const auto plugin_dir = temp.path / "plugins" / "disabled-pack";
+    const auto skill_dir = plugin_dir / "skills" / "hidden";
+    std::filesystem::create_directories(skill_dir);
+
+    {
+        std::ofstream manifest{plugin_dir / "plugin.json", std::ios::binary};
+        manifest << "{\n"
+                 << R"(  "name": "disabled-pack",)" << '\n'
+                 << R"(  "enabled_by_default": false)" << '\n'
+                 << "}\n";
+    }
+
+    {
+        std::ofstream skill{skill_dir / "SKILL.md", std::ios::binary};
+        skill << "# Hidden\n\nshould not load\n";
+    }
+
+    codeharness::PluginLoadOptions options;
+    options.load_default_user_plugins = false;
+    options.user_plugin_roots = {temp.path / "plugins"};
+
+    auto plugins = codeharness::load_plugins(temp.path, std::move(options));
+
+    REQUIRE(plugins.has_value());
+    REQUIRE(plugins->size() == 1);
+    CHECK(!plugins->front().enabled);
+    CHECK(plugins->front().skills.empty());
+}
+
+TEST_CASE("plugin skills are merged into skill registry when plugin roots are enabled")
+{
+    TempDir temp{"codeharness-plugin-skill-registry-test"};
+    const auto plugin_dir = temp.path / "plugins" / "review-pack";
+    const auto skill_dir = plugin_dir / "skills" / "review";
+    std::filesystem::create_directories(skill_dir);
+
+    {
+        std::ofstream manifest{plugin_dir / "plugin.json", std::ios::binary};
+        manifest << R"({"name":"review-pack","description":"Review plugin"})";
+    }
+
+    {
+        std::ofstream skill{skill_dir / "SKILL.md", std::ios::binary};
+        skill << "---\n"
+              << "name: review\n"
+              << "description: plugin review skill\n"
+              << "---\n\n"
+              << "# Review\n\n"
+              << "plugin review instructions\n";
+    }
+
+    codeharness::SkillLoadOptions options;
+    options.load_default_bundled_skills = false;
+    options.load_default_user_skills = false;
+    options.allow_project_skills = false;
+    options.plugin_options.load_default_user_plugins = false;
+    options.plugin_options.user_plugin_roots = {temp.path / "plugins"};
+
+    auto registry = codeharness::load_skill_registry(temp.path, std::move(options));
+
+    REQUIRE(registry.has_value());
+    REQUIRE(registry->get("review") != nullptr);
+    CHECK(registry->get("review")->source == "plugin:review-pack");
+    CHECK(registry->get("review")->content.find("plugin review instructions") != std::string::npos);
+}
+
+TEST_CASE("project plugins are ignored unless explicitly allowed")
+{
+    TempDir temp{"codeharness-project-plugin-default-off-test"};
+    const auto plugin_dir = temp.path / ".codeharness" / "plugins" / "project-pack";
+    const auto skill_dir = plugin_dir / "skills" / "project-only";
+    std::filesystem::create_directories(skill_dir);
+
+    {
+        std::ofstream manifest{plugin_dir / "plugin.json", std::ios::binary};
+        manifest << R"({"name":"project-pack"})";
+    }
+
+    {
+        std::ofstream skill{skill_dir / "SKILL.md", std::ios::binary};
+        skill << "# Project Only\n\nproject plugin instructions\n";
+    }
+
+    codeharness::PluginLoadOptions disabled_options;
+    disabled_options.load_default_user_plugins = false;
+    auto disabled = codeharness::load_plugins(temp.path, disabled_options);
+
+    REQUIRE(disabled.has_value());
+    CHECK(disabled->empty());
+
+    codeharness::PluginLoadOptions enabled_options;
+    enabled_options.load_default_user_plugins = false;
+    enabled_options.allow_project_plugins = true;
+    auto enabled = codeharness::load_plugins(temp.path, enabled_options);
+
+    REQUIRE(enabled.has_value());
+    REQUIRE(enabled->size() == 1);
+    CHECK(enabled->front().manifest.name == "project-pack");
+}
+
 TEST_CASE("command registry resolves slash command names arguments and aliases")
 {
     codeharness::CommandRegistry registry;
@@ -1682,6 +1832,33 @@ TEST_CASE("skills command lists bundled user and project skills")
     CHECK(result->message->find("- plan [bundled]:") != std::string::npos);
     CHECK(result->message->find("- user-only [user]: user skill description") != std::string::npos);
     CHECK(result->message->find("- project-only [project]: project skill description") != std::string::npos);
+}
+
+TEST_CASE("plugin command lists loaded plugins")
+{
+    codeharness::SkillRegistry skills;
+    std::vector<codeharness::LoadedPlugin> plugins;
+    plugins.push_back(
+        codeharness::LoadedPlugin{
+            .manifest =
+                codeharness::PluginManifest{
+                    .name = "deploy-pack",
+                    .version = "1.2.3",
+                    .description = "Deployment helpers",
+                },
+            .enabled = true,
+        });
+
+    auto commands = codeharness::build_builtin_command_registry(
+        skills,
+        codeharness::BuiltinCommandRegistryOptions{
+            .plugins = std::span<const codeharness::LoadedPlugin>{plugins},
+        });
+    auto result = codeharness::execute_slash_command(commands, "/plugin list");
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->message.has_value());
+    CHECK(result->message->find("- deploy-pack [enabled] 1.2.3: Deployment helpers") != std::string::npos);
 }
 
 TEST_CASE("unknown slash command returns a clear error")

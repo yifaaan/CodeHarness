@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -103,10 +104,13 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return 0;
     }
 
-    auto skills = load_skill_registry(std::filesystem::current_path());
-    if (!skills)
+    SkillLoadOptions skill_options;
+    skill_options.plugin_options.load_default_user_plugins = true;
+
+    auto loaded_skills = load_skill_registry_with_plugins(std::filesystem::current_path(), std::move(skill_options));
+    if (!loaded_skills)
     {
-        return nonstd::make_unexpected(skills.error());
+        return nonstd::make_unexpected(loaded_skills.error());
     }
 
     auto memory_store = memory::MemoryStore::for_project(std::filesystem::current_path());
@@ -115,7 +119,11 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return nonstd::make_unexpected(memory_store.error());
     }
 
-    auto commands = build_builtin_command_registry(*skills, &*memory_store);
+    auto command_options = BuiltinCommandRegistryOptions{
+        .memory_store = &*memory_store,
+        .plugins = std::span<const LoadedPlugin>{loaded_skills->plugins},
+    };
+    auto commands = build_builtin_command_registry(loaded_skills->registry, command_options);
 
     if (!prompt.empty() && prompt.front() == '/')
     {
@@ -154,7 +162,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     PromptBuildRequest prompt_request;
     prompt_request.cwd = std::filesystem::current_path();
     prompt_request.latest_user_prompt = prompt;
-    prompt_request.available_skills = skills->list();
+    prompt_request.available_skills = loaded_skills->registry.list();
     prompt_request.available_commands = commands.list();
     prompt_request.project_context_files = std::move(*project_context_files);
     prompt_request.permission_mode = PermissionMode::Default;
@@ -177,7 +185,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     tools.add(std::make_unique<GlobTool>());
     tools.add(std::make_unique<GrepTool>());
     tools.add(std::make_unique<BashTool>());
-    tools.add(std::make_unique<SkillTool>(*skills));
+    tools.add(std::make_unique<SkillTool>(loaded_skills->registry));
 
     EchoProvider provider;
     Engine engine{provider, tools};

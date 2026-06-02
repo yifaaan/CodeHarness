@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "codeharness/core/strings.h"
+#include "codeharness/plugins/plugin_loader.h"
 #include "codeharness/skills/bundled_skills.h"
 #include "codeharness/skills/skill_yaml.h"
 #include "codeharness/tools/text_file.h"
@@ -421,7 +422,7 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
     return roots;
 }
 
-// 顶层组合器:按 "bundled → user → extra → project" 的顺序把所有来源的 skill
+// 顶层组合器:按 "bundled → user → extra → plugin → project" 的顺序把所有来源的 skill
 // 注册到同一个 SkillRegistry,后注册者同名时覆盖前注册者。
 // 各来源说明:
 //   - load_default_bundled_skills=true 时,先注册内置 plan/review/debug
@@ -429,9 +430,11 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
 //   - user_skill_dirs:       显式指定的 user 目录
 //   - load_default_user_skills=true 时,会在 user_skill_dirs 前面插入默认 user 目录             
 //   - extra_skill_dirs:      补充目录 CLI/配置追加,用 "user" 标签
+//   - plugin_options:        启用 plugin skill 加载时,enabled plugin 贡献 "plugin:<name>" 来源
 //   - allow_project_skills:  是否扫描 cwd 到 git_root 的 project skill 目录
 // 来源标签会被写进 SkillDefinition.source,用于 UI 区分 skill 的来源。
-auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions options) -> Result<SkillRegistry>
+auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoadOptions options)
+    -> Result<SkillRegistryLoadResult>
 {
     SkillRegistry registry;
 
@@ -490,7 +493,27 @@ auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions opti
         registry.register_skill(std::move(skill));
     }
 
-    // 4) project skills:从 cwd 向上扫到 git_root,可由选项关闭
+    // 4) plugin skills:默认由调用方显式开启,避免测试或受限运行时意外加载本机全局插件
+    auto plugins = load_plugins(cwd, std::move(options.plugin_options));
+    if (!plugins)
+    {
+        return nonstd::make_unexpected(plugins.error());
+    }
+
+    for (const auto& plugin : *plugins)
+    {
+        if (!plugin.enabled)
+        {
+            continue;
+        }
+
+        for (const auto& skill : plugin.skills)
+        {
+            registry.register_skill(skill);
+        }
+    }
+
+    // 5) project skills:从 cwd 向上扫到 git_root,可由选项关闭
     if (options.allow_project_skills)
     {
         auto project_dirs = discover_project_skill_dirs(cwd, options.project_skill_dirs);
@@ -511,7 +534,21 @@ auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions opti
         }
     }
 
-    return registry;
+    return SkillRegistryLoadResult{
+        .registry = std::move(registry),
+        .plugins = std::move(*plugins),
+    };
+}
+
+auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions options) -> Result<SkillRegistry>
+{
+    auto loaded = load_skill_registry_with_plugins(cwd, std::move(options));
+    if (!loaded)
+    {
+        return nonstd::make_unexpected(loaded.error());
+    }
+
+    return std::move(loaded->registry);
 }
 
 } // namespace codeharness

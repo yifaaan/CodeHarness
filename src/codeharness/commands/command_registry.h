@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -18,6 +19,14 @@ namespace memory
 {
 class MemoryStore;
 }
+
+struct LoadedPlugin;
+
+struct BuiltinCommandRegistryOptions
+{
+    memory::MemoryStore* memory_store = nullptr;
+    std::span<const LoadedPlugin> plugins;
+};
 
 // slash command result
 struct CommandResult
@@ -69,8 +78,8 @@ private:
 
 // 内置 slash command 的注册点。新增内置命令只改这一处,
 // handlers 通过 lambda 捕获共用一个 SkillRegistry 引用。
-auto build_builtin_command_registry(const SkillRegistry& skills) -> CommandRegistry;
-auto build_builtin_command_registry(const SkillRegistry& skills, memory::MemoryStore* memory_store) -> CommandRegistry;
+auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandRegistryOptions options = {})
+    -> CommandRegistry;
 
 // CLI 用的顶层入口:"解析 + 查找 + 调用"一次完成。
 // 未找到命令时返回 InvalidArgument 错误,行为与其它模块的失败约定一致。

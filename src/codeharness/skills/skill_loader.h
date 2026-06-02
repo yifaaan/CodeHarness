@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/core/result.h"
+#include "codeharness/plugins/plugin_loader.h"
 #include "codeharness/skills/skill.h"
 #include "codeharness/skills/skill_registry.h"
 
@@ -33,6 +34,13 @@ struct SkillLoadOptions
     };
     bool load_default_user_skills = true;
     bool allow_project_skills = true;
+    PluginLoadOptions plugin_options = PluginLoadOptions{.load_default_user_plugins = false};
+};
+
+struct SkillRegistryLoadResult
+{
+    SkillRegistry registry;
+    std::vector<LoadedPlugin> plugins;
 };
 
 auto default_user_skill_dirs() -> std::vector<std::filesystem::path>;
@@ -48,6 +56,9 @@ auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, s
 auto discover_project_skill_dirs(const std::filesystem::path& cwd,
                                  std::span<const std::filesystem::path> relative_dirs)
     -> Result<std::vector<std::filesystem::path>>;
+
+auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoadOptions options = {})
+    -> Result<SkillRegistryLoadResult>;
 
 auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions options = {}) -> Result<SkillRegistry>;
 
