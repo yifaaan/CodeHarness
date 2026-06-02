@@ -1773,6 +1773,47 @@ TEST_CASE("disabled plugin does not contribute skills")
     CHECK(plugins->front().mcp_servers.empty());
 }
 
+TEST_CASE("plugin loader rejects duplicate MCP server names across plugins")
+{
+    TempDir temp{"codeharness-duplicate-plugin-mcp-test"};
+    const auto plugins_dir = temp.path / "plugins";
+
+    const auto write_plugin = [](const std::filesystem::path& plugin_dir, std::string_view name) {
+        std::filesystem::create_directories(plugin_dir);
+
+        {
+            std::ofstream manifest{plugin_dir / "plugin.json", std::ios::binary};
+            manifest << "{\n"
+                     << R"(  "name": ")" << name << "\"\n"
+                     << "}\n";
+        }
+
+        {
+            std::ofstream mcp{plugin_dir / "mcp.json", std::ios::binary};
+            mcp << "{\n"
+                << R"(  "mcpServers": {)" << '\n'
+                << R"(    "demo": {"type": "stdio", "command": "python"})" << '\n'
+                << "  }\n"
+                << "}\n";
+        }
+    };
+
+    write_plugin(plugins_dir / "alpha-pack", "alpha-pack");
+    write_plugin(plugins_dir / "beta-pack", "beta-pack");
+
+    codeharness::PluginLoadOptions options;
+    options.load_default_user_plugins = false;
+    options.user_plugin_roots = {plugins_dir};
+
+    auto plugins = codeharness::load_plugins(temp.path, std::move(options));
+
+    REQUIRE(!plugins.has_value());
+    CHECK(plugins.error().kind == codeharness::ErrorKind::InvalidArgument);
+    CHECK(plugins.error().message.find("duplicate plugin MCP server name: demo") != std::string::npos);
+    CHECK(plugins.error().message.find("alpha-pack") != std::string::npos);
+    CHECK(plugins.error().message.find("beta-pack") != std::string::npos);
+}
+
 TEST_CASE("plugin skills are merged into skill registry when plugin roots are enabled")
 {
     TempDir temp{"codeharness-plugin-skill-registry-test"};

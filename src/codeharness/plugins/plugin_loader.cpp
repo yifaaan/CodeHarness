@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
@@ -16,6 +17,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 
 #include "codeharness/core/json_parse.h"
 #include "codeharness/skills/skill_loader.h"
@@ -59,8 +61,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
     if (!json.is_object())
     {
         return fail<PluginManifest>(
-            ErrorKind::InvalidArgument,
-            "plugin manifest must be a JSON object: " + manifest_path.string());
+            ErrorKind::InvalidArgument, "plugin manifest must be a JSON object: " + manifest_path.string());
     }
 
     auto name = read_json_field<std::string>(json, "name", "plugin manifest");
@@ -174,22 +175,19 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
     if (!is_safe_relative_path(manifest.skills_dir))
     {
         return fail<PluginManifest>(
-            ErrorKind::InvalidArgument,
-            "plugin skills_dir must be a safe relative path: " + manifest_path.string());
+            ErrorKind::InvalidArgument, "plugin skills_dir must be a safe relative path: " + manifest_path.string());
     }
 
     if (!is_safe_relative_path(manifest.commands_dir))
     {
         return fail<PluginManifest>(
-            ErrorKind::InvalidArgument,
-            "plugin commands_dir must be a safe relative path: " + manifest_path.string());
+            ErrorKind::InvalidArgument, "plugin commands_dir must be a safe relative path: " + manifest_path.string());
     }
 
     if (!is_safe_relative_path(manifest.mcp_file))
     {
         return fail<PluginManifest>(
-            ErrorKind::InvalidArgument,
-            "plugin mcp_file must be a safe relative path: " + manifest_path.string());
+            ErrorKind::InvalidArgument, "plugin mcp_file must be a safe relative path: " + manifest_path.string());
     }
 
     return manifest;
@@ -219,8 +217,7 @@ auto discover_manifest_paths(std::span<const std::filesystem::path> roots) -> Re
         catch (const std::exception& e)
         {
             return fail<std::vector<std::filesystem::path>>(
-                ErrorKind::Io,
-                fmt::format("failed to scan plugin root {}: {}", root.string(), e.what()));
+                ErrorKind::Io, fmt::format("failed to scan plugin root {}: {}", root.string(), e.what()));
         }
 
         std::ranges::sort(candidates);
@@ -306,8 +303,7 @@ auto load_plugin_commands(const std::filesystem::path& root, const PluginManifes
     catch (const std::exception& e)
     {
         return fail<std::vector<PluginCommandDefinition>>(
-            ErrorKind::Io,
-            fmt::format("failed to scan plugin command directory {}: {}", root.string(), e.what()));
+            ErrorKind::Io, fmt::format("failed to scan plugin command directory {}: {}", root.string(), e.what()));
     }
 
     std::ranges::sort(matches);
@@ -343,8 +339,7 @@ auto read_json_file(const std::filesystem::path& path, std::string_view label) -
     catch (const nlohmann::json::parse_error& error)
     {
         return fail<nlohmann::json>(
-            ErrorKind::InvalidArgument,
-            fmt::format("failed to parse {} {}: {}", label, path.string(), error.what()));
+            ErrorKind::InvalidArgument, fmt::format("failed to parse {} {}: {}", label, path.string(), error.what()));
     }
 }
 
@@ -357,21 +352,15 @@ auto parse_stdio_mcp_server(std::string name, const nlohmann::json& json, std::s
         return nonstd::make_unexpected(command.error());
     }
 
-    auto args = read_json_field<std::vector<std::string>, JsonFieldMode::optional_with_default>(
-        json,
-        "args",
-        context,
-        {});
+    auto args =
+        read_json_field<std::vector<std::string>, JsonFieldMode::optional_with_default>(json, "args", context, {});
     if (!args)
     {
         return nonstd::make_unexpected(args.error());
     }
 
     auto env = read_json_field<std::map<std::string, std::string>, JsonFieldMode::optional_with_default>(
-        json,
-        "env",
-        context,
-        {});
+        json, "env", context, {});
     if (!env)
     {
         return nonstd::make_unexpected(env.error());
@@ -407,10 +396,7 @@ auto parse_http_mcp_server(std::string name, const nlohmann::json& json, std::st
     }
 
     auto headers = read_json_field<std::map<std::string, std::string>, JsonFieldMode::optional_with_default>(
-        json,
-        "headers",
-        context,
-        {});
+        json, "headers", context, {});
     if (!headers)
     {
         return nonstd::make_unexpected(headers.error());
@@ -458,8 +444,7 @@ auto mcp_servers_json(const nlohmann::json& json, const std::filesystem::path& p
     if (!json.is_object())
     {
         return fail<const nlohmann::json*>(
-            ErrorKind::InvalidArgument,
-            "plugin MCP config must be a JSON object: " + path.string());
+            ErrorKind::InvalidArgument, "plugin MCP config must be a JSON object: " + path.string());
     }
 
     if (json.contains("mcpServers"))
@@ -468,8 +453,7 @@ auto mcp_servers_json(const nlohmann::json& json, const std::filesystem::path& p
         if (!servers.is_object())
         {
             return fail<const nlohmann::json*>(
-                ErrorKind::InvalidArgument,
-                "plugin MCP config mcpServers must be a JSON object: " + path.string());
+                ErrorKind::InvalidArgument, "plugin MCP config mcpServers must be a JSON object: " + path.string());
         }
 
         return &servers;
@@ -481,8 +465,7 @@ auto mcp_servers_json(const nlohmann::json& json, const std::filesystem::path& p
         if (!servers.is_object())
         {
             return fail<const nlohmann::json*>(
-                ErrorKind::InvalidArgument,
-                "plugin MCP config mcp_servers must be a JSON object: " + path.string());
+                ErrorKind::InvalidArgument, "plugin MCP config mcp_servers must be a JSON object: " + path.string());
         }
 
         return &servers;
@@ -593,8 +576,13 @@ auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlu
     return plugin;
 }
 
-auto discover_project_plugin_roots(const std::filesystem::path& cwd,
-                                   std::span<const std::filesystem::path> relative_dirs)
+auto mcp_server_name(const McpServerConfig& server) -> std::string_view
+{
+    return std::visit([](const auto& config) -> std::string_view { return config.name; }, server);
+}
+
+auto discover_project_plugin_roots(
+    const std::filesystem::path& cwd, std::span<const std::filesystem::path> relative_dirs)
     -> Result<std::vector<std::filesystem::path>>
 {
     std::error_code error;
@@ -602,8 +590,7 @@ auto discover_project_plugin_roots(const std::filesystem::path& cwd,
     if (error)
     {
         return fail<std::vector<std::filesystem::path>>(
-            ErrorKind::Io,
-            fmt::format("failed to resolve cwd: {}", error.message()));
+            ErrorKind::Io, fmt::format("failed to resolve cwd: {}", error.message()));
     }
 
     std::vector<std::filesystem::path> roots;
@@ -704,6 +691,7 @@ auto load_plugins(const std::filesystem::path& cwd, PluginLoadOptions options) -
 
     std::vector<LoadedPlugin> plugins;
     plugins.reserve(manifests->size());
+    std::map<std::string, std::string> seen_mcp_servers;
 
     for (const auto& manifest_path : *manifests)
     {
@@ -713,12 +701,27 @@ auto load_plugins(const std::filesystem::path& cwd, PluginLoadOptions options) -
             return nonstd::make_unexpected(plugin.error());
         }
 
+        for (const auto& server : plugin->mcp_servers)
+        {
+            const auto name = std::string{mcp_server_name(server)};
+            auto [existing, inserted] = seen_mcp_servers.emplace(name, plugin->manifest.name);
+            if (!inserted)
+            {
+                return fail<std::vector<LoadedPlugin>>(
+                    ErrorKind::InvalidArgument,
+                    fmt::format(
+                        "duplicate plugin MCP server name: {} (plugins: {}, {})",
+                        name,
+                        existing->second,
+                        plugin->manifest.name));
+            }
+        }
+
         plugins.push_back(std::move(*plugin));
     }
 
-    std::ranges::sort(plugins, [](const auto& left, const auto& right) {
-        return left.manifest.name < right.manifest.name;
-    });
+    std::ranges::sort(
+        plugins, [](const auto& left, const auto& right) { return left.manifest.name < right.manifest.name; });
     return plugins;
 }
 
