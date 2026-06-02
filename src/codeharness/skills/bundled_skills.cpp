@@ -35,11 +35,11 @@ auto environment_bundled_skill_dir() -> std::optional<std::filesystem::path>
 auto source_tree_bundled_skill_dir() -> std::filesystem::path
 {
 #ifdef CODEHARNESS_SOURCE_DIR
-    // 由 xmake 注入源码根目录。这样即使 CLI 先执行 --cwd 切到
+    // 由构建系统注入源码根目录。这样即使 CLI 先执行 --cwd 切到
     // 其它项目,默认 bundled skills 仍然能从当前 CodeHarness 源码树加载。
     return std::filesystem::path{CODEHARNESS_SOURCE_DIR} / "src" / "codeharness" / "skills" / "bundled" / "content";
 #else
-    // __FILE__ 当前由 xmake 以相对源码路径传给编译器:
+    // __FILE__ 通常以相对源码路径传给编译器:
     //   src/codeharness/skills/bundled_skills.cpp
     return std::filesystem::path{__FILE__}.parent_path() / "bundled" / "content";
 #endif

@@ -57,7 +57,7 @@ User input
 
 ### General Principles
 - If a narrower `Project.md` exists for the task, obey it first; otherwise this file is the project-level guide.
-- Debug the compiled binary when it crashes, or after one failed speculative fix. Prefer `xmake run codeharness_tests` or a focused test/binary run before continuing to guess.
+- Debug the compiled binary when it crashes, or after one failed speculative fix. Prefer `cmake --preset linux-debug`, `cmake --build --preset linux-debug`, and `ctest --preset linux-debug`, or a focused test/binary run before continuing to guess.
 - Prefer crash-early behavior for violated internal invariants. Do not hide impossible states with defensive defaults or silent error tolerance.
 - Treat user input, provider failures, file-system failures, permissions, and tool execution errors as expected runtime failures. They must flow through `Result<T>`, events, or `ToolResponse{is_error=true}` as appropriate so the agent loop can continue.
 - DRY is about not repeating project knowledge, protocols, parsing rules, permission rules, or data conversions. It is not a mandate to extract tiny helpers that only restate a constructor or a single obvious operation.
@@ -67,7 +67,7 @@ User input
 ### Project Scope
 - Primary editable code lives in `src/` and `tests/`. Project documentation lives in `docs/`.
 - Treat `docs/OpenHarness/` as upstream reference material. Do not modify it unless the task explicitly targets the imported reference project.
-- Do not edit `.xmake/`, `build/`, `.cache/`, generated files, or third-party package sources.
+- Do not edit `build/`, `.cache/`, generated files, or third-party package sources.
 - CodeHarness is C++20 and should remain cross-platform. If OS-specific behavior is necessary, keep the shared interface cross-platform and put the platform-specific implementation in small `*.Windows.cpp` and `*.Linux.cpp` files.
 
 ### Core C++ Standards
@@ -108,9 +108,9 @@ User input
 - Tool failure must not crash the harness. Convert it into a model-visible tool result with `is_error=true` through the engine's normal path.
 
 ### Library and Parser Usage
-- Avoid reinventing stable functionality already provided by project dependencies. Current runtime dependencies include `cli11`, `expected-lite`, `fmt`, `glob`, `nlohmann_json`, `re2`, `reproc`, and `spdlog`.
+- Avoid reinventing stable functionality already provided by project dependencies. Current runtime dependencies include `cli11`, `date`, `expected-lite`, `fmt`, `p-ranav-glob`, `nlohmann-json`, `re2`, `reproc`, `spdlog`, `yaml-cpp`, `libgit2`, and `llhttp`.
 - Use existing project helpers before adding another implementation, especially JSON field helpers in `codeharness/core/json_parse.*`, workspace path helpers in `codeharness/tools/workspace_path.*`, tool abstractions, permission targets, and event types.
-- Use structured APIs for structured data. For JSON, use `nlohmann_json` and the project helper functions; do not parse JSON with ad hoc string handling or regular expressions.
+- Use structured APIs for structured data. For JSON, use `nlohmann/json` and the project helper functions; do not parse JSON with ad hoc string handling or regular expressions.
 - Use `re2` for regular expressions when a regex is actually the right tool. Prefer parsers, path APIs, or structured matching when available.
 - Avoid namespace-scope globals with non-trivial constructors or destructors. Prefer `constexpr`, `std::string_view`, dependency injection, or explicit initialization/finalization where shared state is unavoidable.
 
@@ -124,7 +124,7 @@ User input
 
 ## Design Principles
 
-1. **Avoid reinventing the wheel**: If a third-party library already provides stable functionality (e.g., nlohmann_json for parsing, asio for networking, reproc for process management, spdlog for logging), use it directly rather than building an in-house replacement.
+1. **Avoid reinventing the wheel**: If a third-party library already provides stable functionality (e.g., nlohmann/json for parsing, asio for networking, reproc for process management, spdlog for logging), use it directly rather than building an in-house replacement.
 2. **Keep code clear and direct**: Don't pursue over-abstraction. Prefer simple `struct`s + free functions over complex class hierarchies.
 3. **Moderate safety**: The permission system must run before tool execution; sensitive paths must not be bypassable by `full_auto`. But avoid overly strict security — don't introduce unnecessary sandboxes, don't over-sanitize input, don't write defensive code beyond runtime type checking. Trust the type system. Trust the chosen third-party libraries.
 4. **Unified message model**: All providers convert to the same internal message model; the engine does not depend on any specific provider format.

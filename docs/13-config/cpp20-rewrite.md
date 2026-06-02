@@ -139,14 +139,18 @@ private:
 - 默认值填充
 - enum parse
 
-## xmake 依赖
+## vcpkg 依赖
 
 配置模块推荐依赖：
 
-```lua
-add_requires("nlohmann_json")
-add_requires("yaml-cpp")
-add_requires("sqlite3")
+```json
+{
+  "dependencies": [
+    "nlohmann-json",
+    "yaml-cpp",
+    "sqlite3"
+  ]
+}
 ```
 
 `yaml-cpp` 用于 skills/memory/agents 的 frontmatter，`sqlite3` 用于后续 session/task/memory 的结构化索引。用户可编辑内容仍建议保留 Markdown/JSON/YAML 文件。

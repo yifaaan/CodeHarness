@@ -319,30 +319,38 @@ struct ResolvedAuth {
 - provider base URL 要做基本校验，避免误把本地敏感服务当模型 endpoint。
 - web proxy 要显式配置，不要默认继承所有环境变量。
 
-## xmake 集成建议
+## CMake/vcpkg 集成建议
 
 初版依赖可以这样规划：
 
-```lua
-add_requires("nlohmann_json")
-add_requires("cli11")
-add_requires("spdlog")
-add_requires("asio")
-add_requires("openssl")
-add_requires("ada")
-add_requires("zlib")
-add_requires("brotli")
-add_requires("re2")
+```json
+{
+  "dependencies": [
+    "nlohmann-json",
+    "cli11",
+    "spdlog",
+    "asio",
+    "openssl",
+    "ada",
+    "zlib",
+    "brotli",
+    "re2"
+  ]
+}
 ```
 
 然后：
 
-```lua
-target("codeharness")
-    set_kind("binary")
-    add_files("src/**.cpp")
-    add_packages("nlohmann_json", "cli11", "spdlog", "asio", "openssl", "ada", "zlib", "brotli", "re2")
-    set_languages("c++20")
+```cmake
+find_package(nlohmann_json CONFIG REQUIRED)
+find_package(CLI11 CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+
+target_link_libraries(codeharness_core PUBLIC
+    nlohmann_json::nlohmann_json
+    CLI11::CLI11
+    spdlog::spdlog
+)
 ```
 
 说明：外部依赖从 awesome-cpp 收录项目中挑选。`re2` 用于 grep/search 正则能力；网络 streaming 不使用 libcurl/cpp-httplib/Beast，统一走 Asio。

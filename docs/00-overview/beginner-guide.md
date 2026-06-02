@@ -157,7 +157,7 @@ C++ 里跨平台进程管理比 Python 麻烦：
 
 - Windows 用 `CreateProcessW` 和 pipe。
 - Linux/macOS 用 `fork/exec`、pipe 或 `posix_spawn`。
-- 如果引入外部进程库，也通过 xmake 管理；但第一版建议自写薄封装，统一隐藏 Windows/POSIX 差异。
+- 如果引入外部进程库，也通过 vcpkg manifest 管理；但第一版建议自写薄封装，统一隐藏 Windows/POSIX 差异。
 
 ## 权限为什么是核心功能
 

@@ -84,20 +84,19 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 
 ## 推荐依赖
 
-你使用 xmake 作为构建工具时，推荐先选少量稳定依赖。外部库只从 awesome-cpp 收录项目中挑选，再确认 xmake 可导入：
+使用 CMake + vcpkg manifest 作为构建入口时，推荐先选少量稳定依赖。外部库只从 awesome-cpp 收录项目中挑选，再确认 vcpkg 中存在对应 port：
 
 | 领域 | 推荐 |
 | --- | --- |
-| JSON | `nlohmann_json` |
+| JSON | `nlohmann-json` |
 | HTTP/SSE | `asio` + `openssl` + `ada`，HTTP framing 和 SSE parser 先放在项目内实现 |
 | HTTP 解压 | `zlib` + `brotli` |
-| 搜索 | `re2` 通过 xmake 导入，`std::filesystem` 负责遍历 |
+| 搜索 | `re2` 通过 vcpkg 导入，`std::filesystem` 负责遍历 |
 | 进程 | `reproc`，统一包成 `ProcessRunner` |
 | 异步 | 初版 thread pool + blocking queue，网络 I/O 统一走 standalone Asio |
 | YAML frontmatter | `yaml-cpp` |
 | 日志 | `spdlog` |
 | CLI | `CLI11` |
-| UUID | `stduuid` |
 | Result 类型 | `expected-lite`，用户确认可作为 awesome-cpp 约束外的例外导入 |
 | 本地索引 | `sqlite3` |
 | 测试 | `doctest` |

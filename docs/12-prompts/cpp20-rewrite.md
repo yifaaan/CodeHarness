@@ -126,7 +126,7 @@ Available skills:
 
 ## Build Tool
 
-Use xmake as the build tool. Do not generate go.mod.
+Use CMake as the build tool. Do not generate go.mod.
 ```
 
 ## Coordinator prompt

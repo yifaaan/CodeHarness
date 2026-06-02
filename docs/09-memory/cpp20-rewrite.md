@@ -81,7 +81,7 @@ struct MemoryHeader {
 schema_version: 1
 id: mem-abc123
 name: Build Notes
-description: xmake build notes for CodeHarness.
+description: CMake build notes for CodeHarness.
 type: project
 scope: project
 category: knowledge
@@ -92,10 +92,10 @@ created_at: 2026-05-30T00:00:00Z
 updated_at: 2026-05-30T00:00:00Z
 ttl_days: null
 disabled: false
-tags: [build, xmake]
+tags: [build, cmake]
 ---
 
-Use xmake as the build tool. Do not generate go.mod.
+Use CMake as the build tool. Do not generate go.mod.
 ```
 
 ## MemoryStore
@@ -182,7 +182,7 @@ Prompt builder 可以注入：
 
 ## Build Notes
 
-Use xmake as the build tool...
+Use CMake as the build tool...
 ```
 
 不要每次注入所有 memory，只注入与当前 prompt 相关的几条。

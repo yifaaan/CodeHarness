@@ -85,7 +85,7 @@ auto parse_grep_input(const nlohmann::json& input) -> Result<GrepInput>
 // 用 RE2 编译正则表达式。
 //
 // 这里回答了“不要重复造轮子，也不要用 C API”的要求：
-//   - xmake 负责导入 re2 包；
+//   - vcpkg manifest 负责导入 re2 包；
 //   - 代码直接使用 RE2 这个 C++ 类；
 //   - 不需要 pcre2_compile / pcre2_match 这类 C 风格资源管理。
 //

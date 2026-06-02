@@ -1266,7 +1266,7 @@ TEST_CASE("system prompt builder includes environment skills commands context an
         codeharness::ContextFile{.path = repo / "AGENTS.md", .content = "repo agents"},
         codeharness::ContextFile{.path = child / "AGENTS.md", .content = "child agents"},
     };
-    request.relevant_memories = {codeharness::RelevantMemory{.title = "Build Notes", .content = "Use xmake."}};
+    request.relevant_memories = {codeharness::RelevantMemory{.title = "Build Notes", .content = "Use CMake."}};
     request.permission_mode = codeharness::PermissionMode::Default;
 
     auto prompt = codeharness::SystemPromptBuilder{}.build(request);
@@ -1285,7 +1285,7 @@ TEST_CASE("system prompt builder includes environment skills commands context an
     CHECK(prompt->find("- /review: Invoke the review skill.") != std::string::npos);
     CHECK(prompt->find("repo agents") < prompt->find("child agents"));
     CHECK(prompt->find("# Relevant Memories") != std::string::npos);
-    CHECK(prompt->find("Use xmake.") != std::string::npos);
+    CHECK(prompt->find("Use CMake.") != std::string::npos);
 }
 
 TEST_CASE("project memory dir uses injected root and stable hash")
@@ -1314,8 +1314,8 @@ TEST_CASE("memory store adds and scans markdown metadata")
     auto added = store.add(
         codeharness::memory::AddMemoryRequest{
             .title = "Build Notes",
-            .body = "Use xmake.\nDo not generate go.mod.",
-            .tags = {"build", "xmake"},
+            .body = "Use CMake.\nDo not generate go.mod.",
+            .tags = {"build", "cmake"},
         });
 
     REQUIRE(added.has_value());
@@ -1324,18 +1324,18 @@ TEST_CASE("memory store adds and scans markdown metadata")
     CHECK(added->metadata.scope == "project");
     CHECK(added->metadata.category == "knowledge");
     CHECK(added->metadata.importance == 1);
-    CHECK(added->metadata.tags == std::vector<std::string>{"build", "xmake"});
+    CHECK(added->metadata.tags == std::vector<std::string>{"build", "cmake"});
 
     auto memories = store.scan();
     REQUIRE(memories.has_value());
     REQUIRE(memories->size() == 1);
     CHECK(memories->front().title == "Build Notes");
-    CHECK(memories->front().description == "Use xmake.");
+    CHECK(memories->front().description == "Use CMake.");
 
     const auto raw = read_file_text(added->path);
     CHECK(raw.find("schema_version: 1") != std::string::npos);
     CHECK(raw.find("source: \"manual\"") != std::string::npos);
-    CHECK(raw.find("Use xmake.") != std::string::npos);
+    CHECK(raw.find("Use CMake.") != std::string::npos);
 }
 
 TEST_CASE("memory store refreshes duplicate content by signature")
@@ -1346,12 +1346,12 @@ TEST_CASE("memory store refreshes duplicate content by signature")
     auto first = store.add(
         codeharness::memory::AddMemoryRequest{
             .title = "Build Notes",
-            .body = "Use xmake for builds.",
+            .body = "Use CMake for builds.",
         });
     auto second = store.add(
         codeharness::memory::AddMemoryRequest{
             .title = "Build Notes Updated",
-            .body = "Use xmake for builds.",
+            .body = "Use CMake for builds.",
         });
 
     REQUIRE(first.has_value());
@@ -1373,7 +1373,7 @@ TEST_CASE("memory store soft removes entries and updates index")
     auto added = store.add(
         codeharness::memory::AddMemoryRequest{
             .title = "Build Notes",
-            .body = "Use xmake.",
+            .body = "Use CMake.",
         });
     REQUIRE(added.has_value());
 
@@ -1404,7 +1404,7 @@ TEST_CASE("memory store search ranks relevant memories")
                 .add(
                     codeharness::memory::AddMemoryRequest{
                         .title = "Build Notes",
-                        .body = "Use xmake as the build tool.",
+                        .body = "Use CMake as the build tool.",
                     })
                 .has_value());
     REQUIRE(store
@@ -1415,12 +1415,12 @@ TEST_CASE("memory store search ranks relevant memories")
                     })
                 .has_value());
 
-    auto results = store.search("xmake build", 5);
+    auto results = store.search("cmake build", 5);
 
     REQUIRE(results.has_value());
     REQUIRE(!results->empty());
     CHECK(results->front().header.title == "Build Notes");
-    CHECK(results->front().body.find("Use xmake") != std::string::npos);
+    CHECK(results->front().body.find("Use CMake") != std::string::npos);
 }
 
 TEST_CASE("memory slash command adds lists searches and removes entries")
@@ -1436,7 +1436,7 @@ TEST_CASE("memory slash command adds lists searches and removes entries")
     REQUIRE(!invalid.has_value());
     CHECK(invalid.error().message == "usage: /memory add TITLE :: BODY");
 
-    auto added = codeharness::execute_slash_command(commands, "/memory add Build Notes :: Use xmake for builds");
+    auto added = codeharness::execute_slash_command(commands, "/memory add Build Notes :: Use CMake for builds");
     REQUIRE(added.has_value());
     REQUIRE(added->message.has_value());
     CHECK(added->message->find("Added memory: Build Notes") != std::string::npos);
@@ -1446,7 +1446,7 @@ TEST_CASE("memory slash command adds lists searches and removes entries")
     REQUIRE(listed->message.has_value());
     CHECK(listed->message->find("Build Notes") != std::string::npos);
 
-    auto found = codeharness::execute_slash_command(commands, "/memory search xmake build");
+    auto found = codeharness::execute_slash_command(commands, "/memory search cmake build");
     REQUIRE(found.has_value());
     REQUIRE(found->message.has_value());
     CHECK(found->message->find("Matching memories:") != std::string::npos);
@@ -1471,17 +1471,17 @@ TEST_CASE("CLI memory helper injects relevant memories into system prompt")
                 .add(
                     codeharness::memory::AddMemoryRequest{
                         .title = "Build Notes",
-                        .body = "Use xmake when building CodeHarness.",
+                        .body = "Use CMake when building CodeHarness.",
                     })
                 .has_value());
 
-    auto memories = codeharness::load_relevant_memories_for_prompt(store, "How should I build with xmake?");
+    auto memories = codeharness::load_relevant_memories_for_prompt(store, "How should I build with CMake?");
     REQUIRE(memories.has_value());
     REQUIRE(memories->size() == 1);
 
     codeharness::PromptBuildRequest request;
     request.cwd = temp.path;
-    request.latest_user_prompt = "How should I build with xmake?";
+    request.latest_user_prompt = "How should I build with CMake?";
     request.relevant_memories = std::move(*memories);
 
     auto prompt = codeharness::SystemPromptBuilder{}.build(request);
@@ -1489,7 +1489,7 @@ TEST_CASE("CLI memory helper injects relevant memories into system prompt")
     REQUIRE(prompt.has_value());
     CHECK(prompt->find("# Relevant Memories") != std::string::npos);
     CHECK(prompt->find("## Build Notes") != std::string::npos);
-    CHECK(prompt->find("Use xmake when building CodeHarness.") != std::string::npos);
+    CHECK(prompt->find("Use CMake when building CodeHarness.") != std::string::npos);
 }
 
 TEST_CASE("skill markdown parser reads frontmatter metadata")

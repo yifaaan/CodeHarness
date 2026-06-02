@@ -1,0 +1,19 @@
+{
+  "name": "codeharness",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "cli11",
+    "date",
+    "expected-lite",
+    "fmt",
+    "p-ranav-glob",
+    "nlohmann-json",
+    "re2",
+    "reproc",
+    "spdlog",
+    "yaml-cpp",
+    "libgit2",
+    "llhttp",
+    "doctest"
+  ]
+}

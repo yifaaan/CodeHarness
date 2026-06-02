@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include <filesystem>
+#include <set>
 
 #include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
@@ -90,21 +91,35 @@ auto GlobTool::execute(const ToolRequest& request, const ToolContext& context) c
         search_root = *resolved;
     }
 
-    auto matches = glob::rglob(search_root.string() + '/' + parsed_input->pattern);
-
     nlohmann::json result_json = nlohmann::json::array();
+    std::set<std::string> emitted;
 
-    for (size_t i = 0; i < matches.size() && i < MAX_RESULTS; ++i)
-    {
-        std::error_code error;
-        auto relative = std::filesystem::relative(matches[i], search_root, error);
-        if (error)
+    auto append_matches = [&](const auto& matches) {
+        for (size_t i = 0; i < matches.size() && result_json.size() < MAX_RESULTS; ++i)
         {
-            continue;
-        }
+            std::error_code error;
+            auto relative = std::filesystem::relative(matches[i], search_root, error);
+            if (error)
+            {
+                continue;
+            }
 
-        result_json.push_back(relative.generic_string());
+            auto result = relative.generic_string();
+            if (!emitted.insert(result).second)
+            {
+                continue;
+            }
+
+            result_json.push_back(std::move(result));
+        }
+    };
+
+    if (parsed_input->pattern.starts_with("**/"))
+    {
+        append_matches(glob::glob(search_root.string() + '/' + parsed_input->pattern.substr(3)));
     }
+
+    append_matches(glob::rglob(search_root.string() + '/' + parsed_input->pattern));
 
     return ToolResponse{
         .tool_use_id = request.id,

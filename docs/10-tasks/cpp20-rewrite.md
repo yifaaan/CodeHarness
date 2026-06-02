@@ -75,7 +75,7 @@ Linux/macOS：
 - pipe。
 - process group。
 
-第一版建议使用 xmake 导入的 `reproc`，再包一层 `ProcessRunner`。`reproc` 已被 awesome-cpp 收录，可以复用现有跨平台子进程实现，同时避免业务模块直接依赖第三方 API。
+第一版建议使用 vcpkg manifest 导入的 `reproc`，再包一层 `ProcessRunner`。`reproc` 已被 awesome-cpp 收录，可以复用现有跨平台子进程实现，同时避免业务模块直接依赖第三方 API。
 
 ## 日志和状态持久化
 
