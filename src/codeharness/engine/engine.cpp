@@ -61,16 +61,9 @@ auto make_error_tool_result(std::string id, std::string content) -> ToolResultBl
 
 } // namespace
 
-Engine::Engine(Provider& provider) : provider_(provider)
-{
-}
-
-Engine::Engine(Provider& provider, ToolRegistry& tools) : provider_(provider), tools_(&tools)
-{
-}
-
-Engine::Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker& permissions) :
-    provider_(provider), tools_(&tools), permissions_(&permissions)
+Engine::Engine(
+    Provider& provider, ToolRegistry& tools, const PermissionChecker* permissions, const HookExecutor* hooks) :
+    provider_(provider), tools_(tools), permissions_(permissions), hooks_(hooks)
 {
 }
 
@@ -159,7 +152,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
 
 auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
 {
-    auto tool = tools_->find(tool_use.name);
+    auto tool = tools_.find(tool_use.name);
     if (tool == nullptr)
     {
         return make_error_tool_result(tool_use.id, "tool not found: " + tool_use.name);
@@ -194,9 +187,24 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         if (decision.action == PermissionAction::Ask)
         {
             spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
-            return make_error_tool_result(tool_use.id,
-                                          "permission confirmation required but no prompt is configured: " +
-                                              decision.reason);
+            return make_error_tool_result(
+                tool_use.id, "permission confirmation required but no prompt is configured: " + decision.reason);
+        }
+    }
+
+    if (hooks_ != nullptr)
+    {
+        const auto pre_tool_result = hooks_->execute(
+            HookEvent::PreToolUse,
+            nlohmann::json{
+                {"tool_use_id", tool_use.id},
+                {"tool_name", tool_use.name},
+                {"input", request.parsed_input},
+            });
+        if (pre_tool_result.blocked)
+        {
+            spdlog::warn("tool {} blocked by pre-tool hook: {}", tool_use.name, pre_tool_result.reason);
+            return make_error_tool_result(tool_use.id, "hook blocked tool execution: " + pre_tool_result.reason);
         }
     }
 
@@ -212,6 +220,27 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         return make_error_tool_result(tool_use.id, std::string{response.error().message});
     }
     spdlog::info("tool {} done (is_error={})", tool_use.name, response->is_error);
+
+    if (hooks_ != nullptr)
+    {
+        const auto post_tool_result = hooks_->execute(
+            HookEvent::PostToolUse,
+            nlohmann::json{
+                {"tool_use_id", tool_use.id},
+                {"tool_name", tool_use.name},
+                {"input", request.parsed_input},
+                {"result",
+                 {
+                     {"content", response->content},
+                     {"is_error", response->is_error},
+                 }},
+            });
+        if (post_tool_result.blocked)
+        {
+            spdlog::warn("post-tool hook blocked tool result for {}: {}", tool_use.name, post_tool_result.reason);
+            return make_error_tool_result(tool_use.id, "hook blocked tool result: " + post_tool_result.reason);
+        }
+    }
 
     return ToolResultBlock{
         .tool_use_id = response->tool_use_id,

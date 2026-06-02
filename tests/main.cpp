@@ -25,6 +25,8 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include "codeharness/core/json_parse.h"
 #include "codeharness/core/message.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/hooks/hook_executor.h"
+#include "codeharness/hooks/hook_registry.h"
 #include "codeharness/memory/memory_store.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/plugins/plugin_loader.h"
@@ -188,7 +190,8 @@ TEST_CASE("strict optional json field validates present values")
 TEST_CASE("engine runs one provider turn")
 {
     codeharness::EchoProvider provider;
-    codeharness::Engine engine{provider};
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
 
     codeharness::RunRequest request;
     request.prompt = "hello";
@@ -206,7 +209,8 @@ TEST_CASE("engine runs one provider turn")
 TEST_CASE("engine prepends system prompt when provided")
 {
     CapturingProvider provider;
-    codeharness::Engine engine{provider};
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
 
     codeharness::RunRequest request;
     request.prompt = "hello";
@@ -526,7 +530,8 @@ TEST_CASE("echo provider streams text delta")
 TEST_CASE("engine streaming emits assistant text delta")
 {
     codeharness::EchoProvider provider;
-    codeharness::Engine engine{provider};
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
 
     codeharness::RunRequest request;
     request.prompt = "hello";
@@ -1069,7 +1074,7 @@ TEST_CASE("engine blocks write_file in default mode without permission prompt")
     tools.add(std::make_unique<codeharness::WriteFileTool>());
 
     WriteFileRequestProvider provider;
-    codeharness::Engine engine{provider, tools, checker};
+    codeharness::Engine engine{provider, tools, &checker};
 
     codeharness::RunRequest request;
     request.prompt = "write hello.txt";
@@ -1094,7 +1099,7 @@ TEST_CASE("engine allows write_file in full_auto mode")
     tools.add(std::make_unique<codeharness::WriteFileTool>());
 
     WriteFileRequestProvider provider;
-    codeharness::Engine engine{provider, tools, checker};
+    codeharness::Engine engine{provider, tools, &checker};
 
     auto previous_cwd = std::filesystem::current_path();
     std::filesystem::current_path(temp.path);
@@ -1122,7 +1127,7 @@ TEST_CASE("engine blocks write_file in plan mode")
     tools.add(std::make_unique<codeharness::WriteFileTool>());
 
     WriteFileRequestProvider provider;
-    codeharness::Engine engine{provider, tools, checker};
+    codeharness::Engine engine{provider, tools, &checker};
 
     codeharness::RunRequest request;
     request.prompt = "write hello.txt";
@@ -1144,7 +1149,7 @@ TEST_CASE("engine passes bash command to permission checker")
     tools.add(std::make_unique<codeharness::BashTool>());
 
     DangerousBashRequestProvider provider;
-    codeharness::Engine engine{provider, tools, checker};
+    codeharness::Engine engine{provider, tools, &checker};
 
     codeharness::RunRequest request;
     request.prompt = "run a command";
@@ -1429,8 +1434,7 @@ TEST_CASE("memory slash command adds lists searches and removes entries")
     codeharness::memory::MemoryStore store{temp.path / "memory"};
     codeharness::SkillRegistry skills;
     auto commands = codeharness::build_builtin_command_registry(
-        skills,
-        codeharness::BuiltinCommandRegistryOptions{.memory_store = &store});
+        skills, codeharness::BuiltinCommandRegistryOptions{.memory_store = &store});
 
     auto invalid = codeharness::execute_slash_command(commands, "/memory add missing separator");
     REQUIRE(!invalid.has_value());
@@ -1686,8 +1690,7 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
             << R"(    "docs": {)"
             << R"("type": "http", "url": "https://mcp.example.test", )"
             << R"("headers": {"Authorization": "Bearer token"})"
-            << "}"
-            << '\n'
+            << "}" << '\n'
             << "  }\n"
             << "}\n";
     }
@@ -2251,4 +2254,148 @@ TEST_CASE("skill tool returns content and reports model invocation restrictions"
     REQUIRE(release.has_value());
     CHECK(release->content == "Skill release can only be invoked by the user as /release.");
     CHECK(release->is_error == true);
+}
+
+TEST_CASE("hook registry returns priority order and preserves registration order")
+{
+    codeharness::HookRegistry registry;
+    std::vector<std::string> calls;
+
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .priority = 10,
+            .callback =
+                [&](const nlohmann::json&) {
+                    calls.push_back("first-10");
+                    return codeharness::HookResult{};
+                },
+        });
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .priority = 20,
+            .callback =
+                [&](const nlohmann::json&) {
+                    calls.push_back("priority-20");
+                    return codeharness::HookResult{};
+                },
+        });
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .priority = 10,
+            .callback =
+                [&](const nlohmann::json&) {
+                    calls.push_back("second-10");
+                    return codeharness::HookResult{};
+                },
+        });
+
+    codeharness::HookExecutor executor{registry};
+    auto result = executor.execute(codeharness::HookEvent::PreToolUse, nlohmann::json{{"tool_name", "bash"}});
+
+    CHECK(!result.blocked);
+    CHECK(calls == std::vector<std::string>{"priority-20", "first-10", "second-10"});
+}
+
+TEST_CASE("hook executor skips unmatched tool matcher")
+{
+    codeharness::HookRegistry registry;
+    bool called = false;
+
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .matcher = std::string{"bash"},
+            .callback =
+                [&](const nlohmann::json&) {
+                    called = true;
+                    return codeharness::HookResult{};
+                },
+        });
+
+    codeharness::HookExecutor executor{registry};
+    auto result = executor.execute(codeharness::HookEvent::PreToolUse, nlohmann::json{{"tool_name", "write_file"}});
+
+    CHECK(!result.blocked);
+    CHECK(!called);
+}
+
+TEST_CASE("engine lets pre-tool hook block tool execution")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    codeharness::HookRegistry registry;
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PreToolUse,
+            .matcher = std::string{"write_file"},
+            .callback =
+                [](const nlohmann::json&) {
+                    return codeharness::HookResult{.success = true, .blocked = true, .reason = "writes disabled"};
+                },
+        });
+    codeharness::HookExecutor hooks{registry};
+
+    WriteFileRequestProvider provider;
+    codeharness::Engine engine{provider, tools, &checker, &hooks};
+
+    codeharness::RunRequest request;
+    request.prompt = "write output.txt";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("hook blocked tool execution: writes disabled") != std::string::npos);
+}
+
+TEST_CASE("engine post-tool hook receives tool result payload")
+{
+    TempDir temp{"codeharness-engine-post-hook-test"};
+
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    std::string observed_content;
+    codeharness::HookRegistry registry;
+    registry.add(
+        codeharness::HookDefinition{
+            .event = codeharness::HookEvent::PostToolUse,
+            .matcher = std::string{"write_file"},
+            .callback =
+                [&](const nlohmann::json& payload) {
+                    observed_content = payload.at("result").at("content").get<std::string>();
+                    return codeharness::HookResult{};
+                },
+        });
+    codeharness::HookExecutor hooks{registry};
+
+    WriteFileRequestProvider provider;
+    codeharness::Engine engine{provider, tools, &checker, &hooks};
+
+    auto previous_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(temp.path);
+
+    codeharness::RunRequest request;
+    request.prompt = "write output.txt";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    std::filesystem::current_path(previous_cwd);
+
+    REQUIRE(result.has_value());
+    CHECK(observed_content.find("Created") != std::string::npos);
+    CHECK(result->output_text.find("Created") != std::string::npos);
 }

@@ -2,6 +2,7 @@
 
 #include "codeharness/core/message.h"
 #include "codeharness/core/result.h"
+#include "codeharness/hooks/hook_executor.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/tool_registry.h"
@@ -72,9 +73,11 @@ using EngineEventSink = std::function<void(const EngineEvent&)>;
 class Engine
 {
 public:
-    explicit Engine(Provider& provider);
-    Engine(Provider& provider, ToolRegistry& tools);
-    Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker& permissions);
+    Engine(
+        Provider& provider,
+        ToolRegistry& tools,
+        const PermissionChecker* permissions = nullptr,
+        const HookExecutor* hooks = nullptr);
 
     auto run(const RunRequest& request) -> Result<RunResult>;
     auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> Result<RunResult>;
@@ -86,8 +89,9 @@ private:
     auto stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink) const -> Result<Message>;
 
     Provider& provider_;
-    ToolRegistry *tools_ = nullptr;
-    const PermissionChecker *permissions_ = nullptr;
+    ToolRegistry& tools_;
+    const PermissionChecker* permissions_ = nullptr;
+    const HookExecutor* hooks_ = nullptr;
 };
 
 } // namespace codeharness
