@@ -63,9 +63,9 @@ public:
 | agent task | 可启动本地 agent，并向 stdin 写 prompt | 未实现；下一步基于 `create_shell_task` 包装 |
 | `write_to_task` | 支持向 agent stdin 写入，并可重启 agent | 未实现 |
 | completion listener | 支持任务完成回调 | 未实现 |
-| task tools | `task_create/get/list/output/stop` | 未接入 ToolRegistry |
+| task tools | `task_create/get/list/output/stop` | 已接入 ToolRegistry；`task_create` 当前支持 `local_bash` |
 
-当前进度结论：Tasks 模块进入 Phase 5 的基础可用状态，可以支撑后续 `agent`/`task_*` 工具和 subprocess swarm backend，但还不是 OpenHarness 的完整后台任务系统。
+当前进度结论：Tasks 模块进入 Phase 5 的基础可用状态，可以支撑后续 `local_agent` task、`agent` 工具和 subprocess swarm backend，但还不是 OpenHarness 的完整后台任务系统。
 
 ## 进程模型
 
@@ -123,7 +123,7 @@ codeharness --task-worker --cwd <path> --prompt <prompt>
 
 ## 工具集成
 
-下一步应提供工具：
+当前已提供工具：
 
 - `task_create`
 - `task_get`
@@ -131,7 +131,7 @@ codeharness --task-worker --cwd <path> --prompt <prompt>
 - `task_output`
 - `task_stop`
 
-这些工具让模型管理后台任务。
+这些工具让模型管理后台任务。`task_create` 当前只创建 `local_bash` 任务，支持 `command` 或 `argv` 二选一、`description`、可选 `env`；`task_get`、`task_list`、`task_stop` 返回 TaskRecord JSON，`task_output` 返回日志 tail 文本。
 
 ## 测试清单
 
@@ -140,4 +140,5 @@ codeharness --task-worker --cwd <path> --prompt <prompt>
 - stdout/stderr 写入 log。已覆盖 stdout，stderr 合并由 redirect 配置负责。
 - stopTask 能终止长任务。已覆盖。
 - readOutputTail 不读超大文件全部内容。已覆盖 tail 读取。
+- task tools 可创建、列出、读取详情、读取输出和停止任务。已覆盖。
 - Windows 路径和 argv quoting 正确。已覆盖 `argv` 直启路径，后续补 shell command quoting 回归测试。

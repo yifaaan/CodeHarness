@@ -1,5 +1,6 @@
 codeharness_add_static_module(codeharness_tasks
     task_manager.cpp
+    task_tools.cpp
 )
 
 target_link_libraries(codeharness_tasks

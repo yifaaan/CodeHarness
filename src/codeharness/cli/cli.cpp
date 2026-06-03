@@ -7,6 +7,7 @@
 #include "codeharness/prompts/system_prompt.h"
 #include "codeharness/provider/echo_provider.h"
 #include "codeharness/skills/skill_loader.h"
+#include "codeharness/tasks/task_tools.h"
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/glob_tool.h"
@@ -119,6 +120,13 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return nonstd::make_unexpected(memory_store.error());
     }
 
+    auto task_root = tasks::default_task_root();
+    if (!task_root)
+    {
+        return nonstd::make_unexpected(task_root.error());
+    }
+    tasks::TaskManager task_manager{*task_root};
+
     auto command_options = BuiltinCommandRegistryOptions{
         .memory_store = &*memory_store,
         .plugins = std::span<const LoadedPlugin>{loaded_skills->plugins},
@@ -186,6 +194,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     tools.add(std::make_unique<GrepTool>());
     tools.add(std::make_unique<BashTool>());
     tools.add(std::make_unique<SkillTool>(loaded_skills->registry));
+    tasks::register_task_tools(tools, task_manager);
 
     EchoProvider provider;
     Engine engine{provider, tools};

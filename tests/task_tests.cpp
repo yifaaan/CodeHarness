@@ -231,3 +231,82 @@ TEST_CASE("task manager validates command and argv selection")
     REQUIRE(!both.has_value());
     CHECK(both.error().message == "create_shell_task accepts only one of command or argv");
 }
+
+TEST_CASE("task tools create list get output and stop tasks")
+{
+    TempDir temp{"codeharness-task-tools-test"};
+    codeharness::tasks::TaskManager manager{temp.path / "tasks"};
+
+    codeharness::ToolRegistry registry;
+    codeharness::tasks::register_task_tools(registry, manager);
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    codeharness::ToolRequest create_request;
+    create_request.id = "task-create-use";
+    create_request.name = "task_create";
+    create_request.parsed_input = nlohmann::json{
+        {"description", "tool task"},
+        {"argv", direct_test_argv("tool-output")},
+    };
+
+    const auto* create_tool = registry.find("task_create");
+    REQUIRE(create_tool != nullptr);
+    const auto create_target = create_tool->permission_target(create_request);
+    REQUIRE(create_target.command.has_value());
+    CHECK(create_target.command->find("tool-output") != std::string::npos);
+
+    auto created = registry.execute(create_request, context);
+    REQUIRE(created.has_value());
+    CHECK(created->is_error == false);
+    const auto created_json = nlohmann::json::parse(created->content);
+    const auto task_id = created_json.at("id").get<std::string>();
+    REQUIRE(!task_id.empty());
+
+    auto completed = manager.wait_for_task(task_id);
+    REQUIRE(completed.has_value());
+
+    codeharness::ToolRequest list_request;
+    list_request.id = "task-list-use";
+    list_request.name = "task_list";
+    list_request.parsed_input = nlohmann::json::object();
+    auto listed = registry.execute(list_request, context);
+    REQUIRE(listed.has_value());
+    const auto listed_json = nlohmann::json::parse(listed->content);
+    REQUIRE(listed_json.is_array());
+    REQUIRE(listed_json.size() == 1);
+    CHECK(listed_json.at(0).at("id") == task_id);
+
+    codeharness::ToolRequest get_request;
+    get_request.id = "task-get-use";
+    get_request.name = "task_get";
+    get_request.parsed_input = nlohmann::json{{"task_id", task_id}};
+    auto fetched = registry.execute(get_request, context);
+    REQUIRE(fetched.has_value());
+    CHECK(nlohmann::json::parse(fetched->content).at("status") == "completed");
+
+    codeharness::ToolRequest output_request;
+    output_request.id = "task-output-use";
+    output_request.name = "task_output";
+    output_request.parsed_input = nlohmann::json{{"task_id", task_id}, {"max_bytes", 100}};
+    auto output = registry.execute(output_request, context);
+    REQUIRE(output.has_value());
+    CHECK(output->content.find("tool-output") != std::string::npos);
+
+    auto sleep_task = manager.create_shell_task(
+        codeharness::tasks::ShellTaskSpec{
+            .description = "tool sleeper",
+            .cwd = temp.path,
+            .argv = sleeper_argv(),
+        });
+    REQUIRE(sleep_task.has_value());
+
+    codeharness::ToolRequest stop_request;
+    stop_request.id = "task-stop-use";
+    stop_request.name = "task_stop";
+    stop_request.parsed_input = nlohmann::json{{"task_id", sleep_task->id}};
+    auto stopped = registry.execute(stop_request, context);
+    REQUIRE(stopped.has_value());
+    CHECK(nlohmann::json::parse(stopped->content).at("status") == "killed");
+}

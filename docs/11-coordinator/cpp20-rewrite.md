@@ -156,13 +156,15 @@ worker continues
 
 1. `AgentDefinitionLoader`。
 2. `TaskManager.createAgentTask`，基于当前已实现的 `TaskManager.create_shell_task` 包装一次性 worker。
-3. `task_create`、`task_get`、`task_list`、`task_output`、`task_stop` 工具接入 ToolRegistry。
+3. `task_create`、`task_get`、`task_list`、`task_output`、`task_stop` 工具接入 ToolRegistry。已完成，当前 `task_create` 支持 `local_bash`。
 4. `agent` 工具创建 subprocess worker。
 5. `Mailbox`。
 6. `send_message` 工具。
 7. `TeamLifecycleManager`。
 8. `WorktreeManager`。
 9. 权限同步。
+
+当前下一步应转向第 2/4 项：先补一次性 `local_agent` task，再让 `agent` 工具通过 TaskManager 启动 subprocess worker。
 
 ## 初学者建议
 

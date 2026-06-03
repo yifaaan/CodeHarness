@@ -22,6 +22,7 @@
 #include "codeharness/provider/provider.h"
 #include "codeharness/skills/skill_loader.h"
 #include "codeharness/skills/skill_registry.h"
+#include "codeharness/tasks/task_tools.h"
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/glob_tool.h"
