@@ -24,17 +24,14 @@ enum class JsonFieldMode
 };
 
 template <typename T>
-inline constexpr bool is_supported_json_field_v = std::is_same_v<T, std::string> || std::is_same_v<T, int> ||
-                                                  std::is_same_v<T, bool> ||
-                                                  std::is_same_v<T, std::vector<std::string>> ||
-                                                  std::is_same_v<T, std::map<std::string, std::string>>;
+inline constexpr bool is_supported_json_field_v =
+    std::is_same_v<T, std::string> || std::is_same_v<T, int> || std::is_same_v<T, bool> || std::is_same_v<T, std::vector<std::string>> || std::is_same_v<T, std::map<std::string, std::string>>;
 
 // 解析工具 JSON 字段的统一 helper。
 // 错误信息格式：`"<tool> requires <kind> field: <field_name>"` 或
 // `"<tool> <field_name> must be a <kind>"`，由调用方提供 tool_name。
 template <typename T, JsonFieldMode mode = JsonFieldMode::required>
-auto read_json_field(const nlohmann::json& input, std::string_view field_name, std::string_view tool_name = {},
-                     T default_value = {})
+auto read_json_field(const nlohmann::json& input, std::string_view field_name, std::string_view tool_name = {}, T default_value = {}, ErrorKind error_kind = ErrorKind::InvalidArgument)
     -> std::conditional_t<mode == JsonFieldMode::optional_if_valid, Result<std::optional<T>>, Result<T>>
 {
     static_assert(is_supported_json_field_v<T>, "unsupported JSON field type");
@@ -76,9 +73,7 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
     {
         if constexpr (mode == JsonFieldMode::required)
         {
-            return fail<ResultValue>(ErrorKind::InvalidArgument,
-                                     std::string{tool_name} + " requires " + std::string{required_name} +
-                                         " field: " + key);
+            return fail<ResultValue>(error_kind, std::string{tool_name} + " requires " + std::string{required_name} + " field: " + key);
         }
         else if constexpr (mode == JsonFieldMode::optional_if_valid)
         {
@@ -135,15 +130,11 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
         }
         else if constexpr (mode == JsonFieldMode::required)
         {
-            return fail<ResultValue>(ErrorKind::InvalidArgument,
-                                     std::string{tool_name} + " requires " + std::string{required_name} +
-                                         " field: " + key);
+            return fail<ResultValue>(error_kind, std::string{tool_name} + " requires " + std::string{required_name} + " field: " + key);
         }
         else
         {
-            return fail<ResultValue>(ErrorKind::InvalidArgument,
-                                     std::string{tool_name} + ' ' + key + " must be " +
-                                         std::string{optional_name});
+            return fail<ResultValue>(error_kind, std::string{tool_name} + ' ' + key + " must be " + std::string{optional_name});
         }
     }
 
@@ -161,8 +152,7 @@ auto read_json_field(const nlohmann::json& input, std::string_view field_name, s
 //   - 字段缺失:返回 nullopt
 //   - 字段存在:复用 read_json_field<T> 的类型检查和错误消息
 template <typename T>
-auto read_optional_json_field(const nlohmann::json& input, std::string_view field_name, std::string_view tool_name = {})
-    -> Result<std::optional<T>>
+auto read_optional_json_field(const nlohmann::json& input, std::string_view field_name, std::string_view tool_name = {}, ErrorKind error_kind = ErrorKind::InvalidArgument) -> Result<std::optional<T>>
 {
     static_assert(is_supported_json_field_v<T>, "unsupported JSON field type");
 
@@ -171,7 +161,7 @@ auto read_optional_json_field(const nlohmann::json& input, std::string_view fiel
         return std::optional<T>{};
     }
 
-    auto value = read_json_field<T>(input, field_name, tool_name);
+    auto value = read_json_field<T>(input, field_name, tool_name, {}, error_kind);
     if (!value)
     {
         return nonstd::make_unexpected(value.error());

@@ -1,5 +1,9 @@
 #include "codeharness/mcp/json_rpc.h"
 
+#include "codeharness/core/json_parse.h"
+
+#include <nonstd/expected.hpp>
+
 #include <string>
 #include <utility>
 
@@ -11,12 +15,6 @@ namespace
 
 constexpr int json_rpc_method_not_found_code = -32601;
 
-auto has_json_rpc_version(const nlohmann::json& message) -> bool
-{
-    return message.contains("jsonrpc") && message.at("jsonrpc").is_string() &&
-           message.at("jsonrpc").get<std::string>() == "2.0";
-}
-
 auto parse_rpc_error(const nlohmann::json& error) -> Result<McpJsonRpcError>
 {
     if (!error.is_object())
@@ -24,19 +22,21 @@ auto parse_rpc_error(const nlohmann::json& error) -> Result<McpJsonRpcError>
         return fail<McpJsonRpcError>(ErrorKind::Network, "MCP JSON-RPC error must be an object");
     }
 
-    if (!error.contains("code") || !error.at("code").is_number_integer())
+    auto code = read_json_field<int>(error, "code", "MCP JSON-RPC error", {}, ErrorKind::Network);
+    if (!code)
     {
-        return fail<McpJsonRpcError>(ErrorKind::Network, "MCP JSON-RPC error requires integer field: code");
+        return nonstd::make_unexpected(code.error());
     }
 
-    if (!error.contains("message") || !error.at("message").is_string())
+    auto message = read_json_field<std::string>(error, "message", "MCP JSON-RPC error", {}, ErrorKind::Network);
+    if (!message)
     {
-        return fail<McpJsonRpcError>(ErrorKind::Network, "MCP JSON-RPC error requires string field: message");
+        return nonstd::make_unexpected(message.error());
     }
 
     auto parsed = McpJsonRpcError{
-        .code = error.at("code").get<int>(),
-        .message = error.at("message").get<std::string>(),
+        .code = *code,
+        .message = std::move(*message),
     };
 
     if (error.contains("data"))
@@ -89,26 +89,32 @@ auto parse_mcp_response(const nlohmann::json& message) -> Result<McpJsonRpcRespo
         return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response must be an object");
     }
 
-    if (!has_json_rpc_version(message))
+    auto version = read_json_field<std::string>(message, "jsonrpc", "MCP JSON-RPC response", {}, ErrorKind::Network);
+    if (!version)
+    {
+        return nonstd::make_unexpected(version.error());
+    }
+
+    if (*version != "2.0")
     {
         return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response must declare jsonrpc \"2.0\"");
     }
 
-    if (!message.contains("id") || !message.at("id").is_number_integer())
+    auto id = read_json_field<int>(message, "id", "MCP JSON-RPC response", {}, ErrorKind::Network);
+    if (!id)
     {
-        return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response requires integer field: id");
+        return nonstd::make_unexpected(id.error());
     }
 
     const auto has_result = message.contains("result");
     const auto has_error = message.contains("error");
     if (has_result == has_error)
     {
-        return fail<McpJsonRpcResponse>(
-            ErrorKind::Network, "MCP JSON-RPC response must contain exactly one of result or error");
+        return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response must contain exactly one of result or error");
     }
 
     auto response = McpJsonRpcResponse{
-        .id = message.at("id").get<int>(),
+        .id = *id,
     };
 
     if (has_result)

@@ -1,5 +1,6 @@
 #include "codeharness/mcp/client_session.h"
 
+#include "codeharness/core/json_parse.h"
 #include "codeharness/mcp/json_rpc.h"
 #include "codeharness/version.h"
 
@@ -24,40 +25,10 @@ auto expect_object_result(const nlohmann::json& result, std::string_view method)
 {
     if (!result.is_object())
     {
-        return fail<const nlohmann::json*>(
-            ErrorKind::Network, "MCP method " + std::string{method} + " returned a non-object result");
+        return fail<const nlohmann::json*>(ErrorKind::Network, "MCP method " + std::string{method} + " returned a non-object result");
     }
 
     return &result;
-}
-
-auto optional_string_field(const nlohmann::json& object, std::string_view field_name, std::string default_value = {})
-    -> Result<std::string>
-{
-    const auto key = std::string{field_name};
-    if (!object.contains(key))
-    {
-        return default_value;
-    }
-
-    if (!object.at(key).is_string())
-    {
-        return fail<std::string>(ErrorKind::Network, "MCP field must be a string: " + key);
-    }
-
-    return object.at(key).get<std::string>();
-}
-
-auto required_string_field(const nlohmann::json& object, std::string_view field_name, std::string_view context)
-    -> Result<std::string>
-{
-    const auto key = std::string{field_name};
-    if (!object.contains(key) || !object.at(key).is_string())
-    {
-        return fail<std::string>(ErrorKind::Network, "MCP " + std::string{context} + " requires string field: " + key);
-    }
-
-    return object.at(key).get<std::string>();
 }
 
 auto parse_tool_infos(const nlohmann::json& result, std::string_view server_name) -> Result<std::vector<McpToolInfo>>
@@ -73,6 +44,22 @@ auto parse_tool_infos(const nlohmann::json& result, std::string_view server_name
         return fail<std::vector<McpToolInfo>>(ErrorKind::Network, "MCP tools/list result requires field: tools");
     }
 
+    //{
+    //  "tools": [
+    //    {
+    //      "name": "read_file",
+    //      "description": "Read a file",
+    //      "inputSchema": {
+    //        "type": "object",
+    //        "properties": {
+    //          "path": {
+    //            "type": "string"
+    //          }
+    //        }
+    //      }
+    //    }
+    //  ]
+    //}
     const auto& tools_json = (*object)->at("tools");
     if (!tools_json.is_array())
     {
@@ -89,13 +76,13 @@ auto parse_tool_infos(const nlohmann::json& result, std::string_view server_name
             return fail<std::vector<McpToolInfo>>(ErrorKind::Network, "MCP tool entry must be an object");
         }
 
-        auto name = required_string_field(item, "name", "tool entry");
+        auto name = read_json_field<std::string>(item, "name", "MCP tool entry", {}, ErrorKind::Network);
         if (!name)
         {
             return nonstd::make_unexpected(name.error());
         }
 
-        auto description = optional_string_field(item, "description");
+        auto description = read_json_field<std::string, JsonFieldMode::optional_with_default>(item, "description", "MCP tool entry", {}, ErrorKind::Network);
         if (!description)
         {
             return nonstd::make_unexpected(description.error());
@@ -106,8 +93,7 @@ auto parse_tool_infos(const nlohmann::json& result, std::string_view server_name
         {
             if (!item.at("inputSchema").is_object())
             {
-                return fail<std::vector<McpToolInfo>>(
-                    ErrorKind::Network, "MCP tool inputSchema must be an object: " + *name);
+                return fail<std::vector<McpToolInfo>>(ErrorKind::Network, "MCP tool inputSchema must be an object: " + *name);
             }
 
             input_schema = item.at("inputSchema");
@@ -125,8 +111,7 @@ auto parse_tool_infos(const nlohmann::json& result, std::string_view server_name
     return tools;
 }
 
-auto parse_resource_infos(const nlohmann::json& result, std::string_view server_name)
-    -> Result<std::vector<McpResourceInfo>>
+auto parse_resource_infos(const nlohmann::json& result, std::string_view server_name) -> Result<std::vector<McpResourceInfo>>
 {
     auto object = expect_object_result(result, "resources/list");
     if (!object)
@@ -136,15 +121,13 @@ auto parse_resource_infos(const nlohmann::json& result, std::string_view server_
 
     if (!(*object)->contains("resources"))
     {
-        return fail<std::vector<McpResourceInfo>>(
-            ErrorKind::Network, "MCP resources/list result requires field: resources");
+        return fail<std::vector<McpResourceInfo>>(ErrorKind::Network, "MCP resources/list result requires field: resources");
     }
 
     const auto& resources_json = (*object)->at("resources");
     if (!resources_json.is_array())
     {
-        return fail<std::vector<McpResourceInfo>>(
-            ErrorKind::Network, "MCP resources/list field resources must be an array");
+        return fail<std::vector<McpResourceInfo>>(ErrorKind::Network, "MCP resources/list field resources must be an array");
     }
 
     std::vector<McpResourceInfo> resources;
@@ -157,19 +140,19 @@ auto parse_resource_infos(const nlohmann::json& result, std::string_view server_
             return fail<std::vector<McpResourceInfo>>(ErrorKind::Network, "MCP resource entry must be an object");
         }
 
-        auto uri = required_string_field(item, "uri", "resource entry");
+        auto uri = read_json_field<std::string>(item, "uri", "MCP resource entry", {}, ErrorKind::Network);
         if (!uri)
         {
             return nonstd::make_unexpected(uri.error());
         }
 
-        auto name = optional_string_field(item, "name", *uri);
+        auto name = read_json_field<std::string, JsonFieldMode::optional_with_default>(item, "name", "MCP resource entry", *uri, ErrorKind::Network);
         if (!name)
         {
             return nonstd::make_unexpected(name.error());
         }
 
-        auto description = optional_string_field(item, "description");
+        auto description = read_json_field<std::string, JsonFieldMode::optional_with_default>(item, "description", "MCP resource entry", {}, ErrorKind::Network);
         if (!description)
         {
             return nonstd::make_unexpected(description.error());
@@ -206,15 +189,13 @@ auto parse_tool_call_result(const nlohmann::json& result) -> Result<McpToolCallR
     }
 
     auto parsed = McpToolCallResult{.raw = result};
-    if ((*object)->contains("isError"))
+    auto is_error = read_json_field<bool, JsonFieldMode::optional_with_default>(**object, "isError", "MCP tools/call result", false, ErrorKind::Network);
+    if (!is_error)
     {
-        if (!(*object)->at("isError").is_boolean())
-        {
-            return fail<McpToolCallResult>(ErrorKind::Network, "MCP tools/call isError must be a boolean");
-        }
-
-        parsed.is_error = (*object)->at("isError").get<bool>();
+        return nonstd::make_unexpected(is_error.error());
     }
+
+    parsed.is_error = *is_error;
 
     if ((*object)->contains("content"))
     {
@@ -226,10 +207,17 @@ auto parse_tool_call_result(const nlohmann::json& result) -> Result<McpToolCallR
 
         for (const auto& item : content)
         {
-            if (item.is_object() && item.contains("type") && item.at("type").is_string() &&
-                item.at("type").get<std::string>() == "text" && item.contains("text") && item.at("text").is_string())
+            if (!item.is_object())
             {
-                append_part(parsed.content, item.at("text").get<std::string>());
+                append_part(parsed.content, item.dump());
+                continue;
+            }
+
+            const auto type = read_json_field<std::string, JsonFieldMode::optional_if_valid>(item, "type", "MCP content item");
+            const auto text = read_json_field<std::string, JsonFieldMode::optional_if_valid>(item, "text", "MCP content item");
+            if (type && *type && **type == "text" && text && *text)
+            {
+                append_part(parsed.content, **text);
             }
             else
             {
@@ -275,13 +263,21 @@ auto parse_read_resource_result(const nlohmann::json& result) -> Result<std::str
     std::string output;
     for (const auto& item : contents)
     {
-        if (item.is_object() && item.contains("text") && item.at("text").is_string())
+        if (!item.is_object())
         {
-            append_part(output, item.at("text").get<std::string>());
+            append_part(output, item.dump());
+            continue;
         }
-        else if (item.is_object() && item.contains("blob") && item.at("blob").is_string())
+
+        const auto text = read_json_field<std::string, JsonFieldMode::optional_if_valid>(item, "text", "MCP resource content");
+        const auto blob = read_json_field<std::string, JsonFieldMode::optional_if_valid>(item, "blob", "MCP resource content");
+        if (text && *text)
         {
-            append_part(output, item.at("blob").get<std::string>());
+            append_part(output, **text);
+        }
+        else if (blob && *blob)
+        {
+            append_part(output, **blob);
         }
         else
         {
@@ -372,8 +368,7 @@ auto McpClientSession::list_resources(std::string_view server_name) -> Result<st
             return std::vector<McpResourceInfo>{};
         }
 
-        return fail<std::vector<McpResourceInfo>>(
-            ErrorKind::Network, "MCP method resources/list failed: " + describe_mcp_error(*response->error));
+        return fail<std::vector<McpResourceInfo>>(ErrorKind::Network, "MCP method resources/list failed: " + describe_mcp_error(*response->error));
     }
 
     return parse_resource_infos(*response->result, server_name);
@@ -438,7 +433,6 @@ auto McpClientSession::start_transport() -> Result<void>
         return {};
     }
 
-    
     if (auto started = transport_->start(); !started)
     {
         return nonstd::make_unexpected(started.error());
@@ -469,6 +463,7 @@ auto McpClientSession::request_raw(std::string_view method, nlohmann::json param
         // Servers may emit notifications between responses. They are useful to
         // UI layers later, but this synchronous session only waits for its own
         // response id, so notifications are safely ignored here.
+        // 跳过 notification
         if (is_mcp_notification(*inbound))
         {
             continue;
@@ -482,10 +477,7 @@ auto McpClientSession::request_raw(std::string_view method, nlohmann::json param
 
         if (response->id != request_id)
         {
-            return fail<McpJsonRpcResponse>(
-                ErrorKind::Network,
-                "MCP response id mismatch: expected " + std::to_string(request_id) + ", got " +
-                    std::to_string(response->id));
+            return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP response id mismatch: expected " + std::to_string(request_id) + ", got " + std::to_string(response->id));
         }
 
         return response;
@@ -502,9 +494,7 @@ auto McpClientSession::request(std::string_view method, nlohmann::json params) -
 
     if (response->error.has_value())
     {
-        return fail<nlohmann::json>(
-            ErrorKind::Network,
-            "MCP method " + std::string{method} + " failed: " + describe_mcp_error(*response->error));
+        return fail<nlohmann::json>(ErrorKind::Network, "MCP method " + std::string{method} + " failed: " + describe_mcp_error(*response->error));
     }
 
     return *response->result;

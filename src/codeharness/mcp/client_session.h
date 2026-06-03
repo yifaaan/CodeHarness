@@ -48,9 +48,9 @@ private:
     auto request(std::string_view method, nlohmann::json params) -> Result<nlohmann::json>;
 
     std::unique_ptr<McpTransport> transport_; // 发 JSON、收 JSON
-    int next_id_ = 1;
-    bool started_ = false;
-    bool initialized_ = false;
+    int next_id_ = 1; // JSON-RPC 请求 id，从 1 开始递增
+    bool started_ = false; // transport 是否已经启动
+    bool initialized_ = false; // MCP initialize 流程是否完成
 };
 
 } // namespace codeharness
