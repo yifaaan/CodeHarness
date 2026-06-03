@@ -125,16 +125,6 @@ auto description_from_body(std::string_view body, std::string& name, std::string
     return "Skill: " + name;
 }
 
-// 判定一个 project 相对 skill 目录配置是否可接受:
-//   - 非空
-//   - 相对路径
-//   - 不带根名(Windows 上 "C:" 这种)
-//   - 不含 ".."
-// 这些限制由配置层兜底,防止恶意或手误的配置把扫描范围带出工作目录。
-auto is_safe_project_skill_dir(const std::filesystem::path& path) -> bool
-{
-    return is_safe_relative_path(path);
-}
 
 // 从 start 出发向上逐层找含 .git 的目录,找到则返回该目录;走到文件系统根都
 // 没找到则返回 nullopt。用于限制 project skill 扫描范围(最多到 git 仓库根)。
@@ -320,7 +310,7 @@ auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, s
 // 后续 register_skill 用 unordered_map::operator= 直接覆盖,
 // 后注册者胜出 —— 即 cwd 的同名 skill 会覆盖 git_root 的同名 skill,
 // 表现为"内层覆盖外层",与 Claude 的搜索行为一致。
-// 安全性:相对目录必须通过 is_safe_project_skill_dir 校验,避免恶意配置越界。
+// 安全性:相对目录必须通过 is_safe_relative_path 校验,避免恶意配置越界。
 // 范围限制:在 git_root 处停下,不递归到文件系统根,避免无意义的全盘扫描。
 auto discover_project_skill_dirs(const std::filesystem::path& cwd,
                                  std::span<const std::filesystem::path> relative_dirs)
@@ -369,7 +359,7 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
     {
         for (const auto& relative_dir : relative_dirs)
         {
-            if (!is_safe_project_skill_dir(relative_dir))
+            if (!is_safe_relative_path(relative_dir))
             {
                 continue;  // 非法路径配置,跳过
             }

@@ -82,61 +82,6 @@ auto parse_grep_input(const nlohmann::json& input) -> Result<GrepInput>
     return parsed;
 }
 
-// 用 RE2 编译正则表达式。
-//
-// 这里回答了“不要重复造轮子，也不要用 C API”的要求：
-//   - vcpkg manifest 负责导入 re2 包；
-//   - 代码直接使用 RE2 这个 C++ 类；
-//   - 不需要 pcre2_compile / pcre2_match 这类 C 风格资源管理。
-//
-// RE2 的一个重要特点：匹配时间是线性的，不支持会导致指数级回溯的特性。
-// 对 agent harness 来说这很适合，因为模型可能传入任意 pattern，
-// 我们更希望 grep 工具稳定、可预测，而不是追求最完整的 PCRE 语法。
-auto compile_pattern(const std::string& pattern) -> Result<std::unique_ptr<RE2>>
-{
-    auto regex = std::make_unique<RE2>(pattern);
-    if (!regex->ok())
-    {
-        return fail<std::unique_ptr<RE2>>(ErrorKind::InvalidArgument, "invalid grep pattern: " + regex->error());
-    }
-
-    return regex;
-}
-
-// 用已编译的 RE2 正则匹配一行文本。
-//
-// PartialMatch 表示“这一行里任意位置匹配即可”，这就是 grep 的常见语义：
-//   pattern = "TODO"
-//   line    = "// TODO: implement"
-// 结果应当匹配，而不要求整行只等于 TODO。
-auto matches_line(const RE2& regex, const std::string& line) -> bool
-{
-    return RE2::PartialMatch(line, regex);
-}
-
-auto canonical_workspace(const std::filesystem::path& cwd) -> Result<std::filesystem::path>
-{
-    std::error_code error;
-    auto workspace = std::filesystem::weakly_canonical(cwd, error);
-    if (error)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve workspace path: " + error.message());
-    }
-
-    return workspace;
-}
-
-auto resolve_search_root(const std::filesystem::path& workspace, const GrepInput& input)
-    -> Result<std::filesystem::path>
-{
-    if (!input.path || *input.path == ".")
-    {
-        return workspace;
-    }
-
-    return resolve_workspace_path(workspace, *input.path);
-}
-
 auto is_skipped_directory_name(const std::filesystem::path& path) -> bool
 {
     const auto name = path.filename().string();
@@ -182,19 +127,6 @@ auto is_small_regular_file(const std::filesystem::path& path) -> bool
     return size <= max_file_size;
 }
 
-auto relative_tool_path(const std::filesystem::path& workspace, const std::filesystem::path& file_path) -> std::string
-{
-    std::error_code error;
-    const auto relative = std::filesystem::relative(file_path, workspace, error);
-
-    if (error)
-    {
-        return file_path.generic_string();
-    }
-
-    return relative.generic_string();
-}
-
 auto search_file(
     const std::filesystem::path& workspace,
     const std::filesystem::path& file_path,
@@ -225,11 +157,15 @@ auto search_file(
             return;
         }
 
-        if (matches_line(regex, line))
+        if (RE2::PartialMatch(line, regex))
         {
+            std::error_code rel_error;
+            auto relative = std::filesystem::relative(file_path, workspace, rel_error);
+            auto relative_path = rel_error ? file_path.generic_string() : relative.generic_string();
+
             results.push_back(
                 nlohmann::json{
-                    {"path", relative_tool_path(workspace, file_path)},
+                    {"path", std::move(relative_path)},
                     {"line_number", line_number},
                     {"text", line},
                 });
@@ -297,33 +233,39 @@ auto GrepTool::execute(const ToolRequest& request, const ToolContext& context) c
         return fail<ToolResponse>(parsed.error().kind, parsed.error().message);
     }
 
-    auto workspace = canonical_workspace(context.cwd);
-    if (!workspace)
+    std::error_code ws_error;
+    auto workspace = std::filesystem::weakly_canonical(context.cwd, ws_error);
+    if (ws_error)
     {
-        return fail<ToolResponse>(workspace.error().kind, workspace.error().message);
+        return fail<ToolResponse>(ErrorKind::Io, "failed to resolve workspace path: " + ws_error.message());
     }
 
-    auto search_root = resolve_search_root(*workspace, *parsed);
-    if (!search_root)
+    std::filesystem::path search_root = workspace;
+    if (parsed->path && *parsed->path != ".")
     {
-        return fail<ToolResponse>(search_root.error().kind, search_root.error().message);
+        auto resolved = resolve_workspace_path(workspace, *parsed->path);
+        if (!resolved)
+        {
+            return fail<ToolResponse>(resolved.error().kind, resolved.error().message);
+        }
+        search_root = *resolved;
     }
 
-    auto pattern = compile_pattern(parsed->pattern);
-    if (!pattern)
+    auto regex = std::make_unique<RE2>(parsed->pattern);
+    if (!regex->ok())
     {
-        return fail<ToolResponse>(pattern.error().kind, pattern.error().message);
+        return fail<ToolResponse>(ErrorKind::InvalidArgument, "invalid grep pattern: " + regex->error());
     }
 
     nlohmann::json results = nlohmann::json::array();
 
-    if (std::filesystem::is_regular_file(*search_root))
+    if (std::filesystem::is_regular_file(search_root))
     {
-        search_file(*workspace, *search_root, **pattern, parsed->max_results, results);
+        search_file(workspace, search_root, *regex, parsed->max_results, results);
     }
-    else if (std::filesystem::is_directory(*search_root))
+    else if (std::filesystem::is_directory(search_root))
     {
-        auto search_result = search_directory(*workspace, *search_root, **pattern, parsed->max_results, results);
+        auto search_result = search_directory(workspace, search_root, *regex, parsed->max_results, results);
         if (!search_result)
         {
             return fail<ToolResponse>(search_result.error().kind, search_result.error().message);
@@ -331,7 +273,7 @@ auto GrepTool::execute(const ToolRequest& request, const ToolContext& context) c
     }
     else
     {
-        return fail<ToolResponse>(ErrorKind::Io, "grep path is not a file or directory: " + search_root->string());
+        return fail<ToolResponse>(ErrorKind::Io, "grep path is not a file or directory: " + search_root.string());
     }
 
     return ToolResponse{

@@ -77,13 +77,6 @@ auto count_occurrences(const std::string& content, const std::string& needle) ->
     return count;
 }
 
-auto replace_one(std::string content, const std::string& old_text, const std::string& new_text) -> std::string
-{
-    const auto position = content.find(old_text);
-    content.replace(position, old_text.size(), new_text);
-    return content;
-}
-
 auto replace_all_occurrences(std::string content, const std::string& old_text, const std::string& new_text)
     -> std::string
 {
@@ -155,7 +148,12 @@ auto EditFileTool::execute(const ToolRequest& request, const ToolContext& contex
 
     auto edited = parsed->replace_all
                       ? replace_all_occurrences(std::move(*content), parsed->old_string, parsed->new_string)
-                      : replace_one(std::move(*content), parsed->old_string, parsed->new_string);
+                      : [&] {
+                            auto text = std::move(*content);
+                            const auto position = text.find(parsed->old_string);
+                            text.replace(position, parsed->old_string.size(), parsed->new_string);
+                            return text;
+                        }();
 
     auto write_result = atomic_write_text_file(*resolved, edited);
     if (!write_result)

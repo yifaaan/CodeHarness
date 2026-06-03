@@ -118,10 +118,8 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         return fail<ToolResponse>(parsed.error().kind, parsed.error().message);
     }
 
-    const auto command = parsed->command;
+    spdlog::info("bash command: {}", parsed->command);
     auto argv = default_shell_command_argv(parsed->command);
-
-    spdlog::info("bash command: {}", command);
 
     reproc::process process;
     reproc::options opts{};
@@ -161,7 +159,7 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         }
         output += fmt::format("[command timed out after {} seconds]", parsed->timeout_seconds);
 
-        spdlog::warn("bash command timed out after {}s: {}", parsed->timeout_seconds, command);
+        spdlog::warn("bash command timed out after {}s: {}", parsed->timeout_seconds, parsed->command);
 
         return ToolResponse{
             .tool_use_id = request.id,

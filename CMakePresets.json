@@ -52,7 +52,7 @@
       "inherits": "vcpkg-base",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
-      "toolchainFile": "D:/Program Files (x86)/vcpkg/scripts/buildsystems/vcpkg.cmake",
+
       "environment": {
         "VSLANG": "1033"
       },

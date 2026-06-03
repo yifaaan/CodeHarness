@@ -28,31 +28,28 @@ auto to_lower_ascii(std::string text) -> std::string
     return text;
 }
 
-auto contains_text(std::string_view text, std::string_view pattern) -> bool
-{
-    return text.find(pattern) != std::string_view::npos;
-}
-
 //   - TODO: canonical path + glob rule
 auto is_sensitive_path(const std::filesystem::path& path) -> bool
 {
     auto text = to_lower_ascii(path.generic_string());
 
-    return contains_text(text, ".ssh/") || contains_text(text, "/.ssh") || contains_text(text, ".aws/credentials") ||
-           contains_text(text, ".aws/config") || contains_text(text, ".gnupg/") || contains_text(text, "/.gnupg") ||
-           contains_text(text, ".docker/config.json") || contains_text(text, ".kube/config") ||
-           contains_text(text, ".azure/") || contains_text(text, "/.azure") || contains_text(text, ".config/gcloud/") ||
-           contains_text(text, ".codeharness/credentials.json") ||
-           contains_text(text, ".openharness/credentials.json") ||
-           contains_text(text, ".openharness/copilot_auth.json");
+    return text.find(".ssh/") != std::string::npos || text.find("/.ssh") != std::string::npos ||
+           text.find(".aws/credentials") != std::string::npos || text.find(".aws/config") != std::string::npos ||
+           text.find(".gnupg/") != std::string::npos || text.find("/.gnupg") != std::string::npos ||
+           text.find(".docker/config.json") != std::string::npos || text.find(".kube/config") != std::string::npos ||
+           text.find(".azure/") != std::string::npos || text.find("/.azure") != std::string::npos ||
+           text.find(".config/gcloud/") != std::string::npos ||
+           text.find(".codeharness/credentials.json") != std::string::npos ||
+           text.find(".openharness/credentials.json") != std::string::npos ||
+           text.find(".openharness/copilot_auth.json") != std::string::npos;
 }
 
 auto looks_dangerous_command(const std::string& command) -> bool
 {
     auto text = to_lower_ascii(command);
 
-    return contains_text(text, "rm -rf /") || contains_text(text, "del /s /q c:\\") ||
-           contains_text(text, "format c:") || contains_text(text, "drop database");
+    return text.find("rm -rf /") != std::string::npos || text.find("del /s /q c:\\") != std::string::npos ||
+           text.find("format c:") != std::string::npos || text.find("drop database") != std::string::npos;
 }
 
 } // namespace

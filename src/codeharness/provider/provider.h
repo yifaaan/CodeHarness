@@ -7,7 +7,6 @@
 #include <span>
 #include <string>
 #include <variant>
-#include <variant>
 
 namespace codeharness
 {

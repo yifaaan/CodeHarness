@@ -213,8 +213,7 @@ auto optional_to_json(const std::optional<T>& value) -> nlohmann::json
         return nlohmann::json{};
     }
 
-    nlohmann::json output = *value;
-    return output;
+    return *value;
 }
 
 } // namespace codeharness

@@ -10,6 +10,7 @@ add_executable(codeharness_tests
     engine_permission_tests.cpp
     engine_tests.cpp
     hook_tests.cpp
+    mailbox_tests.cpp
     mcp_tests.cpp
     memory_tests.cpp
     permission_tests.cpp

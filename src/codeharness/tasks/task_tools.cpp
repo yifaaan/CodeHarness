@@ -152,22 +152,6 @@ auto agent_id_for(const AgentInput& input) -> std::string
     return agent_id;
 }
 
-auto agent_task_response(const ToolRequest& request, const AgentInput& input, const TaskRecord& record) -> ToolResponse
-{
-    const auto agent_id = agent_id_for(input);
-    auto output = nlohmann::json{
-        {"agent_id", agent_id},
-        {"task_id", record.id},
-        {"backend_type", "subprocess"},
-        {"description", input.description},
-        {"task", task_response_json(record)},
-    };
-
-    return ToolResponse{
-        .tool_use_id = request.id,
-        .content = output.dump(2),
-    };
-}
 
 auto task_response(const ToolRequest& request, const TaskRecord& record) -> ToolResponse
 {
@@ -310,35 +294,6 @@ auto parse_agent_input(const nlohmann::json& input) -> Result<AgentInput>
     };
 }
 
-auto shell_spec_from(const TaskCreateInput& input, const ToolContext& context) -> ShellTaskSpec
-{
-    return ShellTaskSpec{
-        .description = input.description,
-        .cwd = context.cwd,
-        .command = input.command,
-        .argv = input.argv,
-        .env = input.env,
-    };
-}
-
-auto agent_spec_from(const TaskCreateInput& input, const ToolContext& context) -> Result<AgentTaskSpec>
-{
-    if (!input.prompt)
-    {
-        return fail<AgentTaskSpec>(ErrorKind::InvalidArgument, "prompt is required for local_agent tasks");
-    }
-
-    return AgentTaskSpec{
-        .description = input.description,
-        .cwd = context.cwd,
-        .prompt = *input.prompt,
-        .command = input.command,
-        .argv = input.argv,
-        .env = input.env,
-        .model = input.model,
-    };
-}
-
 auto agent_spec_from(const AgentInput& input, const ToolContext& context) -> AgentTaskSpec
 {
     auto metadata = std::map<std::string, std::string>{
@@ -364,31 +319,6 @@ auto agent_spec_from(const AgentInput& input, const ToolContext& context) -> Age
         .model = input.model,
         .metadata = std::move(metadata),
     };
-}
-
-auto unsupported_mode_response(const ToolRequest& request, std::string_view) -> ToolResponse
-{
-    return ToolResponse{
-        .tool_use_id = request.id,
-        .content = "Invalid mode. Use local_agent.",
-        .is_error = true,
-    };
-}
-
-auto create_local_agent_task(TaskManager& manager, const TaskCreateInput& input, const ToolContext& context) -> Result<TaskRecord>
-{
-    auto spec = agent_spec_from(input, context);
-    if (!spec)
-    {
-        return nonstd::make_unexpected(spec.error());
-    }
-
-    return manager.create_agent_task(*spec);
-}
-
-auto create_agent_task(TaskManager& manager, const AgentInput& input, const ToolContext& context) -> Result<TaskRecord>
-{
-    return manager.create_agent_task(agent_spec_from(input, context));
 }
 
 } // namespace
@@ -423,11 +353,29 @@ auto TaskCreateTool::execute(const ToolRequest& request, const ToolContext& cont
     Result<TaskRecord> record = fail<TaskRecord>(ErrorKind::InvalidArgument, "unsupported task type: " + input->type);
     if (input->type == "local_bash")
     {
-        record = manager_.create_shell_task(shell_spec_from(*input, context));
+        record = manager_.create_shell_task(ShellTaskSpec{
+            .description = input->description,
+            .cwd = context.cwd,
+            .command = input->command,
+            .argv = input->argv,
+            .env = input->env,
+        });
     }
     else if (input->type == "local_agent")
     {
-        record = create_local_agent_task(manager_, *input, context);
+        if (!input->prompt)
+        {
+            return fail<ToolResponse>(ErrorKind::InvalidArgument, "prompt is required for local_agent tasks");
+        }
+        record = manager_.create_agent_task(AgentTaskSpec{
+            .description = input->description,
+            .cwd = context.cwd,
+            .prompt = *input->prompt,
+            .command = input->command,
+            .argv = input->argv,
+            .env = input->env,
+            .model = input->model,
+        });
     }
 
     if (!record)
@@ -642,16 +590,32 @@ auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) 
 
     if (input->mode != "local_agent")
     {
-        return unsupported_mode_response(request, input->mode);
+        return ToolResponse{
+            .tool_use_id = request.id,
+            .content = "Invalid mode. Use local_agent.",
+            .is_error = true,
+        };
     }
 
-    auto record = create_agent_task(manager_, *input, context);
+    auto record = manager_.create_agent_task(agent_spec_from(*input, context));
     if (!record)
     {
         return nonstd::make_unexpected(record.error());
     }
 
-    return agent_task_response(request, *input, *record);
+    const auto agent_id = agent_id_for(*input);
+    auto output = nlohmann::json{
+        {"agent_id", agent_id},
+        {"task_id", record->id},
+        {"backend_type", "subprocess"},
+        {"description", input->description},
+        {"task", task_response_json(*record)},
+    };
+
+    return ToolResponse{
+        .tool_use_id = request.id,
+        .content = output.dump(2),
+    };
 }
 
 auto register_task_tools(ToolRegistry& registry, TaskManager& manager) -> void
