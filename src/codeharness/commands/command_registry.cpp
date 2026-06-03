@@ -51,6 +51,12 @@ auto split_command_line(std::string_view input) -> std::pair<std::string_view, s
     return {input.substr(0, separator), std::move(args)};
 }
 
+// command-name/frontmatter 优先,否则用目录/skill name 作为 /<name>。
+auto skill_command_name(const SkillDefinition& skill) -> std::string
+{
+    return skill.command_name.value_or(skill.name);
+}
+
 // 把当前 SkillRegistry 渲染成 /skills 命令的多行文本输出。
 // 输出格式:
 //   Available skills:
@@ -110,12 +116,6 @@ auto apply_argument_placeholders(std::string prompt, std::string_view args, std:
     }
 
     return prompt;
-}
-
-// command-name/frontmatter 优先,否则用目录/skill name 作为 /<name>。
-auto skill_command_name(const SkillDefinition& skill) -> std::string
-{
-    return skill.command_name.value_or(skill.name);
 }
 
 auto is_valid_skill_command_name(std::string_view name) -> bool
