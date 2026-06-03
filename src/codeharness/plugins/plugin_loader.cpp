@@ -576,11 +576,6 @@ auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlu
     return plugin;
 }
 
-auto mcp_server_name(const McpServerConfig& server) -> std::string_view
-{
-    return std::visit([](const auto& config) -> std::string_view { return config.name; }, server);
-}
-
 auto discover_project_plugin_roots(
     const std::filesystem::path& cwd, std::span<const std::filesystem::path> relative_dirs)
     -> Result<std::vector<std::filesystem::path>>

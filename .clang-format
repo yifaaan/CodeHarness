@@ -9,6 +9,7 @@ AllowShortBlocksOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: true
 BinPackArguments: false
 BinPackParameters: false
+ColumnLimit: 200
 BraceWrapping:
   AfterCaseLabel: false
   AfterClass: true

@@ -3,6 +3,7 @@ add_subdirectory(provider)
 add_subdirectory(permissions)
 add_subdirectory(hooks)
 add_subdirectory(tools)
+add_subdirectory(mcp)
 add_subdirectory(skills)
 add_subdirectory(plugins)
 
@@ -51,6 +52,7 @@ target_link_libraries(codeharness_core
         codeharness_foundation
         codeharness_hooks
         codeharness_memory
+        codeharness_mcp
         codeharness_permissions
         codeharness_prompts
         codeharness_provider

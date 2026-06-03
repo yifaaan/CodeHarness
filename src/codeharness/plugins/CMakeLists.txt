@@ -5,6 +5,7 @@ codeharness_add_object_module(codeharness_plugins_objects
 target_link_libraries(codeharness_plugins_objects
     PRIVATE
         codeharness_foundation
+        codeharness_mcp
         codeharness_tools
 )
 

@@ -53,7 +53,7 @@ public:
         return {};
     }
 
-    virtual auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> = 0;
+    virtual auto execute(const ToolRequest& request, [[maybe_unused]] const ToolContext& context) const -> Result<ToolResponse> = 0;
 };
 
 // 解析 tool request 的 input_json：若 request.parsed_input 已填充则原样返回；

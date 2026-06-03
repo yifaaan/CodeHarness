@@ -1,13 +1,12 @@
 #pragma once
 
 #include "codeharness/core/result.h"
+#include "codeharness/mcp/types.h"
 #include "codeharness/skills/skill.h"
 
 #include <filesystem>
-#include <map>
 #include <optional>
 #include <string>
-#include <variant>
 #include <vector>
 
 namespace codeharness
@@ -35,24 +34,6 @@ struct PluginCommandDefinition
     bool disable_model_invocation = false;
     std::optional<std::string> model;
 };
-
-struct McpStdioServerConfig
-{
-    std::string name;
-    std::string command;
-    std::vector<std::string> args;
-    std::map<std::string, std::string> env;
-    std::optional<std::filesystem::path> cwd;
-};
-
-struct McpHttpServerConfig
-{
-    std::string name;
-    std::string url;
-    std::map<std::string, std::string> headers;
-};
-
-using McpServerConfig = std::variant<McpStdioServerConfig, McpHttpServerConfig>;
 
 struct LoadedPlugin
 {
