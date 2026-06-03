@@ -29,6 +29,7 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include "codeharness/hooks/hook_registry.h"
 #include "codeharness/mcp/client_session.h"
 #include "codeharness/mcp/json_rpc.h"
+#include "codeharness/mcp/stdio_transport.h"
 #include "codeharness/mcp/tool_adapter.h"
 #include "codeharness/mcp/transport.h"
 #include "codeharness/mcp/types.h"
@@ -64,6 +65,10 @@ static SpdlogQuieter g_spdlog_quieter{};
 #include <string_view>
 #include <variant>
 #include <vector>
+
+#ifndef CODEHARNESS_FAKE_MCP_SERVER
+#define CODEHARNESS_FAKE_MCP_SERVER ""
+#endif
 
 namespace
 {
@@ -408,6 +413,84 @@ TEST_CASE("mcp client calls tools and stringifies text content")
     CHECK(result->is_error == false);
     CHECK(result->content == R"(echo: {"value":"hello"})");
     CHECK(observed_transport->tool_arguments.at("echo.value").at("value") == "hello");
+}
+
+TEST_CASE("mcp stdio transport talks to a json-line server process")
+{
+    const auto server_path = std::string{CODEHARNESS_FAKE_MCP_SERVER};
+    REQUIRE(!server_path.empty());
+    REQUIRE(std::filesystem::exists(server_path));
+
+    auto transport = std::make_unique<codeharness::McpStdioTransport>(
+        codeharness::McpStdioServerConfig{
+            .name = "fake-stdio",
+            .command = server_path,
+        },
+        codeharness::McpStdioTransportOptions{
+            .io_timeout_ms = 5000,
+            .stop_timeout_ms = 1000,
+        });
+    codeharness::McpClientSession session{std::move(transport)};
+
+    auto initialized = session.initialize();
+    REQUIRE(initialized.has_value());
+
+    auto tools = session.list_tools("fake-stdio");
+    REQUIRE(tools.has_value());
+    REQUIRE(tools->size() == 1);
+    CHECK((*tools)[0].name == "echo");
+    CHECK((*tools)[0].server_name == "fake-stdio");
+
+    auto resources = session.list_resources("fake-stdio");
+    REQUIRE(resources.has_value());
+    CHECK(resources->empty());
+
+    auto result = session.call_tool("echo", nlohmann::json{{"value", "hello over stdio"}});
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    CHECK(result->content == R"(stdio echo: {"value":"hello over stdio"})");
+}
+
+TEST_CASE("mcp stdio transport reports start and parse failures")
+{
+    codeharness::McpStdioTransport missing_server{
+        codeharness::McpStdioServerConfig{
+            .name = "missing-stdio",
+            .command = "definitely-not-a-codeharness-test-binary",
+        },
+        codeharness::McpStdioTransportOptions{
+            .io_timeout_ms = 1000,
+            .stop_timeout_ms = 100,
+        },
+    };
+
+    auto started = missing_server.start();
+    REQUIRE(!started.has_value());
+    CHECK(started.error().kind == codeharness::ErrorKind::Io);
+    CHECK(started.error().message.find("failed to start MCP stdio server") != std::string::npos);
+
+    const auto server_path = std::string{CODEHARNESS_FAKE_MCP_SERVER};
+    codeharness::McpStdioTransport invalid_json_server{
+        codeharness::McpStdioServerConfig{
+            .name = "invalid-json-stdio",
+            .command = server_path,
+        },
+        codeharness::McpStdioTransportOptions{
+            .io_timeout_ms = 5000,
+            .stop_timeout_ms = 1000,
+        },
+    };
+
+    auto valid_start = invalid_json_server.start();
+    REQUIRE(valid_start.has_value());
+
+    auto sent = invalid_json_server.send("__invalid_json__");
+    REQUIRE(sent.has_value());
+
+    auto read = invalid_json_server.read();
+    REQUIRE(!read.has_value());
+    CHECK(read.error().kind == codeharness::ErrorKind::Network);
+    CHECK(read.error().message.find("wrote invalid JSON line") != std::string::npos);
 }
 
 TEST_CASE("mcp tool adapter sanitizes names and forwards arguments")
