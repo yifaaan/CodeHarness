@@ -36,12 +36,13 @@ struct TaskRecord {
 
 ## TaskManager
 
-当前 C++ v1 已实现 shell task 的后台执行、状态落盘、输出 tail 和停止；agent task、stdin 写入、completion listener 暂未实现。
+当前 C++ v1 已实现 shell task 的后台执行、一次性 local agent task、状态落盘、输出 tail 和停止；stdin 写入、completion listener 暂未实现。
 
 ```cpp
 class TaskManager {
 public:
     Result<TaskRecord> create_shell_task(const ShellTaskSpec& spec);
+    Result<TaskRecord> create_agent_task(const AgentTaskSpec& spec);
     Result<std::vector<TaskRecord>> list_tasks(std::optional<TaskStatus> status = std::nullopt) const;
     Result<std::optional<TaskRecord>> get_task(std::string_view id) const;
     Result<TaskRecord> stop_task(std::string_view id);
@@ -60,12 +61,13 @@ public:
 | `argv` 直启 | 支持，避免 Windows shell quoting 问题 | 已支持 `argv` 和 `command` 二选一 |
 | 环境变量 | task env 合并到父进程环境 | 已支持 `env.extra`，继承父环境 |
 | stop task | terminate 后必要时 kill | 已实现 kill + join，状态落为 `killed` |
-| agent task | 可启动本地 agent，并向 stdin 写 prompt | 未实现；下一步基于 `create_shell_task` 包装 |
+| agent task | 可启动本地 agent，并向 stdin 写 prompt | 已实现一次性 `local_agent` task；默认启动 `codeharness -p <prompt> --cwd <cwd>`，也支持 `command`/`argv` 覆盖 |
 | `write_to_task` | 支持向 agent stdin 写入，并可重启 agent | 未实现 |
 | completion listener | 支持任务完成回调 | 未实现 |
-| task tools | `task_create/get/list/output/stop` | 已接入 ToolRegistry；`task_create` 当前支持 `local_bash` |
+| task tools | `task_create/get/list/output/stop` | 已接入 ToolRegistry；`task_create` 支持 `local_bash` 和一次性 `local_agent` |
+| `agent` tool | 创建 subprocess worker，并返回 task id | 已接入 ToolRegistry；当前仅支持 `local_agent` mode |
 
-当前进度结论：Tasks 模块进入 Phase 5 的基础可用状态，可以支撑后续 `local_agent` task、`agent` 工具和 subprocess swarm backend，但还不是 OpenHarness 的完整后台任务系统。
+当前进度结论：Tasks 模块进入 Phase 5 的基础可用状态，可以支撑后续 subprocess swarm backend、Mailbox 和 `send_message`，但还不是 OpenHarness 的完整后台任务系统。
 
 ## 进程模型
 
@@ -114,12 +116,12 @@ Linux/macOS：
 Agent task 是启动另一个 CodeHarness 进程，例如：
 
 ```text
-codeharness --task-worker --cwd <path> --prompt <prompt>
+codeharness -p <prompt> --cwd <path>
 ```
 
-它可以通过 stdin 接收后续消息，通过 stdout/log 输出结果。
+当前 C++ 第一版是“一次 prompt，一个结果”的一次性 agent task。它通过 stdout/log 输出结果；stdin 写入、自动重启和持续对话留给后续 `write_to_task`。
 
-第一版可以先不做可交互 agent task，只做“一次 prompt，一个结果”。
+`model` 当前只记录到 metadata；CLI/provider profile 接入后再让子进程真实继承模型配置。
 
 ## 工具集成
 
@@ -130,8 +132,9 @@ codeharness --task-worker --cwd <path> --prompt <prompt>
 - `task_list`
 - `task_output`
 - `task_stop`
+- `agent`
 
-这些工具让模型管理后台任务。`task_create` 当前只创建 `local_bash` 任务，支持 `command` 或 `argv` 二选一、`description`、可选 `env`；`task_get`、`task_list`、`task_stop` 返回 TaskRecord JSON，`task_output` 返回日志 tail 文本。
+这些工具让模型管理后台任务。`task_create` 支持 `local_bash` 与 `local_agent`，两者都支持 `command` 或 `argv` 覆盖、`description`、可选 `env`；`local_agent` 还要求 `prompt`。`task_get`、`task_list`、`task_stop` 返回 TaskRecord JSON，`task_output` 返回日志 tail 文本。`agent` 工具是上游 agent tool 的最小形态，创建一个 `local_agent` task 并返回 `agent_id`、`task_id`、`backend_type`。
 
 ## 测试清单
 
@@ -141,4 +144,5 @@ codeharness --task-worker --cwd <path> --prompt <prompt>
 - stopTask 能终止长任务。已覆盖。
 - readOutputTail 不读超大文件全部内容。已覆盖 tail 读取。
 - task tools 可创建、列出、读取详情、读取输出和停止任务。已覆盖。
+- local_agent task 与 agent tool。已覆盖一次性 worker 创建、记录落盘和输出读取。
 - Windows 路径和 argv quoting 正确。已覆盖 `argv` 直启路径，后续补 shell command quoting 回归测试。

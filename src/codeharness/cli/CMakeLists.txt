@@ -12,6 +12,7 @@ target_link_libraries(codeharness_cli
         codeharness_engine
         codeharness_extensions
         codeharness_provider
+        codeharness_tasks
         codeharness_tools
 )
 

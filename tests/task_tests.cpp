@@ -15,6 +15,11 @@ auto sleeper_argv() -> std::vector<std::string>
     return {std::string{CODEHARNESS_CMAKE_COMMAND}, "-E", "sleep", "30"};
 }
 
+auto codeharness_version_argv() -> std::vector<std::string>
+{
+    return {std::string{CODEHARNESS_EXE}, "--version"};
+}
+
 } // namespace
 
 TEST_CASE("task record serializes through nlohmann json interface")
@@ -232,6 +237,43 @@ TEST_CASE("task manager validates command and argv selection")
     CHECK(both.error().message == "create_shell_task accepts only one of command or argv");
 }
 
+TEST_CASE("task manager creates one-shot local agent task")
+{
+    TempDir temp{"codeharness-agent-task-test"};
+    codeharness::tasks::TaskManager manager{temp.path / "tasks"};
+
+    auto task = manager.create_agent_task(
+        codeharness::tasks::AgentTaskSpec{
+            .description = "agent version",
+            .cwd = temp.path,
+            .prompt = "report version",
+            .argv = codeharness_version_argv(),
+            .model = std::string{"test-model"},
+            .metadata = {{"source", "test"}},
+        });
+
+    REQUIRE(task.has_value());
+    CHECK(task->type == codeharness::tasks::TaskType::LocalAgent);
+    CHECK(task->prompt == std::string{"report version"});
+    CHECK(task->metadata.at("model") == "test-model");
+    CHECK(task->metadata.at("source") == "test");
+
+    auto completed = manager.wait_for_task(task->id);
+    REQUIRE(completed.has_value());
+    CHECK(completed->status == codeharness::tasks::TaskStatus::Completed);
+
+    auto output = manager.read_output_tail(task->id);
+    REQUIRE(output.has_value());
+    CHECK(output->find("CodeHarness") != std::string::npos);
+
+    codeharness::tasks::TaskManager reloaded{temp.path / "tasks"};
+    auto persisted = reloaded.get_task(task->id);
+    REQUIRE(persisted.has_value());
+    REQUIRE(persisted->has_value());
+    CHECK((*persisted)->type == codeharness::tasks::TaskType::LocalAgent);
+    CHECK((*persisted)->prompt == std::string{"report version"});
+}
+
 TEST_CASE("task tools create list get output and stop tasks")
 {
     TempDir temp{"codeharness-task-tools-test"};
@@ -309,4 +351,81 @@ TEST_CASE("task tools create list get output and stop tasks")
     auto stopped = registry.execute(stop_request, context);
     REQUIRE(stopped.has_value());
     CHECK(nlohmann::json::parse(stopped->content).at("status") == "killed");
+}
+
+TEST_CASE("task_create supports local agent tasks")
+{
+    TempDir temp{"codeharness-task-create-agent-test"};
+    codeharness::tasks::TaskManager manager{temp.path / "tasks"};
+
+    codeharness::ToolRegistry registry;
+    codeharness::tasks::register_task_tools(registry, manager);
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    codeharness::ToolRequest create_request;
+    create_request.id = "task-create-agent-use";
+    create_request.name = "task_create";
+    create_request.parsed_input = nlohmann::json{
+        {"type", "local_agent"},
+        {"description", "agent tool task"},
+        {"prompt", "report version"},
+        {"argv", codeharness_version_argv()},
+    };
+
+    auto created = registry.execute(create_request, context);
+    REQUIRE(created.has_value());
+    const auto created_json = nlohmann::json::parse(created->content);
+    CHECK(created_json.at("type") == "local_agent");
+    CHECK(created_json.at("prompt") == "report version");
+
+    auto completed = manager.wait_for_task(created_json.at("id").get<std::string>());
+    REQUIRE(completed.has_value());
+    CHECK(completed->status == codeharness::tasks::TaskStatus::Completed);
+}
+
+TEST_CASE("agent tool spawns local agent task")
+{
+    TempDir temp{"codeharness-agent-tool-test"};
+    codeharness::tasks::TaskManager manager{temp.path / "tasks"};
+
+    codeharness::ToolRegistry registry;
+    codeharness::tasks::register_task_tools(registry, manager);
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    codeharness::ToolRequest agent_request;
+    agent_request.id = "agent-use";
+    agent_request.name = "agent";
+    agent_request.parsed_input = nlohmann::json{
+        {"description", "agent version"},
+        {"prompt", "report version"},
+        {"subagent_type", "worker"},
+        {"team", "alpha"},
+        {"argv", codeharness_version_argv()},
+    };
+
+    const auto* agent_tool = registry.find("agent");
+    REQUIRE(agent_tool != nullptr);
+    const auto target = agent_tool->permission_target(agent_request);
+    REQUIRE(target.command.has_value());
+    CHECK(target.command->find("codeharness") != std::string::npos);
+
+    auto spawned = registry.execute(agent_request, context);
+    REQUIRE(spawned.has_value());
+    CHECK(spawned->is_error == false);
+
+    const auto output = nlohmann::json::parse(spawned->content);
+    CHECK(output.at("agent_id") == "worker@alpha");
+    CHECK(output.at("backend_type") == "subprocess");
+
+    const auto task_id = output.at("task_id").get<std::string>();
+    auto completed = manager.wait_for_task(task_id);
+    REQUIRE(completed.has_value());
+    CHECK(completed->type == codeharness::tasks::TaskType::LocalAgent);
+    CHECK(completed->metadata.at("agent_id") == "worker@alpha");
+    CHECK(completed->metadata.at("backend_type") == "subprocess");
+    CHECK(completed->status == codeharness::tasks::TaskStatus::Completed);
 }

@@ -76,6 +76,20 @@ private:
     TaskManager& manager_;
 };
 
+class AgentTool final : public Tool
+{
+public:
+    explicit AgentTool(TaskManager& manager);
+
+    auto name() const -> std::string override;
+    auto description() const -> std::string override;
+    auto permission_target(const ToolRequest& request) const -> PermissionTarget override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+
+private:
+    TaskManager& manager_;
+};
+
 auto register_task_tools(ToolRegistry& registry, TaskManager& manager) -> void;
 
 } // namespace codeharness::tasks

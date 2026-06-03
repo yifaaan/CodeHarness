@@ -159,6 +159,19 @@ auto argv_for_spec(const ShellTaskSpec& spec) -> Result<std::vector<std::string>
     return spec.argv;
 }
 
+auto default_agent_argv(const AgentTaskSpec& spec, const std::filesystem::path& cwd) -> std::vector<std::string>
+{
+    auto argv = std::vector<std::string>{
+        "codeharness",
+        "-p",
+        spec.prompt,
+        "--cwd",
+        cwd.string(),
+    };
+
+    return argv;
+}
+
 auto append_available_output(reproc::process& process, std::ofstream& output) -> void
 {
     std::array<std::uint8_t, kProcessReadChunkSize> buffer{};
@@ -540,8 +553,10 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
         .cwd = *cwd,
         .output_file = output_file,
         .command = spec.command,
+        .prompt = spec.prompt,
         .created_at = utc_timestamp_seconds(),
         .started_at = utc_timestamp_seconds(),
+        .metadata = spec.metadata,
         .argv = spec.argv,
         .env = spec.env,
     };
@@ -682,6 +697,46 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
     }
 
     return record_snapshot;
+}
+
+auto TaskManager::create_agent_task(const AgentTaskSpec& spec) -> Result<TaskRecord>
+{
+    const auto prompt = std::string{trim(spec.prompt)};
+    if (prompt.empty())
+    {
+        return fail<TaskRecord>(ErrorKind::InvalidArgument, "create_agent_task requires prompt");
+    }
+
+    auto cwd = canonical_directory(spec.cwd);
+    if (!cwd)
+    {
+        return nonstd::make_unexpected(cwd.error());
+    }
+
+    auto command = spec.command;
+    auto argv = spec.argv;
+    if (!command && argv.empty())
+    {
+        argv = default_agent_argv(spec, *cwd);
+    }
+
+    auto metadata = spec.metadata;
+    if (spec.model)
+    {
+        metadata["model"] = *spec.model;
+    }
+
+    return create_shell_task(
+        ShellTaskSpec{
+            .description = spec.description,
+            .cwd = *cwd,
+            .command = std::move(command),
+            .prompt = prompt,
+            .argv = std::move(argv),
+            .env = spec.env,
+            .metadata = std::move(metadata),
+            .type = TaskType::LocalAgent,
+        });
 }
 
 auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> Result<std::vector<TaskRecord>>

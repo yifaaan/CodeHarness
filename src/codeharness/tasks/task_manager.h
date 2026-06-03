@@ -56,9 +56,23 @@ struct ShellTaskSpec
     std::string description;
     std::filesystem::path cwd;
     std::optional<std::string> command;
+    std::optional<std::string> prompt;
     std::vector<std::string> argv;
     std::map<std::string, std::string> env;
+    std::map<std::string, std::string> metadata;
     TaskType type = TaskType::LocalBash;
+};
+
+struct AgentTaskSpec
+{
+    std::string description;
+    std::filesystem::path cwd;
+    std::string prompt;
+    std::optional<std::string> command;
+    std::vector<std::string> argv;
+    std::map<std::string, std::string> env;
+    std::optional<std::string> model;
+    std::map<std::string, std::string> metadata;
 };
 
 auto task_type_name(TaskType type) -> std::string_view;
@@ -85,6 +99,7 @@ public:
     [[nodiscard]] auto root() const -> const std::filesystem::path&;
 
     auto create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRecord>;
+    auto create_agent_task(const AgentTaskSpec& spec) -> Result<TaskRecord>;
     auto list_tasks(std::optional<TaskStatus> status = std::nullopt) const -> Result<std::vector<TaskRecord>>;
     auto get_task(std::string_view id) const -> Result<std::optional<TaskRecord>>;
     auto stop_task(std::string_view id) -> Result<TaskRecord>;

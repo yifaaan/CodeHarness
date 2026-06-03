@@ -59,6 +59,10 @@
 #define CODEHARNESS_CMAKE_COMMAND "cmake"
 #endif
 
+#ifndef CODEHARNESS_EXE
+#define CODEHARNESS_EXE "codeharness"
+#endif
+
 struct TempDir
 {
     std::filesystem::path path;

@@ -90,10 +90,10 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 | --- | --- |
 | engine/provider/tools/permissions/hooks | 已有基础实现和测试，支持工具回填、权限判定和 hook 拦截 |
 | skills/plugins/commands/prompts/memory/MCP | 已有 C++ 骨架与 focused tests，可作为后续 runtime 组装材料 |
-| tasks | 已实现 `TaskManager` v1 和 `task_*` 工具：后台 shell task、JSON 状态、log、tail、stop、ToolRegistry 接入 |
-| coordinator/swarm/UI/gateway | 仍处设计阶段，依赖 tasks 和 backend-only runtime 继续推进 |
+| tasks | 已实现 `TaskManager` v1、一次性 `local_agent`、`task_*` 工具和最小 `agent` 工具：后台 shell/agent task、JSON 状态、log、tail、stop、ToolRegistry 接入 |
+| coordinator/swarm/UI/gateway | 仍处设计阶段；下一步依赖 Mailbox、send_message 和 subprocess swarm registry 继续推进 |
 
-与上游 `docs/OpenHarness` 对比，当前最自然的后续实现顺序是：local agent task、`agent` 工具、subprocess swarm backend、backend-only UI 协议。
+与上游 `docs/OpenHarness` 对比，当前最自然的后续实现顺序是：Mailbox、`send_message` 工具、subprocess swarm backend、backend-only UI 协议。
 
 ## 推荐依赖
 
