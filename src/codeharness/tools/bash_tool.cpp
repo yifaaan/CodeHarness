@@ -13,6 +13,7 @@
 
 #include "codeharness/core/assign.h"
 #include "codeharness/core/json_parse.h"
+#include "codeharness/core/shell.h"
 
 namespace codeharness
 {
@@ -56,19 +57,6 @@ auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
     }
 
     return parsed;
-}
-
-//   Windows: cmd.exe /c "command"
-//   Linux:   /bin/sh -c "command"
-//
-auto get_shell_prefix() -> std::vector<std::string>
-{
-#if defined(_WIN32)
-    // cmd.exe /c 表示 cmd 执行完命令后退出
-    return {"cmd.exe", "/c"};
-#else
-    return {"/bin/sh", "-c"};
-#endif
 }
 
 auto drain_output(reproc::process& process, std::string& output) -> void
@@ -130,10 +118,10 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         return fail<ToolResponse>(parsed.error().kind, parsed.error().message);
     }
 
-    auto argv = get_shell_prefix();
-    argv.push_back(parsed->command);
+    const auto command = parsed->command;
+    auto argv = default_shell_command_argv(parsed->command);
 
-    spdlog::info("bash command: {}", parsed->command);
+    spdlog::info("bash command: {}", command);
 
     reproc::process process;
     reproc::options opts{};
@@ -173,7 +161,7 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         }
         output += fmt::format("[command timed out after {} seconds]", parsed->timeout_seconds);
 
-        spdlog::warn("bash command timed out after {}s: {}", parsed->timeout_seconds, parsed->command);
+        spdlog::warn("bash command timed out after {}s: {}", parsed->timeout_seconds, command);
 
         return ToolResponse{
             .tool_use_id = request.id,

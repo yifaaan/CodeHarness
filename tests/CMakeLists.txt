@@ -17,11 +17,13 @@ add_executable(codeharness_tests
     prompt_tests.cpp
     provider_tests.cpp
     skill_tests.cpp
+    task_tests.cpp
     test_support.cpp
     tool_tests.cpp
     version_tests.cpp
 )
 target_link_libraries(codeharness_tests PRIVATE codeharness_core doctest::doctest)
 target_compile_definitions(codeharness_tests PRIVATE "CODEHARNESS_FAKE_MCP_SERVER=\"$<TARGET_FILE:fake_mcp_server>\"")
+target_compile_definitions(codeharness_tests PRIVATE "CODEHARNESS_CMAKE_COMMAND=\"${CMAKE_COMMAND}\"")
 
 add_test(NAME codeharness_tests COMMAND codeharness_tests)

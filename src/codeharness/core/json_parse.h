@@ -170,4 +170,51 @@ auto read_optional_json_field(const nlohmann::json& input, std::string_view fiel
     return std::optional<T>{std::move(*value)};
 }
 
+template <typename T>
+auto read_nullable_json_field(const nlohmann::json& input,
+                              std::string_view field_name,
+                              std::string_view tool_name = {},
+                              T default_value = {},
+                              ErrorKind error_kind = ErrorKind::InvalidArgument) -> Result<T>
+{
+    static_assert(is_supported_json_field_v<T>, "unsupported JSON field type");
+
+    const auto key = std::string{field_name};
+    if (!input.contains(key) || input.at(key).is_null())
+    {
+        return default_value;
+    }
+
+    return read_json_field<T>(input, field_name, tool_name, {}, error_kind);
+}
+
+template <typename T>
+auto read_nullable_optional_json_field(const nlohmann::json& input,
+                                       std::string_view field_name,
+                                       std::string_view tool_name = {},
+                                       ErrorKind error_kind = ErrorKind::InvalidArgument) -> Result<std::optional<T>>
+{
+    static_assert(is_supported_json_field_v<T>, "unsupported JSON field type");
+
+    const auto key = std::string{field_name};
+    if (!input.contains(key) || input.at(key).is_null())
+    {
+        return std::optional<T>{};
+    }
+
+    return read_optional_json_field<T>(input, field_name, tool_name, error_kind);
+}
+
+template <typename T>
+auto optional_to_json(const std::optional<T>& value) -> nlohmann::json
+{
+    if (!value)
+    {
+        return nlohmann::json{};
+    }
+
+    nlohmann::json output = *value;
+    return output;
+}
+
 } // namespace codeharness

@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
 #include <map>
 #include <optional>
 #include <set>
@@ -20,6 +19,7 @@
 #include <variant>
 
 #include "codeharness/core/json_parse.h"
+#include "codeharness/core/paths.h"
 #include "codeharness/skills/skill_loader.h"
 #include "codeharness/tools/text_file.h"
 
@@ -28,32 +28,6 @@ namespace codeharness
 
 namespace
 {
-
-auto home_directory() -> std::optional<std::filesystem::path>
-{
-#ifdef _WIN32
-    const auto* home = std::getenv("USERPROFILE");
-#else
-    const auto* home = std::getenv("HOME");
-#endif
-
-    if (home == nullptr || *home == '\0')
-    {
-        return std::nullopt;
-    }
-
-    return std::filesystem::path{home};
-}
-
-auto has_parent_reference(const std::filesystem::path& path) -> bool
-{
-    return std::ranges::any_of(path, [](const auto& part) { return part == ".."; });
-}
-
-auto is_safe_relative_path(const std::filesystem::path& path) -> bool
-{
-    return !path.empty() && !path.is_absolute() && !path.has_root_name() && !has_parent_reference(path);
-}
 
 auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path& manifest_path)
     -> Result<PluginManifest>

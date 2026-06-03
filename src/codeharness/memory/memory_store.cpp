@@ -11,7 +11,6 @@
 #include <array>
 #include <cctype>
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <iomanip>
 #include <random>
@@ -21,7 +20,9 @@
 #include <system_error>
 #include <utility>
 
+#include "codeharness/core/paths.h"
 #include "codeharness/core/strings.h"
+#include "codeharness/core/time.h"
 #include "codeharness/tools/text_file.h"
 
 namespace codeharness::memory
@@ -72,22 +73,6 @@ struct SplitMemoryFile
     YAML::Node frontmatter;
     std::string body;
 };
-
-auto home_directory() -> std::optional<std::filesystem::path>
-{
-#ifdef _WIN32
-    const auto* home = std::getenv("USERPROFILE");
-#else
-    const auto* home = std::getenv("HOME");
-#endif
-
-    if (home == nullptr || *home == '\0')
-    {
-        return std::nullopt;
-    }
-
-    return std::filesystem::path{home};
-}
 
 auto resolve_directory(const std::filesystem::path& path) -> Result<std::filesystem::path>
 {
@@ -206,11 +191,6 @@ auto compute_signature(std::string_view body, std::string_view type, std::string
     return git_blob_hash_hex(payload);
 }
 
-auto now_timestamp() -> std::string
-{
-    return date::format("%FT%TZ", date::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
-}
-
 auto generate_memory_id() -> std::string
 {
     std::array<unsigned int, 4> bytes{};
@@ -223,7 +203,7 @@ auto generate_memory_id() -> std::string
         suffix << std::hex << std::setw(2) << std::setfill('0') << byte;
     }
 
-    auto timestamp = now_timestamp();
+    auto timestamp = utc_timestamp_seconds();
     std::erase(timestamp, '-');
     std::erase(timestamp, ':');
     std::erase(timestamp, 'Z');
@@ -897,13 +877,13 @@ auto contains_token(std::string_view text, const std::string& token) -> bool
 
 auto default_memory_root() -> Result<std::filesystem::path>
 {
-    const auto home = home_directory();
-    if (!home)
+    const auto data_dir = default_codeharness_data_dir();
+    if (!data_dir)
     {
         return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
     }
 
-    return *home / ".codeharness" / "data" / "memory";
+    return *data_dir / "memory";
 }
 
 auto project_memory_dir(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
@@ -1013,7 +993,7 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
     });
     const auto has_duplicate = duplicate != existing->end();
 
-    const auto now = now_timestamp();
+    const auto now = utc_timestamp_seconds();
     auto metadata = MemoryMetadata{};
     auto path = has_duplicate ? duplicate->path : next_memory_path(root_, slugify(title));
     if (has_duplicate)
@@ -1250,7 +1230,7 @@ auto MemoryStore::soft_remove(std::string_view name_or_id) const -> Result<bool>
     }
 
     entry->header.metadata.disabled = true;
-    entry->header.metadata.updated_at = now_timestamp();
+    entry->header.metadata.updated_at = utc_timestamp_seconds();
     auto write_result = atomic_write_text_file(it->path, render_memory_file(entry->header.metadata, entry->body));
     if (!write_result)
     {

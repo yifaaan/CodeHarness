@@ -12,6 +12,8 @@
 #include <system_error>
 #include <vector>
 
+#include "codeharness/core/shell.h"
+
 namespace codeharness
 {
 
@@ -40,15 +42,6 @@ auto unsupported_hook_result(HookType type) -> HookResult
         .blocked = false,
         .reason = fmt::format("hook type {} is not implemented yet", static_cast<int>(type)),
     };
-}
-
-auto get_shell_prefix() -> std::vector<std::string>
-{
-#if defined(_WIN32)
-    return {"cmd.exe", "/c"};
-#else
-    return {"/bin/sh", "-c"};
-#endif
 }
 
 auto append_timeout_message(std::string& output, int timeout_seconds) -> void
@@ -115,9 +108,7 @@ auto build_command_argv(const HookDefinition& hook) -> std::optional<std::vector
         return std::nullopt;
     }
 
-    auto argv = get_shell_prefix();
-    argv.push_back(*command);
-    return argv;
+    return default_shell_command_argv(*command);
 }
 
 struct HookTempFile

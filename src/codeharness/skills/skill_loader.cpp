@@ -8,13 +8,13 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <set>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
 
+#include "codeharness/core/paths.h"
 #include "codeharness/core/strings.h"
 #include "codeharness/plugins/plugin_loader.h"
 #include "codeharness/skills/bundled_skills.h"
@@ -125,12 +125,6 @@ auto description_from_body(std::string_view body, std::string& name, std::string
     return "Skill: " + name;
 }
 
-// 检查路径里是否含 ".." 段(防止路径穿越攻击)
-auto has_parent_reference(const std::filesystem::path& path) -> bool
-{
-    return std::ranges::any_of(path, [](const auto& part) { return part == ".."; });
-}
-
 // 判定一个 project 相对 skill 目录配置是否可接受:
 //   - 非空
 //   - 相对路径
@@ -139,7 +133,7 @@ auto has_parent_reference(const std::filesystem::path& path) -> bool
 // 这些限制由配置层兜底,防止恶意或手误的配置把扫描范围带出工作目录。
 auto is_safe_project_skill_dir(const std::filesystem::path& path) -> bool
 {
-    return !path.empty() && !path.is_absolute() && !path.has_root_name() && !has_parent_reference(path);
+    return is_safe_relative_path(path);
 }
 
 // 从 start 出发向上逐层找含 .git 的目录,找到则返回该目录;走到文件系统根都
@@ -166,24 +160,6 @@ auto find_git_root(const std::filesystem::path& start) -> std::optional<std::fil
 
         current = parent;
     }
-}
-
-// 取当前用户 home 目录(跨平台)。Windows 走 USERPROFILE,其它平台走 HOME。
-// 环境变量未设置或为空字符串时返回 nullopt,调用方据此决定是否放弃加载 user skills。
-auto home_directory() -> std::optional<std::filesystem::path>
-{
-#ifdef _WIN32
-    const auto* home = std::getenv("USERPROFILE");
-#else
-    const auto* home = std::getenv("HOME");
-#endif
-
-    if (home == nullptr || *home == '\0')
-    {
-        return std::nullopt;
-    }
-
-    return std::filesystem::path{home};
 }
 
 } // namespace
@@ -428,7 +404,7 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
 //   - load_default_bundled_skills=true 时,先注册内置 plan/review/debug
 //   - bundled_skills:        编译期/打包期内
 //   - user_skill_dirs:       显式指定的 user 目录
-//   - load_default_user_skills=true 时,会在 user_skill_dirs 前面插入默认 user 目录             
+//   - load_default_user_skills=true 时,会在 user_skill_dirs 前面插入默认 user 目录
 //   - extra_skill_dirs:      补充目录 CLI/配置追加,用 "user" 标签
 //   - plugin_options:        启用 plugin skill 加载时,enabled plugin 贡献 "plugin:<name>" 来源
 //   - allow_project_skills:  是否扫描 cwd 到 git_root 的 project skill 目录

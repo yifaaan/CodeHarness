@@ -80,7 +80,20 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 4. 支持 3 到 6 个基础工具：`read_file`、`write_file`、`edit_file`、`grep`、`glob`、`bash`。
 5. 支持权限确认、敏感路径硬拒绝、max turns。
 6. 支持 JSON session 保存和恢复。
-7. 后续再加入 skills、MCP、memory、TUI、subagent、ohmo。
+7. 后续再加入 TUI、subagent、ohmo。
+
+## 当前 C++ 实现进度
+
+截至 2026-06-03，本仓库已实现并测试的 C++ 模块包括：
+
+| 模块 | 当前状态 |
+| --- | --- |
+| engine/provider/tools/permissions/hooks | 已有基础实现和测试，支持工具回填、权限判定和 hook 拦截 |
+| skills/plugins/commands/prompts/memory/MCP | 已有 C++ 骨架与 focused tests，可作为后续 runtime 组装材料 |
+| tasks | 已实现 `TaskManager` v1：后台 shell task、JSON 状态、log、tail、stop |
+| coordinator/swarm/UI/gateway | 仍处设计阶段，依赖 tasks 和 backend-only runtime 继续推进 |
+
+与上游 `docs/OpenHarness` 对比，当前最自然的后续实现顺序是：`task_*` 工具接入、local agent task、subprocess swarm backend、backend-only UI 协议。
 
 ## 推荐依赖
 

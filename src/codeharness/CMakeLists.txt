@@ -39,6 +39,7 @@ add_library(codeharness::plugins ALIAS codeharness_plugins)
 add_subdirectory(memory)
 add_subdirectory(commands)
 add_subdirectory(prompts)
+add_subdirectory(tasks)
 add_subdirectory(engine)
 add_subdirectory(cli)
 
@@ -56,6 +57,7 @@ target_link_libraries(codeharness_core
         codeharness_permissions
         codeharness_prompts
         codeharness_provider
+        codeharness_tasks
         codeharness_tools
 )
 

@@ -155,9 +155,9 @@ worker continues
 ## 实现路线
 
 1. `AgentDefinitionLoader`。
-2. `TaskManager.createAgentTask`。
-3. `agent` 工具创建 subprocess worker。
-4. `task_output` 工具读取 worker 输出。
+2. `TaskManager.createAgentTask`，基于当前已实现的 `TaskManager.create_shell_task` 包装一次性 worker。
+3. `task_create`、`task_get`、`task_list`、`task_output`、`task_stop` 工具接入 ToolRegistry。
+4. `agent` 工具创建 subprocess worker。
 5. `Mailbox`。
 6. `send_message` 工具。
 7. `TeamLifecycleManager`。

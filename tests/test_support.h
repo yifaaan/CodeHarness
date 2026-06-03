@@ -54,6 +54,10 @@
 #define CODEHARNESS_FAKE_MCP_SERVER ""
 #endif
 
+#ifndef CODEHARNESS_CMAKE_COMMAND
+#define CODEHARNESS_CMAKE_COMMAND "cmake"
+#endif
+
 struct TempDir
 {
     std::filesystem::path path;
@@ -72,6 +76,5 @@ auto init_git_repository_with_head(const std::filesystem::path& repo, std::strin
 class WriteFileRequestProvider final : public codeharness::Provider
 {
 public:
-    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override;
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink) -> codeharness::Result<void> override;
 };
