@@ -1,6 +1,7 @@
 codeharness_add_static_module(codeharness_mailbox
     mailbox.cpp
     mailbox_tools.cpp
+    team_lifecycle.cpp
 )
 
 # 依赖关系：

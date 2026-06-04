@@ -21,7 +21,25 @@ User input
   -> Next model turn continues
 ```
 
+### Source Layout
+
+`src/codeharness/` modules and their CMake dependency order (top depends on bottom):
+
+| Layer | Modules | CMake targets |
+|-------|---------|---------------|
+| CLI entry | `cli/` | `codeharness_cli` |
+| Engine | `engine/` | `codeharness_engine` |
+| Extensions | `skills/`, `plugins/`, `tools/` | `codeharness_extensions`, `codeharness_tools` |
+| Context | `prompts/`, `memory/`, `commands/` | `codeharness_prompts`, `codeharness_memory`, `codeharness_commands` |
+| Multi-agent | `tasks/`, `mailbox/` | `codeharness_tasks`, `codeharness_mailbox` |
+| Infrastructure | `provider/`, `mcp/`, `permissions/`, `hooks/` | respective `codeharness_*` |
+| Foundation | `core/` | `codeharness_foundation` |
+
+`codeharness_core` is an umbrella `INTERFACE` library linking all modules.
+
 ## Implementation Phases
+
+Phases 1–5 have substantial implementations in `src/`. Phase 6 is planned.
 
 ### Phase 1: Agent Loop
 - CLI: `codeharness -p "prompt"`
@@ -52,6 +70,24 @@ User input
 ### Phase 6: ohmo and Gateway
 - ohmo workspace, MessageBus, Channel adapter
 - Gateway runtime pool
+
+## Build & Test
+
+Requires [vcpkg](https://vcpkg.io/) with `VCPKG_ROOT` set. All dependencies are declared in `vcpkg.json`.
+
+```bash
+# Windows (MSVC — current platform)
+cmake --preset windows-msvc
+cmake --build --preset windows-msvc-debug
+ctest --preset windows-msvc-debug
+
+# Linux
+cmake --preset linux-debug
+cmake --build --preset linux-debug
+ctest --preset linux-debug
+```
+
+Test framework: [doctest](https://github.com/doctest/doctest). Tests live in `tests/` as `*_tests.cpp`. The test binary is `codeharness_tests`.
 
 ## Coding Conventions
 
@@ -108,7 +144,7 @@ User input
 - Tool failure must not crash the harness. Convert it into a model-visible tool result with `is_error=true` through the engine's normal path.
 
 ### Library and Parser Usage
-- Avoid reinventing stable functionality already provided by project dependencies. Current runtime dependencies include `cli11`, `date`, `expected-lite`, `fmt`, `p-ranav-glob`, `nlohmann-json`, `re2`, `reproc`, `spdlog`, `yaml-cpp`, `libgit2`, and `llhttp`.
+- Avoid reinventing stable functionality already provided by project dependencies. Current runtime dependencies include `cli11`, `date`, `expected-lite`, `fmt`, `p-ranav-glob`, `nlohmann-json`, `re2`, `reproc`, `spdlog`, `yaml-cpp`, `libgit2`, and `llhttp`. Test dependency: `doctest`.
 - Use existing project helpers before adding another implementation, especially JSON field helpers in `codeharness/core/json_parse.*`, workspace path helpers in `codeharness/tools/workspace_path.*`, tool abstractions, permission targets, and event types.
 - Use structured APIs for structured data. For JSON, use `nlohmann/json` and the project helper functions; do not parse JSON with ad hoc string handling or regular expressions.
 - Use `re2` for regular expressions when a regex is actually the right tool. Prefer parsers, path APIs, or structured matching when available.

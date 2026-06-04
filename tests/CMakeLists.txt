@@ -19,6 +19,7 @@ add_executable(codeharness_tests
     provider_tests.cpp
     skill_tests.cpp
     task_tests.cpp
+    team_lifecycle_tests.cpp
     test_support.cpp
     tool_tests.cpp
     version_tests.cpp
