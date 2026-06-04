@@ -2,6 +2,7 @@
 
 #include "codeharness/mailbox/mailbox.h"
 #include "codeharness/mailbox/mailbox_tools.h"
+#include "codeharness/mailbox/message_consumer.h"
 
 // 匿名命名空间：测试辅助函数
 namespace
@@ -442,6 +443,59 @@ TEST_CASE("send_message tool has correct metadata")
     CHECK(tool->name() == "send_message");
     CHECK(!tool->description().empty());
     CHECK(tool->is_read_only() == false);
+}
+
+TEST_CASE("worker mailbox drain groups messages and marks them read")
+{
+    TempDir temp{"codeharness-worker-mailbox-drain-test"};
+    codeharness::mailbox::Mailbox mailbox{temp.path / "mailboxes"};
+
+    REQUIRE(mailbox.send("worker-001", make_test_message("leader", "worker-001", "first task")).has_value());
+
+    auto shutdown = make_test_message("leader", "worker-001", "stop now");
+    shutdown.type = codeharness::mailbox::MessageType::Shutdown;
+    REQUIRE(mailbox.send("worker-001", std::move(shutdown)).has_value());
+
+    auto permission = make_test_message("leader", "worker-001", "permission granted");
+    permission.type = codeharness::mailbox::MessageType::PermissionResponse;
+    REQUIRE(mailbox.send("worker-001", std::move(permission)).has_value());
+
+    auto drained = codeharness::mailbox::drain_worker_mailbox(mailbox, "worker-001");
+    REQUIRE(drained.has_value());
+    CHECK(drained->shutdown_requested());
+    REQUIRE(drained->user_messages.size() == 1);
+    CHECK(drained->user_messages.front().content == "first task");
+    REQUIRE(drained->shutdown_messages.size() == 1);
+    CHECK(drained->shutdown_messages.front().content == "stop now");
+    REQUIRE(drained->permission_responses.size() == 1);
+    CHECK(drained->permission_responses.front().content == "permission granted");
+
+    auto unread = mailbox.poll("worker-001", true);
+    REQUIRE(unread.has_value());
+    CHECK(unread->empty());
+
+    auto all = mailbox.poll("worker-001", false);
+    REQUIRE(all.has_value());
+    REQUIRE(all->size() == 3);
+    CHECK((*all)[0].read == true);
+    CHECK((*all)[1].read == true);
+    CHECK((*all)[2].read == true);
+}
+
+TEST_CASE("worker mailbox drain returns empty for missing inbox")
+{
+    TempDir temp{"codeharness-worker-mailbox-empty-drain-test"};
+    codeharness::mailbox::Mailbox mailbox{temp.path / "mailboxes"};
+
+    auto drained = codeharness::mailbox::drain_worker_mailbox(mailbox, "missing-worker");
+    REQUIRE(drained.has_value());
+    CHECK(!drained->shutdown_requested());
+    CHECK(drained->user_messages.empty());
+    CHECK(drained->task_results.empty());
+    CHECK(drained->permission_requests.empty());
+    CHECK(drained->permission_responses.empty());
+    CHECK(drained->shutdown_messages.empty());
+    CHECK(drained->idle_notifications.empty());
 }
 
 TEST_CASE("send_message tool sends different message types")

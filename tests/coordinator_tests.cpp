@@ -1,18 +1,25 @@
 #include "test_support.h"
 
 #include "codeharness/coordinator/agent_definition.h"
+#include "codeharness/coordinator/spawn_config.h"
 #include "codeharness/coordinator/subprocess_backend.h"
+#include "codeharness/coordinator/task_notification.h"
 
 using codeharness::coordinator::AgentDefinition;
 using codeharness::coordinator::AgentDefinitionLoadOptions;
 using codeharness::coordinator::AgentDefinitionRegistry;
+using codeharness::coordinator::apply_agent_definition;
 using codeharness::coordinator::discover_project_agent_dirs;
 using codeharness::coordinator::load_agent_definition_file;
 using codeharness::coordinator::load_agent_definition_registry;
 using codeharness::coordinator::load_agent_definitions;
 using codeharness::coordinator::load_agent_definitions_from_dirs;
+using codeharness::coordinator::make_task_notification;
+using codeharness::coordinator::make_task_result_message;
 using codeharness::coordinator::parse_agent_definition_markdown;
+using codeharness::coordinator::resolve_spawn_config;
 using codeharness::coordinator::SubprocessBackend;
+using codeharness::coordinator::task_notification_to_xml;
 using codeharness::coordinator::TeammateSpawnConfig;
 
 namespace
@@ -248,6 +255,159 @@ TEST_CASE("load_agent_definition_registry lets project override user definitions
     REQUIRE(registry->get("reviewer") != nullptr);
     CHECK(registry->get("reviewer")->description == "project reviewer");
     CHECK(registry->get("reviewer")->source == "project");
+}
+
+TEST_CASE("spawn config applies agent definition defaults and keeps explicit overrides")
+{
+    TempDir temp{"codeharness-spawn-config-apply-test"};
+
+    AgentDefinition definition{
+        .name = "reviewer",
+        .description = "Review C++ changes",
+        .system_prompt = "You are a careful reviewer.",
+        .tools = {"read_file", "grep"},
+        .disallowed_tools = {"bash"},
+        .model = std::string{"claude-sonnet-4-6"},
+        .effort = std::string{"high"},
+        .permission_mode = std::string{"plan"},
+        .max_turns = 5,
+        .skills = {"review"},
+        .mcp_servers = {"filesystem"},
+        .source = "project",
+        .path = temp.path / ".agents" / "agents" / "reviewer.md",
+    };
+
+    auto config = apply_agent_definition(
+        TeammateSpawnConfig{
+            .name = "",
+            .team = "dev-team",
+            .prompt = "Review this change",
+            .cwd = temp.path,
+            .model = std::string{"override-model"},
+            .permissions = {"glob"},
+            .skills = {"test"},
+        },
+        definition);
+
+    CHECK(config.name == "reviewer");
+    REQUIRE(config.model.has_value());
+    CHECK(*config.model == "override-model");
+
+    REQUIRE(config.system_prompt.has_value());
+    CHECK(*config.system_prompt == "You are a careful reviewer.");
+
+    CHECK(config.permissions == std::vector<std::string>{"glob"});
+    CHECK(config.skills == std::vector<std::string>{"review", "test"});
+    CHECK(config.disallowed_tools == std::vector<std::string>{"bash"});
+
+    REQUIRE(config.effort.has_value());
+    CHECK(*config.effort == "high");
+    REQUIRE(config.permission_mode.has_value());
+    CHECK(*config.permission_mode == "plan");
+    REQUIRE(config.max_turns.has_value());
+    CHECK(*config.max_turns == 5);
+    CHECK(config.mcp_servers == std::vector<std::string>{"filesystem"});
+
+    REQUIRE(config.agent_definition.has_value());
+    CHECK(*config.agent_definition == "reviewer");
+    REQUIRE(config.agent_definition_source.has_value());
+    CHECK(*config.agent_definition_source == "project");
+    REQUIRE(config.agent_definition_path.has_value());
+    CHECK(*config.agent_definition_path == definition.path);
+}
+
+TEST_CASE("spawn config resolves agent definition from registry")
+{
+    TempDir temp{"codeharness-spawn-config-resolve-test"};
+
+    AgentDefinitionRegistry registry;
+    registry.register_agent(
+        AgentDefinition{
+            .name = "researcher",
+            .description = "Research broadly",
+            .system_prompt = "Search before answering.",
+            .tools = {"read_file", "grep", "glob"},
+            .source = "user",
+        });
+
+    auto resolved = resolve_spawn_config(
+        TeammateSpawnConfig{
+            .name = "worker",
+            .team = "dev-team",
+            .prompt = "Map the project",
+            .cwd = temp.path,
+        },
+        registry,
+        "researcher");
+
+    REQUIRE(resolved.has_value());
+    CHECK(resolved->name == "worker");
+    CHECK(resolved->permissions == std::vector<std::string>{"read_file", "grep", "glob"});
+    REQUIRE(resolved->system_prompt.has_value());
+    CHECK(*resolved->system_prompt == "Search before answering.");
+    REQUIRE(resolved->agent_definition.has_value());
+    CHECK(*resolved->agent_definition == "researcher");
+
+    auto missing = resolve_spawn_config(
+        TeammateSpawnConfig{
+            .name = "worker",
+            .team = "dev-team",
+            .prompt = "Map the project",
+            .cwd = temp.path,
+        },
+        registry,
+        "missing");
+
+    CHECK(!missing.has_value());
+    CHECK(missing.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+TEST_CASE("task notification renders XML envelope with escaped fields")
+{
+    auto record = codeharness::tasks::TaskRecord{
+        .id = "a12345678",
+        .type = codeharness::tasks::TaskType::LocalAgent,
+        .status = codeharness::tasks::TaskStatus::Completed,
+        .description = "Review <core> & tools",
+        .created_at = "2026-06-04T00:00:00Z",
+    };
+
+    auto notification = make_task_notification(record, "Found <bug> & fixed");
+
+    CHECK(notification.task_id == "a12345678");
+    CHECK(notification.status == "completed");
+    CHECK(notification.summary == "Review <core> & tools");
+    CHECK(notification.result == "Found <bug> & fixed");
+
+    const auto xml = task_notification_to_xml(notification);
+    CHECK(xml.find("<task-notification>") != std::string::npos);
+    CHECK(xml.find("<task-id>a12345678</task-id>") != std::string::npos);
+    CHECK(xml.find("<status>completed</status>") != std::string::npos);
+    CHECK(xml.find("<summary>Review &lt;core&gt; &amp; tools</summary>") != std::string::npos);
+    CHECK(xml.find("<result>Found &lt;bug&gt; &amp; fixed</result>") != std::string::npos);
+    CHECK(xml.find("</task-notification>") != std::string::npos);
+}
+
+TEST_CASE("task notification result message uses task_result mailbox type")
+{
+    auto record = codeharness::tasks::TaskRecord{
+        .id = "a87654321",
+        .type = codeharness::tasks::TaskType::LocalAgent,
+        .status = codeharness::tasks::TaskStatus::Failed,
+        .description = "",
+        .created_at = "2026-06-04T00:00:00Z",
+    };
+
+    auto notification = make_task_notification(record, "retry with narrower scope", "QA worker failed");
+    auto message = make_task_result_message("qa@dev-team", "leader@dev-team", notification);
+
+    CHECK(message.type == codeharness::mailbox::MessageType::TaskResult);
+    CHECK(message.sender_id == "qa@dev-team");
+    CHECK(message.recipient_id == "leader@dev-team");
+    CHECK(message.content.find("<task-id>a87654321</task-id>") != std::string::npos);
+    CHECK(message.content.find("<status>failed</status>") != std::string::npos);
+    CHECK(message.content.find("<summary>QA worker failed</summary>") != std::string::npos);
+    CHECK(message.content.find("<result>retry with narrower scope</result>") != std::string::npos);
 }
 
 TEST_CASE("subprocess backend validates spawn config")

@@ -104,6 +104,38 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
     {
         metadata["permissions"] = join_csv(config.permissions);
     }
+    if (!config.disallowed_tools.empty())
+    {
+        metadata["disallowed_tools"] = join_csv(config.disallowed_tools);
+    }
+    if (config.effort)
+    {
+        metadata["effort"] = *config.effort;
+    }
+    if (config.permission_mode)
+    {
+        metadata["permission_mode"] = *config.permission_mode;
+    }
+    if (config.max_turns)
+    {
+        metadata["max_turns"] = std::to_string(*config.max_turns);
+    }
+    if (!config.mcp_servers.empty())
+    {
+        metadata["mcp_servers"] = join_csv(config.mcp_servers);
+    }
+    if (config.agent_definition)
+    {
+        metadata["agent_definition"] = *config.agent_definition;
+    }
+    if (config.agent_definition_source)
+    {
+        metadata["agent_definition_source"] = *config.agent_definition_source;
+    }
+    if (config.agent_definition_path)
+    {
+        metadata["agent_definition_path"] = config.agent_definition_path->string();
+    }
 
     auto task = task_manager_.create_agent_task(
         tasks::AgentTaskSpec{

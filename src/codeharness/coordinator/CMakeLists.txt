@@ -1,6 +1,8 @@
 codeharness_add_static_module(codeharness_coordinator
     agent_definition.cpp
+    spawn_config.cpp
     subprocess_backend.cpp
+    task_notification.cpp
 )
 
 target_link_libraries(codeharness_coordinator

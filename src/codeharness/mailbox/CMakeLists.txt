@@ -1,6 +1,7 @@
 codeharness_add_static_module(codeharness_mailbox
     mailbox.cpp
     mailbox_tools.cpp
+    message_consumer.cpp
     team_lifecycle.cpp
 )
 

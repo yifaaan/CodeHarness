@@ -42,6 +42,16 @@ struct TeammateSpawnConfig
     std::optional<std::string> system_prompt;
     std::vector<std::string> permissions; // 第一版只记录到 metadata，不做权限同步
     std::vector<std::string> skills;      // 第一版只记录到 metadata，不主动加载 skill
+
+    std::vector<std::string> disallowed_tools;
+    std::optional<std::string> effort;
+    std::optional<std::string> permission_mode;
+    std::optional<int> max_turns;
+    std::vector<std::string> mcp_servers;
+
+    std::optional<std::string> agent_definition;
+    std::optional<std::string> agent_definition_source;
+    std::optional<std::filesystem::path> agent_definition_path;
 };
 
 struct SpawnResult
