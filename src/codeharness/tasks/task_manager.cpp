@@ -356,22 +356,28 @@ struct TaskManager::Impl
 
     auto update_record(std::string_view id, const auto& update) -> Result<TaskRecord>
     {
-        std::scoped_lock lock{mutex};
-
-        auto iterator = tasks.find(std::string{id});
-        if (iterator == tasks.end())
+        TaskRecord snapshot;
         {
-            return fail<TaskRecord>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+            std::scoped_lock lock{mutex};
+
+            auto iterator = tasks.find(std::string{id});
+            if (iterator == tasks.end())
+            {
+                return fail<TaskRecord>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+            }
+
+            update(iterator->second.record);
+            snapshot = iterator->second.record;
         }
 
-        update(iterator->second.record);
-        auto persisted = persist(iterator->second.record);
+        // 持久化在锁外执行，避免磁盘 I/O 阻塞所有 task map 操作
+        auto persisted = persist(snapshot);
         if (!persisted)
         {
             return nonstd::make_unexpected(persisted.error());
         }
 
-        return iterator->second.record;
+        return snapshot;
     }
 
     auto load_task(std::string_view id) const -> Result<std::optional<TaskRecord>>
@@ -612,6 +618,14 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
     const auto record_snapshot = record;
     {
         std::scoped_lock lock{impl_->mutex};
+        if (impl_->tasks.find(record.id) != impl_->tasks.end())
+        {
+            process->kill();
+            process->wait(reproc::milliseconds{5000});
+            return fail<TaskRecord>(ErrorKind::Internal,
+                "task id collision: " + record.id);
+        }
+
         auto& state = impl_->tasks[record.id];
         state.record = record_snapshot;
         state.process = std::move(process);
@@ -652,6 +666,11 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
                 // 由 worker 线程（而非调用方线程）执行 process->kill()
                 if (stop_flag->load(std::memory_order_acquire))
                 {
+                    // 在 kill 之前尽量刷出管道中缓冲的输出
+                    if (output)
+                    {
+                        append_available_output(*process, output);
+                    }
                     if (auto kill_error = process->kill())
                     {
                         spdlog::warn("failed to kill task {}: {}", worker_id, kill_error.message());
@@ -782,13 +801,14 @@ auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> Result<s
     }
 
     std::error_code error;
-    for (const auto& entry : std::filesystem::directory_iterator{impl_->root, error})
+    auto dir_iter = std::filesystem::directory_iterator{impl_->root, error};
+    if (error)
     {
-        if (error)
-        {
-            return fail<std::vector<TaskRecord>>(ErrorKind::Io, "failed to scan task directory: " + error.message());
-        }
+        return fail<std::vector<TaskRecord>>(ErrorKind::Io, "failed to scan task directory: " + error.message());
+    }
 
+    for (const auto& entry : dir_iter)
+    {
         const auto path = entry.path();
         if (!entry.is_regular_file(error) || path.extension() != kTaskRecordExtension)
         {
@@ -856,9 +876,15 @@ auto TaskManager::stop_task(std::string_view id) -> Result<TaskRecord>
         return **current;
     }
 
+    // 仅在任务尚未自然结束时才标记为 Killed。
+    // 如果 worker 线程在 get_task 和 update_record 之间已经将状态设为
+    // Completed/Failed，就不再覆盖。
     auto updated = impl_->update_record(id, [](TaskRecord& record) {
-        record.status = TaskStatus::Killed;
-        record.ended_at = utc_timestamp_seconds();
+        if (!terminal_status(record.status))
+        {
+            record.status = TaskStatus::Killed;
+            record.ended_at = utc_timestamp_seconds();
+        }
     });
     if (!updated)
     {
@@ -910,7 +936,17 @@ auto TaskManager::read_output_tail(std::string_view id, std::size_t max_bytes) c
     }
 
     file.seekg(0, std::ios::end);
+    if (!file)
+    {
+        return fail<std::string>(ErrorKind::Io, "failed to seek output file: " + (*task)->output_file.string());
+    }
+
     const auto end_position = file.tellg();
+    if (end_position == static_cast<std::streampos>(-1))
+    {
+        return fail<std::string>(ErrorKind::Io, "failed to read output file size: " + (*task)->output_file.string());
+    }
+
     const auto size = static_cast<std::streamoff>(end_position);
     if (size <= 0 || max_bytes == 0)
     {
