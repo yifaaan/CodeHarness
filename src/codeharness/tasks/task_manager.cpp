@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -440,10 +441,11 @@ struct TaskManager::Impl
                 spdlog::warn("failed to mark task as killed during manager close: {}", marked.error().message);
             }
 
-            auto ignored = kill_task(id);
+            // 请求 worker 自行终止进程，而不是直接调用 process->kill()
+            auto ignored = request_stop(id);
             if (!ignored)
             {
-                spdlog::warn("failed to stop task during manager close: {}", ignored.error().message);
+                spdlog::warn("failed to request task stop during manager close: {}", ignored.error().message);
             }
         }
 
@@ -465,7 +467,12 @@ struct TaskManager::Impl
         }
     }
 
-    auto kill_task(std::string_view id) -> Result<void>
+    // 停止请求：通过 atomic 标志通知 worker 线程
+    //
+    // 不再直接调用 process->kill()。
+    // 而是设置 stop_requested = true，worker 线程在 poll 循环中检查到后，
+    // 由 worker 自己调用 process->kill() 和 process->wait()。
+    auto request_stop(std::string_view id) -> Result<void>
     {
         std::scoped_lock lock{mutex};
         auto iterator = tasks.find(std::string{id});
@@ -474,22 +481,25 @@ struct TaskManager::Impl
             return fail<void>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
         }
 
-        if (iterator->second.process != nullptr)
+        if (iterator->second.stop_requested.load(std::memory_order_relaxed))
         {
-            if (auto error = iterator->second.process->kill())
-            {
-                return fail<void>(ErrorKind::Io, "failed to kill task process: " + error.message());
-            }
+            return {}; // 已经请求过停止，幂等
         }
 
+        iterator->second.stop_requested.store(true, std::memory_order_release);
         return {};
     }
 
+    // TaskState —— 每个 task 的运行时状态
+    //   - stop_requested 是 atomic，worker 线程在每次 poll 前检查它
+    //   - worker 线程独占 process 的所有操作（poll/read/wait/kill）
+    //   - 调用方线程只设置 stop_requested
     struct TaskState
     {
         TaskRecord record;
         std::unique_ptr<reproc::process> process;
         std::thread worker;
+        std::atomic<bool> stop_requested{false}; // 调用方设置，worker 读取
     };
 
     std::filesystem::path root;
@@ -602,12 +612,9 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
     const auto record_snapshot = record;
     {
         std::scoped_lock lock{impl_->mutex};
-        impl_->tasks.emplace(
-            record.id,
-            Impl::TaskState{
-                .record = record_snapshot,
-                .process = std::move(process),
-            });
+        auto& state = impl_->tasks[record.id];
+        state.record = record_snapshot;
+        state.process = std::move(process);
     }
 
     auto worker_id = record_snapshot.id;
@@ -624,6 +631,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
             }
 
             reproc::process* process = nullptr;
+            std::atomic<bool>* stop_flag = nullptr;
             {
                 std::scoped_lock lock{impl->mutex};
                 auto iterator = impl->tasks.find(worker_id);
@@ -632,12 +640,27 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
                     return;
                 }
                 process = iterator->second.process.get();
+                stop_flag = &iterator->second.stop_requested;
             }
 
             int exit_status = -1;
             std::error_code wait_error;
+            bool was_killed = false;
             while (true)
             {
+                // 在 poll 之前检查 stop_requested。如果调用方设置了该标志，
+                // 由 worker 线程（而非调用方线程）执行 process->kill()
+                if (stop_flag->load(std::memory_order_acquire))
+                {
+                    if (auto kill_error = process->kill())
+                    {
+                        spdlog::warn("failed to kill task {}: {}", worker_id, kill_error.message());
+                    }
+                    std::tie(exit_status, wait_error) = process->wait(reproc::milliseconds{5000});
+                    was_killed = true;
+                    break;
+                }
+
                 auto [events, poll_error] = process->poll(reproc::event::out | reproc::event::exit, reproc::milliseconds{50});
                 if (poll_error)
                 {
@@ -659,7 +682,8 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
                 break;
             }
 
-            if (output)
+            // 刷出剩余输出（kill 路径跳过：进程已死，pipe 可能不可读）
+            if (!was_killed && output)
             {
                 append_available_output(*process, output);
             }
@@ -687,6 +711,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
                 spdlog::warn("failed to persist completed task {}: {}", worker_id, updated.error().message);
             }
 
+            // worker 线程独占清理——没有其他线程在此时访问 process
             std::scoped_lock lock{impl->mutex};
             auto iterator = impl->tasks.find(worker_id);
             if (iterator != impl->tasks.end())
@@ -840,10 +865,11 @@ auto TaskManager::stop_task(std::string_view id) -> Result<TaskRecord>
         return nonstd::make_unexpected(updated.error());
     }
 
-    auto killed = impl_->kill_task(id);
-    if (!killed)
+    // 请求 worker 自行终止进程（而非直接 kill）
+    auto stopped = impl_->request_stop(id);
+    if (!stopped)
     {
-        return nonstd::make_unexpected(killed.error());
+        return nonstd::make_unexpected(stopped.error());
     }
 
     auto joined = impl_->join_task(id);
