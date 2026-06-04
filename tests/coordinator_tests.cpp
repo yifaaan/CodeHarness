@@ -1,9 +1,11 @@
 #include "test_support.h"
 
 #include "codeharness/coordinator/agent_definition.h"
+#include "codeharness/coordinator/runtime.h"
 #include "codeharness/coordinator/spawn_config.h"
 #include "codeharness/coordinator/subprocess_backend.h"
 #include "codeharness/coordinator/task_notification.h"
+#include "codeharness/mailbox/mailbox_tools.h"
 
 using codeharness::coordinator::AgentDefinition;
 using codeharness::coordinator::AgentDefinitionLoadOptions;
@@ -18,6 +20,7 @@ using codeharness::coordinator::make_task_notification;
 using codeharness::coordinator::make_task_result_message;
 using codeharness::coordinator::parse_agent_definition_markdown;
 using codeharness::coordinator::resolve_spawn_config;
+using codeharness::coordinator::CoordinatorRuntime;
 using codeharness::coordinator::SubprocessBackend;
 using codeharness::coordinator::task_notification_to_xml;
 using codeharness::coordinator::TeammateSpawnConfig;
@@ -362,6 +365,74 @@ TEST_CASE("spawn config resolves agent definition from registry")
     CHECK(missing.error().kind == codeharness::ErrorKind::InvalidArgument);
 }
 
+TEST_CASE("spawn config helpers normalize default names and agent ids")
+{
+    CHECK(codeharness::coordinator::normalized_agent_name("") == "agent");
+    CHECK(codeharness::coordinator::normalized_agent_name(" reviewer ") == "reviewer");
+    CHECK(codeharness::coordinator::normalized_team_name("") == "default");
+    CHECK(codeharness::coordinator::normalized_team_name(" qa-team ") == "qa-team");
+    CHECK(codeharness::coordinator::make_agent_id(" reviewer ", " qa-team ") == "reviewer@qa-team");
+}
+
+TEST_CASE("agent spawn request and response serialize through nlohmann json")
+{
+    auto request = codeharness::tasks::AgentSpawnRequest{
+        .description = "review task",
+        .prompt = "review code",
+        .subagent_type = std::string{"reviewer"},
+        .model = std::string{"test-model"},
+        .team = std::string{"qa-team"},
+        .argv = codeharness_version_argv(),
+        .env = {{"CODEHARNESS_TEST_ENV", "1"}},
+        .cwd = std::filesystem::path{"work"},
+    };
+
+    const nlohmann::json request_json = request;
+    CHECK(request_json.at("subagent_type") == "reviewer");
+    CHECK(request_json.at("team") == "qa-team");
+    CHECK(request_json.at("env").at("CODEHARNESS_TEST_ENV") == "1");
+
+    auto parsed_request = request_json.get<codeharness::tasks::AgentSpawnRequest>();
+    CHECK(parsed_request.description == request.description);
+    CHECK(parsed_request.prompt == request.prompt);
+    REQUIRE(parsed_request.subagent_type.has_value());
+    CHECK(*parsed_request.subagent_type == "reviewer");
+    REQUIRE(parsed_request.team.has_value());
+    CHECK(*parsed_request.team == "qa-team");
+    CHECK(parsed_request.argv == request.argv);
+    CHECK(parsed_request.env == request.env);
+    CHECK(parsed_request.cwd == request.cwd);
+
+    auto response = codeharness::tasks::AgentSpawnResponse{
+        .agent_id = "reviewer@qa-team",
+        .task_id = "a12345678",
+        .backend_type = "subprocess",
+        .description = "review task",
+        .task = codeharness::tasks::TaskRecord{
+            .id = "a12345678",
+            .type = codeharness::tasks::TaskType::LocalAgent,
+            .status = codeharness::tasks::TaskStatus::Running,
+            .description = "review task",
+            .cwd = std::filesystem::path{"work"},
+            .output_file = std::filesystem::path{"tasks"} / "a12345678.log",
+            .prompt = std::string{"review code"},
+            .created_at = "2026-06-04T00:00:00Z",
+            .metadata = {{"agent_id", "reviewer@qa-team"}},
+            .argv = codeharness_version_argv(),
+        },
+    };
+
+    const nlohmann::json response_json = response;
+    CHECK(response_json.at("agent_id") == "reviewer@qa-team");
+    CHECK(response_json.at("task").at("type") == "local_agent");
+
+    auto parsed_response = response_json.get<codeharness::tasks::AgentSpawnResponse>();
+    CHECK(parsed_response.agent_id == response.agent_id);
+    CHECK(parsed_response.task_id == response.task_id);
+    CHECK(parsed_response.backend_type == response.backend_type);
+    CHECK(parsed_response.task.metadata.at("agent_id") == "reviewer@qa-team");
+}
+
 TEST_CASE("task notification renders XML envelope with escaped fields")
 {
     auto record = codeharness::tasks::TaskRecord{
@@ -538,4 +609,92 @@ TEST_CASE("subprocess backend records model system prompt skills and permissions
     CHECK(completed->metadata.at("system_prompt") == "You are a test runner.");
     CHECK(completed->metadata.at("skills") == "test,review");
     CHECK(completed->metadata.at("permissions") == "read_file,grep");
+}
+
+TEST_CASE("coordinator runtime auto-creates team resolves definition and drains task result")
+{
+    TempDir temp{"codeharness-coordinator-runtime-loop-test"};
+
+    AgentDefinitionRegistry definitions;
+    definitions.register_agent(
+        AgentDefinition{
+            .name = "reviewer",
+            .description = "Review code",
+            .system_prompt = "You are a careful reviewer.",
+            .tools = {"read_file", "grep"},
+            .model = std::string{"test-model"},
+            .skills = {"review"},
+            .source = "test",
+        });
+
+    CoordinatorRuntime runtime{
+        temp.path / "tasks",
+        temp.path / "teams",
+        temp.path / "mailboxes",
+        std::move(definitions),
+    };
+
+    codeharness::ToolRegistry registry;
+    codeharness::tasks::register_task_tools(registry, runtime.task_manager(), runtime.spawn_handler());
+    codeharness::mailbox::register_mailbox_tools(registry, runtime.mailbox(), &runtime.task_manager());
+
+    codeharness::ToolContext context;
+    context.cwd = temp.path;
+
+    codeharness::ToolRequest agent_request;
+    agent_request.id = "agent-use";
+    agent_request.name = "agent";
+    agent_request.parsed_input = nlohmann::json{
+        {"description", "runtime reviewer"},
+        {"prompt", "report version"},
+        {"subagent_type", "reviewer"},
+        {"team", "alpha"},
+        {"argv", codeharness_version_argv()},
+    };
+
+    auto spawned = registry.execute(agent_request, context);
+    REQUIRE(spawned.has_value());
+    CHECK(!spawned->is_error);
+
+    const auto spawned_json = nlohmann::json::parse(spawned->content);
+    CHECK(spawned_json.at("agent_id") == "reviewer@alpha");
+    CHECK(spawned_json.at("backend_type") == "subprocess");
+    const auto task_id = spawned_json.at("task_id").get<std::string>();
+    REQUIRE(!task_id.empty());
+
+    auto completed = runtime.task_manager().wait_for_task(task_id);
+    REQUIRE(completed.has_value());
+    CHECK(completed->status == codeharness::tasks::TaskStatus::Completed);
+    CHECK(completed->metadata.at("agent_definition") == "reviewer");
+    CHECK(completed->metadata.at("agent_definition_source") == "test");
+    CHECK(completed->metadata.at("model") == "test-model");
+    CHECK(completed->metadata.at("system_prompt") == "You are a careful reviewer.");
+    CHECK(completed->metadata.at("permissions") == "read_file,grep");
+    CHECK(completed->metadata.at("skills") == "review");
+
+    auto team = runtime.team_manager().get_team("alpha");
+    REQUIRE(team.has_value());
+    REQUIRE(team->has_value());
+    REQUIRE(team->value().members.contains("reviewer@alpha"));
+
+    auto sent = runtime.publish_task_result(
+        "reviewer@alpha",
+        "leader@alpha",
+        task_id,
+        "worker finished",
+        "review done");
+    REQUIRE(sent.has_value());
+    CHECK(sent->type == codeharness::mailbox::MessageType::TaskResult);
+
+    auto drained = runtime.drain_coordinator_mailbox("leader@alpha");
+    REQUIRE(drained.has_value());
+    REQUIRE(drained->task_results.size() == 1);
+    CHECK(drained->task_results.front().sender_id == "reviewer@alpha");
+    CHECK(drained->task_results.front().content.find("<task-id>" + task_id + "</task-id>") != std::string::npos);
+    CHECK(drained->task_results.front().content.find("<summary>review done</summary>") != std::string::npos);
+    CHECK(drained->task_results.front().content.find("<result>worker finished</result>") != std::string::npos);
+
+    auto drained_again = runtime.drain_coordinator_mailbox("leader@alpha");
+    REQUIRE(drained_again.has_value());
+    CHECK(drained_again->task_results.empty());
 }

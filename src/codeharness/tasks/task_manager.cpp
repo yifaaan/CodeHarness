@@ -88,17 +88,6 @@ auto canonical_directory(const std::filesystem::path& path) -> Result<std::files
     return resolved;
 }
 
-template <typename T>
-auto expect_json_field(Result<T> value) -> T
-{
-    if (!value)
-    {
-        throw nlohmann::json::type_error::create(302, value.error().message, nullptr);
-    }
-
-    return std::move(*value);
-}
-
 auto read_record_file(const std::filesystem::path& path) -> Result<TaskRecord>
 {
     auto content = read_text_file(path);

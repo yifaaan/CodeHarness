@@ -1,0 +1,264 @@
+#include "codeharness/coordinator/runtime.h"
+
+#include "codeharness/coordinator/spawn_config.h"
+#include "codeharness/coordinator/task_notification.h"
+#include "codeharness/core/strings.h"
+
+#include <nonstd/expected.hpp>
+
+#include <memory>
+#include <optional>
+#include <string>
+#include <utility>
+
+namespace codeharness::coordinator
+{
+
+namespace
+{
+
+auto required_default_mailbox_root() -> Result<std::filesystem::path>
+{
+    auto root = mailbox::default_mailbox_root();
+    if (!root)
+    {
+        return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
+    }
+
+    return *root;
+}
+
+auto required_default_teams_root() -> Result<std::filesystem::path>
+{
+    auto root = mailbox::default_teams_root();
+    if (!root)
+    {
+        return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
+    }
+
+    return *root;
+}
+
+auto agent_type_for_lookup(const std::optional<std::string>& value) -> std::string_view
+{
+    if (!value)
+    {
+        return {};
+    }
+
+    return trim(*value);
+}
+
+} // namespace
+
+CoordinatorRuntime::CoordinatorRuntime(std::filesystem::path task_root,
+                                       std::filesystem::path team_root,
+                                       std::filesystem::path mailbox_root,
+                                       AgentDefinitionRegistry agent_definitions)
+    : task_manager_{std::move(task_root)}
+    , team_manager_{std::move(team_root)}
+    , mailbox_{std::move(mailbox_root)}
+    , agent_definitions_{std::move(agent_definitions)}
+    , subprocess_backend_{task_manager_, team_manager_}
+{
+}
+
+auto CoordinatorRuntime::task_manager() noexcept -> tasks::TaskManager&
+{
+    return task_manager_;
+}
+
+auto CoordinatorRuntime::task_manager() const noexcept -> const tasks::TaskManager&
+{
+    return task_manager_;
+}
+
+auto CoordinatorRuntime::team_manager() noexcept -> mailbox::TeamLifecycleManager&
+{
+    return team_manager_;
+}
+
+auto CoordinatorRuntime::team_manager() const noexcept -> const mailbox::TeamLifecycleManager&
+{
+    return team_manager_;
+}
+
+auto CoordinatorRuntime::mailbox() noexcept -> mailbox::Mailbox&
+{
+    return mailbox_;
+}
+
+auto CoordinatorRuntime::mailbox() const noexcept -> const mailbox::Mailbox&
+{
+    return mailbox_;
+}
+
+auto CoordinatorRuntime::agent_definitions() const noexcept -> const AgentDefinitionRegistry&
+{
+    return agent_definitions_;
+}
+
+auto CoordinatorRuntime::spawn_agent(const tasks::AgentSpawnRequest& request)
+    -> Result<tasks::AgentSpawnResponse>
+{
+    if (request.mode != "local_agent")
+    {
+        return fail<tasks::AgentSpawnResponse>(
+            ErrorKind::InvalidArgument,
+            "Invalid mode. Use local_agent.");
+    }
+
+    auto config = TeammateSpawnConfig{
+        .name = normalized_agent_name(request.subagent_type.value_or(std::string{})),
+        .team = normalized_team_name(request.team.value_or(std::string{})),
+        .description = request.description,
+        .prompt = request.prompt,
+        .cwd = request.cwd,
+        .command = request.command,
+        .argv = request.argv,
+        .env = request.env,
+        .model = request.model,
+    };
+
+    auto resolved = resolve_spawn_config(std::move(config), agent_definitions_, agent_type_for_lookup(request.subagent_type));
+    if (!resolved)
+    {
+        return nonstd::make_unexpected(resolved.error());
+    }
+
+    auto ensured = ensure_team_exists(resolved->team);
+    if (!ensured)
+    {
+        return nonstd::make_unexpected(ensured.error());
+    }
+
+    auto spawned = subprocess_backend_.spawn(*resolved);
+    if (!spawned)
+    {
+        return nonstd::make_unexpected(spawned.error());
+    }
+
+    auto task = task_manager_.get_task(spawned->task_id);
+    if (!task)
+    {
+        return nonstd::make_unexpected(task.error());
+    }
+    if (!task->has_value())
+    {
+        return fail<tasks::AgentSpawnResponse>(
+            ErrorKind::Internal,
+            "spawned task not found: " + spawned->task_id);
+    }
+
+    return tasks::AgentSpawnResponse{
+        .agent_id = spawned->agent_id,
+        .task_id = spawned->task_id,
+        .backend_type = spawned->backend_type,
+        .description = request.description,
+        .task = std::move(**task),
+    };
+}
+
+auto CoordinatorRuntime::spawn_handler() -> tasks::AgentSpawnHandler
+{
+    return [this](const tasks::AgentSpawnRequest& request) {
+        return spawn_agent(request);
+    };
+}
+
+auto CoordinatorRuntime::drain_coordinator_mailbox(std::string_view coordinator_id)
+    -> Result<mailbox::WorkerMailboxDrain>
+{
+    return mailbox::drain_worker_mailbox(mailbox_, coordinator_id);
+}
+
+auto CoordinatorRuntime::publish_task_result(std::string_view sender_id,
+                                             std::string_view recipient_id,
+                                             std::string_view task_id,
+                                             std::string result,
+                                             std::string summary) -> Result<mailbox::MailboxMessage>
+{
+    auto task = task_manager_.get_task(task_id);
+    if (!task)
+    {
+        return nonstd::make_unexpected(task.error());
+    }
+    if (!task->has_value())
+    {
+        return fail<mailbox::MailboxMessage>(
+            ErrorKind::InvalidArgument,
+            "No task found with ID: " + std::string{task_id});
+    }
+
+    auto notification = make_task_notification(**task, std::move(result), std::move(summary));
+    auto message = make_task_result_message(std::string{sender_id}, std::string{recipient_id}, notification);
+    auto sent = mailbox_.send(std::string{recipient_id}, std::move(message));
+    if (!sent)
+    {
+        return nonstd::make_unexpected(sent.error());
+    }
+
+    return sent;
+}
+
+auto CoordinatorRuntime::ensure_team_exists(std::string_view team_name) -> Result<void>
+{
+    auto existing = team_manager_.get_team(team_name);
+    if (!existing)
+    {
+        return nonstd::make_unexpected(existing.error());
+    }
+    if (existing->has_value())
+    {
+        return {};
+    }
+
+    auto created = team_manager_.create_team(team_name);
+    if (!created)
+    {
+        if (created.error().kind == ErrorKind::AlreadyExists)
+        {
+            return {};
+        }
+        return nonstd::make_unexpected(created.error());
+    }
+
+    return {};
+}
+
+auto create_default_runtime(const std::filesystem::path& cwd,
+                            AgentDefinitionLoadOptions options)
+    -> Result<std::unique_ptr<CoordinatorRuntime>>
+{
+    auto task_root = tasks::default_task_root();
+    if (!task_root)
+    {
+        return nonstd::make_unexpected(task_root.error());
+    }
+
+    auto team_root = required_default_teams_root();
+    if (!team_root)
+    {
+        return nonstd::make_unexpected(team_root.error());
+    }
+
+    auto mailbox_root = required_default_mailbox_root();
+    if (!mailbox_root)
+    {
+        return nonstd::make_unexpected(mailbox_root.error());
+    }
+
+    auto definitions = load_agent_definition_registry(cwd, std::move(options));
+    if (!definitions)
+    {
+        return nonstd::make_unexpected(definitions.error());
+    }
+
+    return std::make_unique<CoordinatorRuntime>(
+        std::move(*task_root),
+        std::move(*team_root),
+        std::move(*mailbox_root),
+        std::move(*definitions));
+}
+
+} // namespace codeharness::coordinator

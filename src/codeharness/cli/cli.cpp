@@ -1,8 +1,10 @@
 #include "codeharness/cli/cli.h"
 
 #include "codeharness/commands/command_registry.h"
+#include "codeharness/coordinator/runtime.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/mailbox/mailbox_tools.h"
 #include "codeharness/memory/memory_store.h"
 #include "codeharness/prompts/system_prompt.h"
 #include "codeharness/provider/echo_provider.h"
@@ -120,12 +122,11 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return nonstd::make_unexpected(memory_store.error());
     }
 
-    auto task_root = tasks::default_task_root();
-    if (!task_root)
+    auto coordinator_runtime = coordinator::create_default_runtime(std::filesystem::current_path());
+    if (!coordinator_runtime)
     {
-        return nonstd::make_unexpected(task_root.error());
+        return nonstd::make_unexpected(coordinator_runtime.error());
     }
-    tasks::TaskManager task_manager{*task_root};
 
     auto command_options = BuiltinCommandRegistryOptions{
         .memory_store = &*memory_store,
@@ -194,7 +195,8 @@ auto run_cli(int argc, char** argv) -> Result<int>
     tools.add(std::make_unique<GrepTool>());
     tools.add(std::make_unique<BashTool>());
     tools.add(std::make_unique<SkillTool>(loaded_skills->registry));
-    tasks::register_task_tools(tools, task_manager);
+    tasks::register_task_tools(tools, (*coordinator_runtime)->task_manager(), (*coordinator_runtime)->spawn_handler());
+    mailbox::register_mailbox_tools(tools, (*coordinator_runtime)->mailbox(), &(*coordinator_runtime)->task_manager());
 
     EchoProvider provider;
     Engine engine{provider, tools};

@@ -152,6 +152,21 @@ auto agent_id_for(const AgentInput& input) -> std::string
     return agent_id;
 }
 
+auto agent_spawn_request_from(const AgentInput& input, const ToolContext& context) -> AgentSpawnRequest
+{
+    return AgentSpawnRequest{
+        .description = input.description,
+        .prompt = input.prompt,
+        .mode = input.mode,
+        .subagent_type = input.subagent_type,
+        .model = input.model,
+        .command = input.command,
+        .team = input.team,
+        .argv = input.argv,
+        .env = input.env,
+        .cwd = context.cwd,
+    };
+}
 
 auto task_response(const ToolRequest& request, const TaskRecord& record) -> ToolResponse
 {
@@ -321,7 +336,86 @@ auto agent_spec_from(const AgentInput& input, const ToolContext& context) -> Age
     };
 }
 
+auto register_task_tools_impl(ToolRegistry& registry, TaskManager& manager, AgentSpawnHandler spawn_handler) -> void
+{
+    registry.add(std::make_unique<TaskCreateTool>(manager));
+    registry.add(std::make_unique<TaskListTool>(manager));
+    registry.add(std::make_unique<TaskGetTool>(manager));
+    registry.add(std::make_unique<TaskOutputTool>(manager));
+    registry.add(std::make_unique<TaskStopTool>(manager));
+    if (spawn_handler)
+    {
+        registry.add(std::make_unique<AgentTool>(manager, std::move(spawn_handler)));
+        return;
+    }
+
+    registry.add(std::make_unique<AgentTool>(manager));
+}
+
 } // namespace
+
+auto to_json(nlohmann::json& output, const AgentSpawnRequest& request) -> void
+{
+    output = nlohmann::json{
+        {"description", request.description},
+        {"prompt", request.prompt},
+        {"mode", request.mode},
+        {"subagent_type", optional_to_json(request.subagent_type)},
+        {"model", optional_to_json(request.model)},
+        {"command", optional_to_json(request.command)},
+        {"team", optional_to_json(request.team)},
+        {"argv", request.argv},
+        {"env", request.env},
+        {"cwd", request.cwd.string()},
+    };
+}
+
+auto from_json(const nlohmann::json& input, AgentSpawnRequest& request) -> void
+{
+    request = AgentSpawnRequest{
+        .description = expect_json_field(read_json_field<std::string>(input, "description", "agent spawn request")),
+        .prompt = expect_json_field(read_json_field<std::string>(input, "prompt", "agent spawn request")),
+        .mode = expect_json_field(read_json_field<std::string, JsonFieldMode::optional_with_default>(
+            input, "mode", "agent spawn request", std::string{"local_agent"})),
+        .subagent_type = expect_json_field(read_nullable_optional_json_field<std::string>(
+            input, "subagent_type", "agent spawn request")),
+        .model = expect_json_field(read_nullable_optional_json_field<std::string>(
+            input, "model", "agent spawn request")),
+        .command = expect_json_field(read_nullable_optional_json_field<std::string>(
+            input, "command", "agent spawn request")),
+        .team = expect_json_field(read_nullable_optional_json_field<std::string>(
+            input, "team", "agent spawn request")),
+        .argv = expect_json_field(read_nullable_json_field<std::vector<std::string>>(
+            input, "argv", "agent spawn request")),
+        .env = expect_json_field(read_nullable_json_field<std::map<std::string, std::string>>(
+            input, "env", "agent spawn request")),
+        .cwd = std::filesystem::path{expect_json_field(read_json_field<std::string>(
+            input, "cwd", "agent spawn request"))},
+    };
+}
+
+auto to_json(nlohmann::json& output, const AgentSpawnResponse& response) -> void
+{
+    output = nlohmann::json{
+        {"agent_id", response.agent_id},
+        {"task_id", response.task_id},
+        {"backend_type", response.backend_type},
+        {"description", response.description},
+        {"task", response.task},
+    };
+}
+
+auto from_json(const nlohmann::json& input, AgentSpawnResponse& response) -> void
+{
+    response = AgentSpawnResponse{
+        .agent_id = expect_json_field(read_json_field<std::string>(input, "agent_id", "agent spawn response")),
+        .task_id = expect_json_field(read_json_field<std::string>(input, "task_id", "agent spawn response")),
+        .backend_type = expect_json_field(read_json_field<std::string, JsonFieldMode::optional_with_default>(
+            input, "backend_type", "agent spawn response", std::string{"subprocess"})),
+        .description = expect_json_field(read_json_field<std::string>(input, "description", "agent spawn response")),
+        .task = input.at("task").get<TaskRecord>(),
+    };
+}
 
 TaskCreateTool::TaskCreateTool(TaskManager& manager) : manager_{manager}
 {
@@ -565,6 +659,12 @@ AgentTool::AgentTool(TaskManager& manager) : manager_{manager}
 {
 }
 
+AgentTool::AgentTool(TaskManager& manager, AgentSpawnHandler spawn_handler)
+    : manager_{manager}
+    , spawn_handler_{std::move(spawn_handler)}
+{
+}
+
 auto AgentTool::name() const -> std::string
 {
     return "agent";
@@ -597,6 +697,21 @@ auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) 
         };
     }
 
+    if (spawn_handler_)
+    {
+        auto spawned = spawn_handler_(agent_spawn_request_from(*input, context));
+        if (!spawned)
+        {
+            return nonstd::make_unexpected(spawned.error());
+        }
+
+        const nlohmann::json output = *spawned;
+        return ToolResponse{
+            .tool_use_id = request.id,
+            .content = output.dump(2),
+        };
+    }
+
     auto record = manager_.create_agent_task(agent_spec_from(*input, context));
     if (!record)
     {
@@ -604,13 +719,14 @@ auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) 
     }
 
     const auto agent_id = agent_id_for(*input);
-    auto output = nlohmann::json{
-        {"agent_id", agent_id},
-        {"task_id", record->id},
-        {"backend_type", "subprocess"},
-        {"description", input->description},
-        {"task", task_response_json(*record)},
+    const auto response = AgentSpawnResponse{
+        .agent_id = agent_id,
+        .task_id = record->id,
+        .backend_type = "subprocess",
+        .description = input->description,
+        .task = *record,
     };
+    const nlohmann::json output = response;
 
     return ToolResponse{
         .tool_use_id = request.id,
@@ -620,12 +736,12 @@ auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) 
 
 auto register_task_tools(ToolRegistry& registry, TaskManager& manager) -> void
 {
-    registry.add(std::make_unique<TaskCreateTool>(manager));
-    registry.add(std::make_unique<TaskListTool>(manager));
-    registry.add(std::make_unique<TaskGetTool>(manager));
-    registry.add(std::make_unique<TaskOutputTool>(manager));
-    registry.add(std::make_unique<TaskStopTool>(manager));
-    registry.add(std::make_unique<AgentTool>(manager));
+    register_task_tools_impl(registry, manager, {});
+}
+
+auto register_task_tools(ToolRegistry& registry, TaskManager& manager, AgentSpawnHandler spawn_handler) -> void
+{
+    register_task_tools_impl(registry, manager, std::move(spawn_handler));
 }
 
 } // namespace codeharness::tasks

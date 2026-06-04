@@ -3,6 +3,7 @@
 #include "codeharness/core/strings.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 namespace codeharness::coordinator
@@ -22,6 +23,33 @@ auto append_unique(std::vector<std::string>& target, const std::vector<std::stri
 }
 
 } // namespace
+
+auto normalized_agent_name(std::string_view name) -> std::string
+{
+    const auto trimmed = trim(name);
+    if (trimmed.empty())
+    {
+        return std::string{default_agent_name};
+    }
+
+    return std::string{trimmed};
+}
+
+auto normalized_team_name(std::string_view team) -> std::string
+{
+    const auto trimmed = trim(team);
+    if (trimmed.empty())
+    {
+        return std::string{default_team_name};
+    }
+
+    return std::string{trimmed};
+}
+
+auto make_agent_id(std::string_view name, std::string_view team) -> std::string
+{
+    return normalized_agent_name(name) + "@" + normalized_team_name(team);
+}
 
 auto apply_agent_definition(TeammateSpawnConfig config, const AgentDefinition& definition)
     -> TeammateSpawnConfig

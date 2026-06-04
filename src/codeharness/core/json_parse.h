@@ -206,6 +206,17 @@ auto read_nullable_optional_json_field(const nlohmann::json& input,
 }
 
 template <typename T>
+auto expect_json_field(Result<T> value) -> T
+{
+    if (!value)
+    {
+        throw nlohmann::json::type_error::create(302, value.error().message, nullptr);
+    }
+
+    return std::move(*value);
+}
+
+template <typename T>
 auto optional_to_json(const std::optional<T>& value) -> nlohmann::json
 {
     if (!value)

@@ -9,6 +9,7 @@ target_link_libraries(codeharness_cli
         codeharness_prompts
     PRIVATE
         codeharness_commands
+        codeharness_coordinator
         codeharness_engine
         codeharness_extensions
         codeharness_provider

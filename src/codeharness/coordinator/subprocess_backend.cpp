@@ -1,5 +1,6 @@
 #include "codeharness/coordinator/subprocess_backend.h"
 
+#include "codeharness/coordinator/spawn_config.h"
 #include "codeharness/core/strings.h"
 
 #include <fmt/ranges.h>
@@ -16,11 +17,6 @@ namespace codeharness::coordinator
 
 namespace
 {
-
-auto make_agent_id(std::string_view name, std::string_view team) -> std::string
-{
-    return std::string{name} + "@" + std::string{team};
-}
 
 auto join_csv(std::span<const std::string> values) -> std::string
 {
@@ -58,8 +54,8 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
         return nonstd::make_unexpected(valid.error());
     }
 
-    const auto name = std::string{trim(config.name)};
-    const auto team_name = std::string{trim(config.team)};
+    const auto name = normalized_agent_name(config.name);
+    const auto team_name = normalized_team_name(config.team);
     const auto prompt = std::string{trim(config.prompt)};
     const auto agent_id = make_agent_id(name, team_name);
 
@@ -131,11 +127,12 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
 
     auto task = task_manager_.create_agent_task(
         tasks::AgentTaskSpec{
-            .description = "Agent " + agent_id,
+            .description = trim(config.description).empty() ? "Agent " + agent_id : std::string{trim(config.description)},
             .cwd = config.cwd,
             .prompt = prompt,
             .command = config.command,
             .argv = config.argv,
+            .env = config.env,
             .model = config.model,
             .metadata = std::move(metadata),
         });
