@@ -60,7 +60,7 @@ public:
 | task 持久化 | 进程内记录为主，输出文件在 data dir | 已实现 `~/.codeharness/data/tasks` 默认路径和 `<id>.json`/`<id>.log` |
 | `argv` 直启 | 支持，避免 Windows shell quoting 问题 | 已支持 `argv` 和 `command` 二选一 |
 | 环境变量 | task env 合并到父进程环境 | 已支持 `env.extra`，继承父环境 |
-| stop task | terminate 后必要时 kill | 已实现 kill + join，状态落为 `killed` |
+| stop task | terminate 后必要时 kill | 已实现 request-stop + worker 线程 kill/wait + join，状态落为 `killed`；避免 stop 线程和 worker 线程并发访问同一个 `reproc::process` |
 | agent task | 可启动本地 agent，并向 stdin 写 prompt | 已实现一次性 `local_agent` task；默认启动 `codeharness -p <prompt> --cwd <cwd>`，也支持 `command`/`argv` 覆盖 |
 | `write_to_task` | 支持向 agent stdin 写入，并可重启 agent | 未实现 |
 | completion listener | 支持任务完成回调 | 未实现 |
@@ -98,6 +98,8 @@ Linux/macOS：
 - process group。
 
 第一版已使用 vcpkg manifest 导入的 `reproc`。Windows 下避免 `nonblocking` pipe 组合，采用 `poll()` + bounded read 的方式读取 stdout，和 MCP stdio transport 的跨平台策略保持一致。
+
+停止任务时，调用方线程不直接调用 `reproc::process::kill()`。`TaskState` 中有 `std::atomic<bool> stop_requested`，`stop_task()`/析构清理只设置该标志并 join worker；worker 线程在 poll 循环中看到标志后，由自己调用 `process.kill()` 和 `process.wait()`。这样 `poll/read/wait/kill` 都集中在 worker 线程，避免 stop 线程与 worker 线程对同一个 `reproc::process` 对象无锁并发访问。kill 路径也会跳过最后一次输出 flush，因为进程被强制终止后 stdout pipe 在 Windows 上可能不可读。
 
 ## 日志和状态持久化
 

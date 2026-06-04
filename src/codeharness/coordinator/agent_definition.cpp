@@ -34,11 +34,6 @@ struct ParsedAgentMarkdown
 };
 
 // 解析 Markdown frontmatter。
-//
-// 这里和 skill loader 使用相同约定：只有文件首行是 --- 且后续存在单独的 ---
-// 闭合行时，才把中间内容当 YAML；否则整篇都视为正文。这个 helper 当前留在
-// coordinator 内部，后续若 command/agent/skill 都继续复用，可再收敛成 core
-// markdown_frontmatter helper，避免现在为一个新调用点过度重构。
 auto parse_frontmatter(std::string_view content) -> ParsedAgentMarkdown
 {
     auto [first_line, offset] = next_line(content, 0);

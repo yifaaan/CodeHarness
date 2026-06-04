@@ -84,16 +84,17 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 
 ## 当前 C++ 实现进度
 
-截至 2026-06-03，本仓库已实现并测试的 C++ 模块包括：
+截至 2026-06-04，本仓库已实现并测试的 C++ 模块包括：
 
 | 模块 | 当前状态 |
 | --- | --- |
 | engine/provider/tools/permissions/hooks | 已有基础实现和测试，支持工具回填、权限判定和 hook 拦截 |
 | skills/plugins/commands/prompts/memory/MCP | 已有 C++ 骨架与 focused tests，可作为后续 runtime 组装材料 |
-| tasks | 已实现 `TaskManager` v1、一次性 `local_agent`、`task_*` 工具和最小 `agent` 工具：后台 shell/agent task、JSON 状态、log、tail、stop、ToolRegistry 接入 |
-| coordinator/swarm/UI/gateway | 仍处设计阶段；下一步依赖 Mailbox、send_message 和 subprocess swarm registry 继续推进 |
+| tasks | 已实现 `TaskManager` v1、一次性 `local_agent`、`task_*` 工具和最小 `agent` 工具：后台 shell/agent task、JSON 状态、log、tail、stop、ToolRegistry 接入；stop 采用 request-stop 机制，避免 `reproc::process` 跨线程并发访问 |
+| mailbox/coordinator | 已实现文件系统 Mailbox、`send_message` 工具、TeamLifecycleManager v1，以及 AgentDefinitionLoader v1（Markdown + YAML frontmatter、user/extra/project 目录加载） |
+| swarm/UI/gateway | 仍处设计阶段；下一步依赖 subprocess swarm backend/agent registry 和 backend-only UI 协议继续推进 |
 
-与上游 `docs/OpenHarness` 对比，当前最自然的后续实现顺序是：Mailbox、`send_message` 工具、subprocess swarm backend、backend-only UI 协议。
+与上游 `docs/OpenHarness` 对比，Mailbox、`send_message`、TeamLifecycleManager 和 AgentDefinitionLoader 已进入 C++ 第一版；当前最自然的后续实现顺序是：subprocess swarm backend/agent registry、worker 消息消费、backend-only UI 协议。
 
 ## 推荐依赖
 

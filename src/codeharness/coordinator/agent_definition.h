@@ -15,12 +15,9 @@
 //   1. 这个 worker 是什么角色？例如 general-purpose、reviewer、tester。
 //   2. 这个角色应该带哪些系统提示、工具限制、模型偏好和技能？
 //
-// 本模块只负责“把磁盘上的 Markdown agent 定义解析成结构化数据”。它不启动
-// 子进程、不发消息、不做权限判定；这些属于 TaskManager、Mailbox 和后续
-// SwarmBackend 的职责。这样分层后，后续 agent tool 可以先解析定义，再把解析出的
-// prompt/tools/model 等字段交给 backend spawn。
+// 本模块只负责“把磁盘上的 Markdown agent 定义解析成结构化数据”。
 //
-// 文件格式使用 Markdown + YAML frontmatter，和 Skill loader 保持同类心智模型：
+// 文件格式使用 Markdown + YAML frontmatter
 //
 //   ---
 //   name: reviewer
@@ -32,10 +29,6 @@
 //   skills: [review]
 //   ---
 //   You are a careful C++ reviewer...
-//
-// frontmatter 是机器可读元数据；frontmatter 后面的正文就是该 agent 的
-// system_prompt。第一版先支持后续 coordinator 路线最需要的字段，避免提前搬运
-// 上游所有高级选项。
 
 namespace codeharness::coordinator
 {
@@ -73,7 +66,7 @@ struct AgentDefinitionLoadOptions
     };
 };
 
-// 默认用户级 agent 目录。目录不存在不是错误，加载阶段会自然跳过。
+// 默认用户级 agent 目录。
 auto default_user_agent_dirs() -> std::vector<std::filesystem::path>;
 
 // 解析单个 Markdown 字符串；default_name 通常来自文件名 stem。
@@ -88,13 +81,11 @@ auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> dir
     -> Result<std::vector<AgentDefinition>>;
 
 // 从 cwd 开始向上查找 project agent 目录，最多到 git 根。返回顺序是父目录 → 子目录，
-// 方便调用方按顺序注册，让更靠近 cwd 的定义覆盖上层定义。
 auto discover_project_agent_dirs(const std::filesystem::path& cwd,
                                  std::span<const std::filesystem::path> relative_dirs)
     -> Result<std::vector<std::filesystem::path>>;
 
-// 组合加载：user → extra → project。当前先返回 vector，后续需要冲突覆盖策略时再加
-// registry，避免现在过度抽象。
+// 组合加载：user → extra → project。
 auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options = {})
     -> Result<std::vector<AgentDefinition>>;
 
