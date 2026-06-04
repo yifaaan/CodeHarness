@@ -1,10 +1,13 @@
 codeharness_add_static_module(codeharness_coordinator
     agent_definition.cpp
+    subprocess_backend.cpp
 )
 
 target_link_libraries(codeharness_coordinator
     PUBLIC
         codeharness_foundation
+        codeharness_mailbox
+        codeharness_tasks
     PRIVATE
         codeharness_tools
 )

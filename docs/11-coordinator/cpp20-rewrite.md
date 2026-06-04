@@ -107,7 +107,25 @@ Coordinator
   -> worker CodeHarness process
 ```
 
-后续再做 in-process backend。
+当前 C++ 最小版位于 `src/codeharness/coordinator/subprocess_backend.*`，已经实现 `SubprocessBackend::spawn()`：
+
+```text
+TeammateSpawnConfig
+  -> validate name/team/prompt
+  -> require existing TeamLifecycleManager team
+  -> TaskManager.create_agent_task
+  -> TeamLifecycleManager.add_member
+  -> SpawnResult{task_id, agent_id, backend_type="subprocess"}
+```
+
+第一版有意保持很窄：
+
+- `SubprocessBackend` 只保存 `TaskManager&` 和 `TeamLifecycleManager&`，不拥有运行时状态。
+- team 不存在时返回错误，不自动创建 team，避免隐藏 lifecycle 顺序问题。
+- `model`、`system_prompt`、`skills`、`permissions` 先记录到 task metadata，不做真正权限同步或 prompt 拼装。
+- 支持可选 `command`/`argv` 覆盖，便于测试和后续 runtime 指定 worker 可执行文件；缺省时仍由 `TaskManager` 使用 `codeharness -p <prompt> --cwd <cwd>`。
+
+后续再做 agent registry、worker 消息消费和 in-process backend。
 
 ## Mailbox
 
@@ -203,10 +221,11 @@ worker continues
 5. `Mailbox`。已完成第一版文件系统 inbox、poll、mark_read、clear。
 6. `send_message` 工具。已完成，支持向 task inbox 投递消息并可选校验 recipient task。
 7. `TeamLifecycleManager`。已完成第一版 team.json CRUD 和成员管理。
-8. `WorktreeManager`。暂不实现；当前项目阶段先不移植 worktree tool。
-9. 权限同步。未实现；第一版 worker 仍应以只读/受限权限为主。
+8. `SubprocessBackend::spawn`。已完成最小版：创建一次性 `local_agent` task，并写入 team membership。
+9. `WorktreeManager`。暂不实现；当前项目阶段先不移植 worktree tool。
+10. 权限同步。未实现；第一版 worker 仍应以只读/受限权限为主。
 
-当前下一步应转向 subprocess swarm backend/agent registry 的最小版：把 `AgentDefinitionLoader`、`TaskManager.create_agent_task`、`Mailbox` 和 `TeamLifecycleManager` 串起来，形成“按 agent 定义创建一次性 worker 并记录 team membership”的基础路径。
+当前下一步应转向 agent registry / worker 消息消费：把 `AgentDefinitionLoader` 选出的角色定义真正接入 spawn 配置，并让 worker 能读取 mailbox 中的新消息。
 
 ## 初学者建议
 

@@ -1,6 +1,7 @@
 #include "test_support.h"
 
 #include "codeharness/coordinator/agent_definition.h"
+#include "codeharness/coordinator/subprocess_backend.h"
 
 using codeharness::coordinator::AgentDefinitionLoadOptions;
 using codeharness::coordinator::discover_project_agent_dirs;
@@ -8,6 +9,8 @@ using codeharness::coordinator::load_agent_definition_file;
 using codeharness::coordinator::load_agent_definitions;
 using codeharness::coordinator::load_agent_definitions_from_dirs;
 using codeharness::coordinator::parse_agent_definition_markdown;
+using codeharness::coordinator::SubprocessBackend;
+using codeharness::coordinator::TeammateSpawnConfig;
 
 namespace
 {
@@ -18,6 +21,11 @@ auto write_text(const std::filesystem::path& path, std::string_view content) -> 
     std::ofstream file{path, std::ios::binary};
     REQUIRE(file.good());
     file << content;
+}
+
+auto codeharness_version_argv() -> std::vector<std::string>
+{
+    return {std::string{CODEHARNESS_EXE}, "--version"};
 }
 
 } // namespace
@@ -179,4 +187,134 @@ TEST_CASE("load_agent_definitions composes user extra and project directories")
     CHECK((*agents)[1].source == "extra");
     CHECK((*agents)[2].name == "project");
     CHECK((*agents)[2].source == "project");
+}
+
+TEST_CASE("subprocess backend validates spawn config")
+{
+    TempDir temp{"codeharness-subprocess-validate-test"};
+    codeharness::tasks::TaskManager task_manager{temp.path / "tasks"};
+    codeharness::mailbox::TeamLifecycleManager team_manager{temp.path / "teams"};
+    SubprocessBackend backend{task_manager, team_manager};
+
+    auto empty_name = backend.spawn(
+        TeammateSpawnConfig{
+            .name = "",
+            .team = "dev-team",
+            .prompt = "Analyze code",
+            .cwd = temp.path,
+        });
+    CHECK(!empty_name.has_value());
+    CHECK(empty_name.error().kind == codeharness::ErrorKind::InvalidArgument);
+
+    auto empty_team = backend.spawn(
+        TeammateSpawnConfig{
+            .name = "worker",
+            .team = "",
+            .prompt = "Analyze code",
+            .cwd = temp.path,
+        });
+    CHECK(!empty_team.has_value());
+    CHECK(empty_team.error().kind == codeharness::ErrorKind::InvalidArgument);
+
+    auto empty_prompt = backend.spawn(
+        TeammateSpawnConfig{
+            .name = "worker",
+            .team = "dev-team",
+            .prompt = " ",
+            .cwd = temp.path,
+        });
+    CHECK(!empty_prompt.has_value());
+    CHECK(empty_prompt.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+TEST_CASE("subprocess backend requires existing team")
+{
+    TempDir temp{"codeharness-subprocess-missing-team-test"};
+    codeharness::tasks::TaskManager task_manager{temp.path / "tasks"};
+    codeharness::mailbox::TeamLifecycleManager team_manager{temp.path / "teams"};
+    SubprocessBackend backend{task_manager, team_manager};
+
+    auto result = backend.spawn(
+        TeammateSpawnConfig{
+            .name = "researcher",
+            .team = "missing-team",
+            .prompt = "Analyze code",
+            .cwd = temp.path,
+            .argv = codeharness_version_argv(),
+        });
+
+    CHECK(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
+}
+
+TEST_CASE("subprocess backend spawns local agent task and adds team member")
+{
+    TempDir temp{"codeharness-subprocess-spawn-test"};
+    codeharness::tasks::TaskManager task_manager{temp.path / "tasks"};
+    codeharness::mailbox::TeamLifecycleManager team_manager{temp.path / "teams"};
+    REQUIRE(team_manager.create_team("dev-team").has_value());
+
+    SubprocessBackend backend{task_manager, team_manager};
+    auto spawned = backend.spawn(
+        TeammateSpawnConfig{
+            .name = "researcher",
+            .team = "dev-team",
+            .prompt = "Analyze code",
+            .cwd = temp.path,
+            .argv = codeharness_version_argv(),
+        });
+
+    REQUIRE(spawned.has_value());
+    CHECK(spawned->agent_id == "researcher@dev-team");
+    CHECK(spawned->backend_type == "subprocess");
+    CHECK(spawned->success == true);
+    CHECK(!spawned->task_id.empty());
+
+    auto completed = task_manager.wait_for_task(spawned->task_id);
+    REQUIRE(completed.has_value());
+    CHECK(completed->type == codeharness::tasks::TaskType::LocalAgent);
+    CHECK(completed->metadata.at("agent_id") == "researcher@dev-team");
+    CHECK(completed->metadata.at("team") == "dev-team");
+    CHECK(completed->metadata.at("agent_name") == "researcher");
+    CHECK(completed->metadata.at("backend_type") == "subprocess");
+
+    auto team = team_manager.get_team("dev-team");
+    REQUIRE(team.has_value());
+    REQUIRE(team->has_value());
+    REQUIRE(team->value().members.contains("researcher@dev-team"));
+    const auto& member = team->value().members.at("researcher@dev-team");
+    CHECK(member.name == "researcher");
+    CHECK(member.backend_type == "subprocess");
+    CHECK(!member.joined_at.empty());
+}
+
+TEST_CASE("subprocess backend records model system prompt skills and permissions metadata")
+{
+    TempDir temp{"codeharness-subprocess-metadata-test"};
+    codeharness::tasks::TaskManager task_manager{temp.path / "tasks"};
+    codeharness::mailbox::TeamLifecycleManager team_manager{temp.path / "teams"};
+    REQUIRE(team_manager.create_team("qa-team").has_value());
+
+    SubprocessBackend backend{task_manager, team_manager};
+    auto spawned = backend.spawn(
+        TeammateSpawnConfig{
+            .name = "tester",
+            .team = "qa-team",
+            .prompt = "Run checks",
+            .cwd = temp.path,
+            .argv = codeharness_version_argv(),
+            .model = std::string{"claude-sonnet-4-6"},
+            .system_prompt = std::string{"You are a test runner."},
+            .permissions = {"read_file", "grep"},
+            .skills = {"test", "review"},
+        });
+
+    REQUIRE(spawned.has_value());
+    auto completed = task_manager.wait_for_task(spawned->task_id);
+    REQUIRE(completed.has_value());
+
+    CHECK(completed->metadata.at("model") == "claude-sonnet-4-6");
+    CHECK(completed->metadata.at("system_prompt") == "You are a test runner.");
+    CHECK(completed->metadata.at("skills") == "test,review");
+    CHECK(completed->metadata.at("permissions") == "read_file,grep");
 }
