@@ -3,9 +3,12 @@
 #include "codeharness/coordinator/agent_definition.h"
 #include "codeharness/coordinator/subprocess_backend.h"
 
+using codeharness::coordinator::AgentDefinition;
 using codeharness::coordinator::AgentDefinitionLoadOptions;
+using codeharness::coordinator::AgentDefinitionRegistry;
 using codeharness::coordinator::discover_project_agent_dirs;
 using codeharness::coordinator::load_agent_definition_file;
+using codeharness::coordinator::load_agent_definition_registry;
 using codeharness::coordinator::load_agent_definitions;
 using codeharness::coordinator::load_agent_definitions_from_dirs;
 using codeharness::coordinator::parse_agent_definition_markdown;
@@ -187,6 +190,64 @@ TEST_CASE("load_agent_definitions composes user extra and project directories")
     CHECK((*agents)[1].source == "extra");
     CHECK((*agents)[2].name == "project");
     CHECK((*agents)[2].source == "project");
+}
+
+TEST_CASE("agent definition registry supports lookup override and sorted listing")
+{
+    AgentDefinitionRegistry registry;
+    registry.register_agent(
+        AgentDefinition{
+            .name = "reviewer",
+            .description = "user reviewer",
+            .source = "user",
+        });
+    registry.register_agent(
+        AgentDefinition{
+            .name = "tester",
+            .description = "test runner",
+            .source = "user",
+        });
+    registry.register_agent(
+        AgentDefinition{
+            .name = "reviewer",
+            .description = "project reviewer",
+            .source = "project",
+        });
+
+    REQUIRE(registry.get("reviewer") != nullptr);
+    CHECK(registry.get("reviewer")->description == "project reviewer");
+    CHECK(registry.get("reviewer")->source == "project");
+    REQUIRE(registry.get("tester") != nullptr);
+    CHECK(registry.get("missing") == nullptr);
+
+    auto listed = registry.list();
+    REQUIRE(listed.size() == 2);
+    CHECK(listed[0].name == "reviewer");
+    CHECK(listed[1].name == "tester");
+}
+
+TEST_CASE("load_agent_definition_registry lets project override user definitions")
+{
+    TempDir temp{"codeharness-agent-registry-load-test"};
+    const auto repo = temp.path / "repo";
+    const auto user_agents = temp.path / "user-agents";
+    const auto project_agents = repo / ".agents" / "agents";
+    std::filesystem::create_directories(repo / ".git");
+
+    write_text(user_agents / "reviewer.md", "---\ndescription: user reviewer\n---\nUser prompt\n");
+    write_text(project_agents / "reviewer.md", "---\ndescription: project reviewer\n---\nProject prompt\n");
+
+    AgentDefinitionLoadOptions options;
+    options.load_default_user_agents = false;
+    options.user_agent_dirs = {user_agents};
+    options.project_agent_dirs = {".agents/agents"};
+
+    auto registry = load_agent_definition_registry(repo, std::move(options));
+
+    REQUIRE(registry.has_value());
+    REQUIRE(registry->get("reviewer") != nullptr);
+    CHECK(registry->get("reviewer")->description == "project reviewer");
+    CHECK(registry->get("reviewer")->source == "project");
 }
 
 TEST_CASE("subprocess backend validates spawn config")

@@ -3,10 +3,12 @@
 #include "codeharness/core/result.h"
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 // AgentDefinitionLoader —— coordinator/swarm 的角色定义加载器
@@ -66,6 +68,21 @@ struct AgentDefinitionLoadOptions
     };
 };
 
+// AgentDefinitionRegistry —— 按 agent name 查找定义。
+//
+// 加载函数返回 vector 是为了保留来源顺序；registry 则负责“后注册者覆盖先注册者”。
+// 这样 user/extra/project 的覆盖策略很直观：按顺序 register，越靠后的定义优先。
+class AgentDefinitionRegistry
+{
+public:
+    auto register_agent(AgentDefinition definition) -> void;
+    auto get(std::string_view name) const -> const AgentDefinition*;
+    auto list() const -> std::vector<AgentDefinition>;
+
+private:
+    std::unordered_map<std::string, std::shared_ptr<AgentDefinition>> by_name_;
+};
+
 // 默认用户级 agent 目录。
 auto default_user_agent_dirs() -> std::vector<std::filesystem::path>;
 
@@ -88,5 +105,9 @@ auto discover_project_agent_dirs(const std::filesystem::path& cwd,
 // 组合加载：user → extra → project。
 auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options = {})
     -> Result<std::vector<AgentDefinition>>;
+
+// 组合加载并注册到 registry；后加载来源覆盖先加载来源。
+auto load_agent_definition_registry(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options = {})
+    -> Result<AgentDefinitionRegistry>;
 
 } // namespace codeharness::coordinator

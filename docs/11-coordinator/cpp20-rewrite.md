@@ -78,7 +78,9 @@ You are a careful C++ reviewer...
 - project agents：`.codeharness/agents/*.md`、`.openharness/agents/*.md`、`.agents/agents/*.md`、`.claude/agents/*.md`。
 - extra agents：调用方显式传入目录。
 
-builtin/plugin agents 暂未接入 registry；等 SubprocessBackend/agent registry 需要统一覆盖策略时再补，避免当前阶段过早抽象。
+当前已提供 `AgentDefinitionRegistry`：按 `name` 注册/查询/list，后注册者覆盖先注册者。`load_agent_definition_registry()` 会按 user → extra → project 顺序加载并注册，因此更靠近项目/当前目录的定义可以覆盖用户级定义。
+
+builtin/plugin agents 暂未接入 registry；等后续 runtime 需要统一内置 agent 与插件 agent 时再补。
 
 ## Task notification
 
@@ -125,7 +127,7 @@ TeammateSpawnConfig
 - `model`、`system_prompt`、`skills`、`permissions` 先记录到 task metadata，不做真正权限同步或 prompt 拼装。
 - 支持可选 `command`/`argv` 覆盖，便于测试和后续 runtime 指定 worker 可执行文件；缺省时仍由 `TaskManager` 使用 `codeharness -p <prompt> --cwd <cwd>`。
 
-后续再做 agent registry、worker 消息消费和 in-process backend。
+AgentDefinitionRegistry 已完成最小版。后续再做 worker 消息消费、spawn config 与 agent definition 的合并逻辑，以及 in-process backend。
 
 ## Mailbox
 
@@ -215,17 +217,18 @@ worker continues
 ## 实现路线
 
 1. `AgentDefinitionLoader`。已完成第一版：Markdown + YAML frontmatter 解析、user/extra/project 目录加载和 focused tests。
-2. `TaskManager.createAgentTask`，基于当前已实现的 `TaskManager.create_shell_task` 包装一次性 worker。已完成。
-3. `task_create`、`task_get`、`task_list`、`task_output`、`task_stop` 工具接入 ToolRegistry。已完成，当前 `task_create` 支持 `local_bash` 和一次性 `local_agent`。
-4. `agent` 工具创建 subprocess worker。已完成最小版，当前仅支持 `local_agent` mode。
-5. `Mailbox`。已完成第一版文件系统 inbox、poll、mark_read、clear。
-6. `send_message` 工具。已完成，支持向 task inbox 投递消息并可选校验 recipient task。
-7. `TeamLifecycleManager`。已完成第一版 team.json CRUD 和成员管理。
-8. `SubprocessBackend::spawn`。已完成最小版：创建一次性 `local_agent` task，并写入 team membership。
-9. `WorktreeManager`。暂不实现；当前项目阶段先不移植 worktree tool。
-10. 权限同步。未实现；第一版 worker 仍应以只读/受限权限为主。
+2. `AgentDefinitionRegistry`。已完成最小版：按 name 注册/查询/list，后注册者覆盖先注册者；支持 `load_agent_definition_registry()` 组合加载。
+3. `TaskManager.createAgentTask`，基于当前已实现的 `TaskManager.create_shell_task` 包装一次性 worker。已完成。
+4. `task_create`、`task_get`、`task_list`、`task_output`、`task_stop` 工具接入 ToolRegistry。已完成，当前 `task_create` 支持 `local_bash` 和一次性 `local_agent`。
+5. `agent` 工具创建 subprocess worker。已完成最小版，当前仅支持 `local_agent` mode。
+6. `Mailbox`。已完成第一版文件系统 inbox、poll、mark_read、clear。
+7. `send_message` 工具。已完成，支持向 task inbox 投递消息并可选校验 recipient task。
+8. `TeamLifecycleManager`。已完成第一版 team.json CRUD 和成员管理。
+9. `SubprocessBackend::spawn`。已完成最小版：创建一次性 `local_agent` task，并写入 team membership。
+10. `WorktreeManager`。暂不实现；当前项目阶段先不移植 worktree tool。
+11. 权限同步。未实现；第一版 worker 仍应以只读/受限权限为主。
 
-当前下一步应转向 agent registry / worker 消息消费：把 `AgentDefinitionLoader` 选出的角色定义真正接入 spawn 配置，并让 worker 能读取 mailbox 中的新消息。
+当前下一步应转向 worker 消息消费，以及 spawn config 与 agent definition 的合并逻辑：让 `AgentDefinitionRegistry` 查到的角色定义真正影响 prompt/model/tools metadata。
 
 ## 初学者建议
 

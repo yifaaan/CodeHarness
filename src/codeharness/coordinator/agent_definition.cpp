@@ -12,8 +12,10 @@
 
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -234,6 +236,42 @@ auto default_user_agent_dirs() -> std::vector<std::filesystem::path>
     };
 }
 
+auto AgentDefinitionRegistry::register_agent(AgentDefinition definition) -> void
+{
+    if (definition.name.empty())
+    {
+        return;
+    }
+
+    auto stored = std::make_shared<AgentDefinition>(std::move(definition));
+    by_name_[stored->name] = std::move(stored);
+}
+
+auto AgentDefinitionRegistry::get(std::string_view name) const -> const AgentDefinition*
+{
+    const auto it = by_name_.find(std::string{name});
+    if (it == by_name_.end())
+    {
+        return nullptr;
+    }
+
+    return it->second.get();
+}
+
+auto AgentDefinitionRegistry::list() const -> std::vector<AgentDefinition>
+{
+    std::vector<AgentDefinition> result;
+    result.reserve(by_name_.size());
+
+    for (const auto& [_, definition] : by_name_)
+    {
+        result.push_back(*definition);
+    }
+
+    std::ranges::sort(result, {}, &AgentDefinition::name);
+    return result;
+}
+
 auto parse_agent_definition_markdown(std::string_view default_name, std::string content, std::string source)
     -> AgentDefinition
 {
@@ -438,6 +476,24 @@ auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoa
     }
 
     return agents;
+}
+
+auto load_agent_definition_registry(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options)
+    -> Result<AgentDefinitionRegistry>
+{
+    auto definitions = load_agent_definitions(cwd, std::move(options));
+    if (!definitions)
+    {
+        return nonstd::make_unexpected(definitions.error());
+    }
+
+    AgentDefinitionRegistry registry;
+    for (auto& definition : *definitions)
+    {
+        registry.register_agent(std::move(definition));
+    }
+
+    return registry;
 }
 
 } // namespace codeharness::coordinator
