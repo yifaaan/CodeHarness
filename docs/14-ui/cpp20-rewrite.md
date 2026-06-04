@@ -49,7 +49,7 @@ codeharness --backend-only
 
 ### 阶段 B：原生 TUI
 
-核心稳定后再用 `FTXUI` 或自研 ANSI renderer 做原生 TUI。
+核心稳定后再用 `FTXUI` 做原生 TUI。
 
 原生 TUI 只需要消费同一套内部 `StreamEvent`。
 

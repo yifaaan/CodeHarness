@@ -7,6 +7,7 @@
 
 #include <glob/glob.h>
 #include <nonstd/expected.hpp>
+#include <simdutf.h>
 #include <spdlog/spdlog.h>
 #include <yaml-cpp/yaml.h>
 
@@ -76,8 +77,7 @@ auto parse_frontmatter(std::string_view content) -> ParsedAgentMarkdown
     return ParsedAgentMarkdown{.body = content};
 }
 
-// 在字节边界安全截断 UTF-8 字符串：如果 max_len 落在多字节字符中间，
-// 则退回到该字符的起始字节。
+// 在 UTF-8 字符边界安全截断，避免 description 预览切出半个 code point。
 auto utf8_safe_truncate(std::string_view s, std::size_t max_len) -> std::string_view
 {
     if (s.size() <= max_len)
@@ -85,14 +85,13 @@ auto utf8_safe_truncate(std::string_view s, std::size_t max_len) -> std::string_
         return s;
     }
 
-    auto len = max_len;
-    // UTF-8 续字节的 bit 模式是 10xxxxxx (0x80–0xBF)
-    while (len > 0 && (static_cast<unsigned char>(s[len]) & 0xC0) == 0x80)
+    const auto prefix = simdutf::validate_utf8_with_errors(s.data(), max_len);
+    if (prefix.error == simdutf::error_code::SUCCESS)
     {
-        --len;
+        return s.substr(0, max_len);
     }
 
-    return s.substr(0, len);
+    return s.substr(0, prefix.count);
 }
 
 auto first_body_line(std::string_view body) -> std::optional<std::string>

@@ -15,6 +15,9 @@ target_link_libraries(codeharness_coordinator
 )
 
 codeharness_link_first_existing(codeharness_coordinator PRIVATE Glob Glob)
+codeharness_link_first_existing(codeharness_coordinator PRIVATE fmt fmt::fmt)
+codeharness_link_first_existing(codeharness_coordinator PRIVATE pugixml pugixml::pugixml)
+codeharness_link_first_existing(codeharness_coordinator PRIVATE simdutf simdutf::simdutf)
 codeharness_link_first_existing(codeharness_coordinator PRIVATE yaml-cpp yaml-cpp::yaml-cpp)
 
 add_library(codeharness::coordinator ALIAS codeharness_coordinator)

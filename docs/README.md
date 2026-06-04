@@ -98,7 +98,7 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 
 ## 推荐依赖
 
-使用 CMake + vcpkg manifest 作为构建入口时，推荐先选少量稳定依赖。外部库只从 awesome-cpp 收录项目中挑选，再确认 vcpkg 中存在对应 port：
+使用 CMake + vcpkg manifest 作为构建入口时，推荐先选少量稳定依赖。外部库确认 vcpkg 中存在对应 port：
 
 | 领域 | 推荐 |
 | --- | --- |

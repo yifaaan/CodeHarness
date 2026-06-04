@@ -2,6 +2,7 @@
 
 #include "codeharness/core/strings.h"
 
+#include <fmt/ranges.h>
 #include <nonstd/expected.hpp>
 
 #include <map>
@@ -23,16 +24,7 @@ auto make_agent_id(std::string_view name, std::string_view team) -> std::string
 
 auto join_csv(std::span<const std::string> values) -> std::string
 {
-    std::string result;
-    for (const auto& value : values)
-    {
-        if (!result.empty())
-        {
-            result += ',';
-        }
-        result += value;
-    }
-    return result;
+    return fmt::format("{}", fmt::join(values, ","));
 }
 
 auto validate_spawn_config(const TeammateSpawnConfig& config) -> Result<void>

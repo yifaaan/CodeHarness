@@ -2,7 +2,10 @@
 
 #include "codeharness/core/strings.h"
 
-#include <string_view>
+#include <pugixml.hpp>
+
+#include <sstream>
+#include <string>
 #include <utility>
 
 namespace codeharness::coordinator
@@ -10,43 +13,9 @@ namespace codeharness::coordinator
 namespace
 {
 
-auto append_xml_escaped(std::string& output, std::string_view text) -> void
+auto append_xml_element(pugi::xml_node parent, const char* name, const std::string& value) -> void
 {
-    for (const auto ch : text)
-    {
-        switch (ch)
-        {
-        case '&':
-            output += "&amp;";
-            break;
-        case '<':
-            output += "&lt;";
-            break;
-        case '>':
-            output += "&gt;";
-            break;
-        case '"':
-            output += "&quot;";
-            break;
-        case '\'':
-            output += "&apos;";
-            break;
-        default:
-            output += ch;
-            break;
-        }
-    }
-}
-
-auto append_xml_element(std::string& output, std::string_view name, std::string_view value) -> void
-{
-    output += '<';
-    output += name;
-    output += '>';
-    append_xml_escaped(output, value);
-    output += "</";
-    output += name;
-    output += ">\n";
+    parent.append_child(name).append_child(pugi::node_pcdata).set_value(value.c_str());
 }
 
 } // namespace
@@ -76,18 +45,16 @@ auto make_task_notification(const tasks::TaskRecord& record,
 
 auto task_notification_to_xml(const TaskNotification& notification) -> std::string
 {
-    std::string output;
-    output.reserve(notification.task_id.size() + notification.status.size() + notification.summary.size()
-                   + notification.result.size() + 128);
+    pugi::xml_document document;
+    auto root = document.append_child("task-notification");
+    append_xml_element(root, "task-id", notification.task_id);
+    append_xml_element(root, "status", notification.status);
+    append_xml_element(root, "summary", notification.summary);
+    append_xml_element(root, "result", notification.result);
 
-    output += "<task-notification>\n";
-    append_xml_element(output, "task-id", notification.task_id);
-    append_xml_element(output, "status", notification.status);
-    append_xml_element(output, "summary", notification.summary);
-    append_xml_element(output, "result", notification.result);
-    output += "</task-notification>";
-
-    return output;
+    std::ostringstream output;
+    document.save(output, "", pugi::format_raw);
+    return output.str();
 }
 
 auto make_task_result_message(std::string sender_id,
