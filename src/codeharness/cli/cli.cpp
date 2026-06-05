@@ -1,62 +1,23 @@
 #include "codeharness/cli/cli.h"
 
 #include "codeharness/commands/command_registry.h"
-#include "codeharness/coordinator/runtime.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
-#include "codeharness/mailbox/mailbox_tools.h"
-#include "codeharness/memory/memory_store.h"
-#include "codeharness/prompts/system_prompt.h"
-#include "codeharness/provider/echo_provider.h"
-#include "codeharness/skills/skill_loader.h"
-#include "codeharness/tasks/task_tools.h"
-#include "codeharness/tools/bash_tool.h"
-#include "codeharness/tools/edit_file_tool.h"
-#include "codeharness/tools/glob_tool.h"
-#include "codeharness/tools/grep_tool.h"
-#include "codeharness/tools/read_file_tool.h"
-#include "codeharness/tools/skill_tool.h"
-#include "codeharness/tools/tool_registry.h"
+#include "codeharness/runtime/runtime.h"
 #include "codeharness/version.h"
 
 #include <spdlog/spdlog.h>
 #include <CLI/CLI.hpp>
 #include <nonstd/expected.hpp>
 
-#include <algorithm>
 #include <filesystem>
 #include <iostream>
-#include <memory>
-#include <span>
 #include <string>
 #include <system_error>
-#include <utility>
 #include <variant>
 
 namespace codeharness
 {
-
-auto load_relevant_memories_for_prompt(
-    const memory::MemoryStore& store, std::string_view prompt, std::size_t max_results)
-    -> Result<std::vector<RelevantMemory>>
-{
-    auto entries = store.search(prompt, max_results);
-    if (!entries)
-    {
-        return nonstd::make_unexpected(entries.error());
-    }
-
-    std::vector<RelevantMemory> memories;
-    memories.resize(entries->size());
-    std::ranges::transform(*entries, memories.begin(), [](const auto& entry) {
-        return RelevantMemory{
-            .title = entry.header.title,
-            .content = entry.body,
-        };
-    });
-
-    return memories;
-}
 
 auto run_cli(int argc, char** argv) -> Result<int>
 {
@@ -107,36 +68,20 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return 0;
     }
 
-    SkillLoadOptions skill_options;
-    skill_options.plugin_options.load_default_user_plugins = true;
-
-    auto loaded_skills = load_skill_registry_with_plugins(std::filesystem::current_path(), std::move(skill_options));
-    if (!loaded_skills)
+    auto runtime_bundle = runtime::create_runtime_bundle(
+        runtime::RuntimeBundleOptions{
+            .cwd = std::filesystem::current_path(),
+            .permission_mode = PermissionMode::Default,
+            .load_default_user_plugins = true,
+        });
+    if (!runtime_bundle)
     {
-        return nonstd::make_unexpected(loaded_skills.error());
+        return nonstd::make_unexpected(runtime_bundle.error());
     }
-
-    auto memory_store = memory::MemoryStore::for_project(std::filesystem::current_path());
-    if (!memory_store)
-    {
-        return nonstd::make_unexpected(memory_store.error());
-    }
-
-    auto coordinator_runtime = coordinator::create_default_runtime(std::filesystem::current_path());
-    if (!coordinator_runtime)
-    {
-        return nonstd::make_unexpected(coordinator_runtime.error());
-    }
-
-    auto command_options = BuiltinCommandRegistryOptions{
-        .memory_store = &*memory_store,
-        .plugins = std::span<const LoadedPlugin>{loaded_skills->plugins},
-    };
-    auto commands = build_builtin_command_registry(loaded_skills->registry, command_options);
 
     if (!prompt.empty() && prompt.front() == '/')
     {
-        auto command_result = execute_slash_command(commands, prompt);
+        auto command_result = execute_slash_command((*runtime_bundle)->commands(), prompt);
         if (!command_result)
         {
             return nonstd::make_unexpected(command_result.error());
@@ -162,53 +107,9 @@ auto run_cli(int argc, char** argv) -> Result<int>
         prompt = *command_result->submit_prompt;
     }
 
-    auto project_context_files = load_project_context_files(std::filesystem::current_path());
-    if (!project_context_files)
-    {
-        return nonstd::make_unexpected(project_context_files.error());
-    }
-
-    PromptBuildRequest prompt_request;
-    prompt_request.cwd = std::filesystem::current_path();
-    prompt_request.latest_user_prompt = prompt;
-    prompt_request.available_skills = loaded_skills->registry.list();
-    prompt_request.available_commands = commands.list();
-    prompt_request.project_context_files = std::move(*project_context_files);
-    prompt_request.permission_mode = PermissionMode::Default;
-    auto relevant_memories = load_relevant_memories_for_prompt(*memory_store, prompt);
-    if (!relevant_memories)
-    {
-        return nonstd::make_unexpected(relevant_memories.error());
-    }
-    prompt_request.relevant_memories = std::move(*relevant_memories);
-
-    auto system_prompt = SystemPromptBuilder{}.build(prompt_request);
-    if (!system_prompt)
-    {
-        return nonstd::make_unexpected(system_prompt.error());
-    }
-
-    ToolRegistry tools;
-    tools.add(std::make_unique<ReadFileTool>());
-    tools.add(std::make_unique<EditFileTool>());
-    tools.add(std::make_unique<GlobTool>());
-    tools.add(std::make_unique<GrepTool>());
-    tools.add(std::make_unique<BashTool>());
-    tools.add(std::make_unique<SkillTool>(loaded_skills->registry));
-    tasks::register_task_tools(tools, (*coordinator_runtime)->task_manager(), (*coordinator_runtime)->spawn_handler());
-    mailbox::register_mailbox_tools(tools, (*coordinator_runtime)->mailbox(), &(*coordinator_runtime)->task_manager());
-
-    EchoProvider provider;
-    Engine engine{provider, tools};
-
-    RunRequest request;
-    request.prompt = prompt;
-    request.system_prompt = *system_prompt;
-    request.options.max_turns = max_turns;
-
     bool printed_text = false;
 
-    auto result = engine.run_streaming(request, [&](const EngineEvent& event) {
+    auto result = (*runtime_bundle)->run_prompt(prompt, max_turns, [&](const EngineEvent& event) {
         if (auto delta = std::get_if<EngineAssistantTextDelta>(&event))
         {
             std::cout << delta->text << std::flush;

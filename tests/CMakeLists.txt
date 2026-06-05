@@ -18,6 +18,7 @@ add_executable(codeharness_tests
     plugin_tests.cpp
     prompt_tests.cpp
     provider_tests.cpp
+    runtime_tests.cpp
     skill_tests.cpp
     task_tests.cpp
     team_lifecycle_tests.cpp

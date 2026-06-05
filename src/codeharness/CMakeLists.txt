@@ -43,6 +43,7 @@ add_subdirectory(tasks)
 add_subdirectory(mailbox)
 add_subdirectory(coordinator)
 add_subdirectory(engine)
+add_subdirectory(runtime)
 add_subdirectory(cli)
 
 add_library(codeharness_core INTERFACE)
@@ -61,6 +62,7 @@ target_link_libraries(codeharness_core
         codeharness_permissions
         codeharness_prompts
         codeharness_provider
+        codeharness_runtime
         codeharness_tasks
         codeharness_tools
 )

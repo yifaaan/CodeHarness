@@ -174,31 +174,3 @@ TEST_CASE("memory slash command adds lists searches and removes entries")
     CHECK(*listed->message == "No memories.\n");
 }
 
-TEST_CASE("CLI memory helper injects relevant memories into system prompt")
-{
-    TempDir temp{"codeharness-memory-prompt-injection-test"};
-    codeharness::memory::MemoryStore store{temp.path / "memory"};
-    REQUIRE(store
-                .add(
-                    codeharness::memory::AddMemoryRequest{
-                        .title = "Build Notes",
-                        .body = "Use CMake when building CodeHarness.",
-                    })
-                .has_value());
-
-    auto memories = codeharness::load_relevant_memories_for_prompt(store, "How should I build with CMake?");
-    REQUIRE(memories.has_value());
-    REQUIRE(memories->size() == 1);
-
-    codeharness::PromptBuildRequest request;
-    request.cwd = temp.path;
-    request.latest_user_prompt = "How should I build with CMake?";
-    request.relevant_memories = std::move(*memories);
-
-    auto prompt = codeharness::SystemPromptBuilder{}.build(request);
-
-    REQUIRE(prompt.has_value());
-    CHECK(prompt->find("# Relevant Memories") != std::string::npos);
-    CHECK(prompt->find("## Build Notes") != std::string::npos);
-    CHECK(prompt->find("Use CMake when building CodeHarness.") != std::string::npos);
-}
