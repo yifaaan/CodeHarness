@@ -2,6 +2,7 @@ codeharness_add_static_module(codeharness_gateway
     bridge.cpp
     message_bus.cpp
     runtime_pool.cpp
+    service.cpp
     stdio_adapter.cpp
 )
 

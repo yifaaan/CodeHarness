@@ -3,6 +3,7 @@
 #include "codeharness/gateway/bridge.h"
 #include "codeharness/gateway/message_bus.h"
 #include "codeharness/gateway/runtime_pool.h"
+#include "codeharness/gateway/service.h"
 #include "codeharness/gateway/stdio_adapter.h"
 
 using codeharness::gateway::GatewayBridge;
@@ -13,6 +14,7 @@ using codeharness::gateway::GatewayOutboundMessage;
 using codeharness::gateway::GatewayRuntime;
 using codeharness::gateway::GatewayRuntimeFactory;
 using codeharness::gateway::GatewayRuntimePool;
+using codeharness::gateway::GatewayService;
 using codeharness::gateway::GatewaySessionKey;
 using codeharness::gateway::GatewayStdioAdapter;
 using codeharness::gateway::format_stdio_outbound_line;
@@ -546,4 +548,141 @@ TEST_CASE("gateway stdio adapter accepts inbound and drains outbound fifo")
     CHECK(nlohmann::json::parse(lines[1]).at("text") == "second reply");
     CHECK(nlohmann::json::parse(lines[1]).at("is_error") == true);
     CHECK(bus.outbound().empty());
+}
+
+TEST_CASE("gateway service accepts processes and drains one stdio message")
+{
+    TempDir temp{"codeharness-gateway-service-one-test"};
+    std::vector<GatewayInboundMessage> seen;
+    GatewayService service{
+        [&seen](const GatewaySessionKey&) -> codeharness::Result<std::unique_ptr<GatewayRuntime>> {
+            std::unique_ptr<GatewayRuntime> runtime = std::make_unique<RecordingRuntime>("service", &seen);
+            return std::move(runtime);
+        },
+        temp.path};
+
+    const auto line = nlohmann::json{
+        {"channel", "telegram"},
+        {"conversation_id", "chat-1"},
+        {"user_id", "user-1"},
+        {"text", "hello service"},
+    }.dump();
+
+    REQUIRE(service.accept_stdio_line(line).has_value());
+    CHECK(service.bus().inbound().size() == 1);
+
+    auto step = service.process_next();
+    REQUIRE(step.has_value());
+    CHECK(step->processed);
+    CHECK(!step->published_error);
+    CHECK(service.bus().inbound().empty());
+    CHECK(service.runtime_pool().active_session_count() == 1);
+    REQUIRE(seen.size() == 1);
+    CHECK(seen.front().text == "hello service");
+    CHECK(seen.front().cwd == temp.path);
+
+    auto lines = service.drain_outbound_lines();
+    REQUIRE(lines.size() == 1);
+    const auto output = nlohmann::json::parse(lines.front());
+    CHECK(output.at("channel") == "telegram");
+    CHECK(output.at("conversation_id") == "chat-1");
+    CHECK(output.at("user_id") == "user-1");
+    CHECK(output.at("text") == "service:hello service");
+    CHECK(output.at("is_error") == false);
+}
+
+TEST_CASE("gateway service drains multiple stdio lines in fifo order")
+{
+    TempDir temp{"codeharness-gateway-service-fifo-test"};
+    std::vector<GatewayInboundMessage> seen;
+    auto factory_calls = 0;
+    GatewayService service{
+        [&](const GatewaySessionKey&) -> codeharness::Result<std::unique_ptr<GatewayRuntime>> {
+            ++factory_calls;
+            std::unique_ptr<GatewayRuntime> runtime =
+                std::make_unique<RecordingRuntime>("runtime-" + std::to_string(factory_calls), &seen);
+            return std::move(runtime);
+        },
+        temp.path};
+
+    REQUIRE(service.accept_stdio_line(nlohmann::json{
+        {"channel", "telegram"},
+        {"conversation_id", "chat-1"},
+        {"user_id", "user-1"},
+        {"text", "first"},
+    }.dump()).has_value());
+    REQUIRE(service.accept_stdio_line(nlohmann::json{
+        {"channel", "slack"},
+        {"conversation_id", "thread-2"},
+        {"user_id", "user-2"},
+        {"text", "second"},
+    }.dump()).has_value());
+    REQUIRE(service.accept_stdio_line(nlohmann::json{
+        {"channel", "telegram"},
+        {"conversation_id", "chat-1"},
+        {"user_id", "user-1"},
+        {"text", "third"},
+    }.dump()).has_value());
+
+    auto processed = service.drain_inbound();
+    REQUIRE(processed.has_value());
+    CHECK(*processed == 3);
+    CHECK(factory_calls == 2);
+
+    auto lines = service.drain_outbound_lines();
+    REQUIRE(lines.size() == 3);
+    CHECK(nlohmann::json::parse(lines[0]).at("text") == "runtime-1:first");
+    CHECK(nlohmann::json::parse(lines[1]).at("text") == "runtime-2:second");
+    CHECK(nlohmann::json::parse(lines[2]).at("text") == "runtime-1:third");
+}
+
+TEST_CASE("gateway service rejects invalid stdio without queuing inbound")
+{
+    TempDir temp{"codeharness-gateway-service-invalid-test"};
+    GatewayService service{
+        [](const GatewaySessionKey&) -> codeharness::Result<std::unique_ptr<GatewayRuntime>> {
+            FAIL("runtime factory should not be called");
+            return codeharness::fail<std::unique_ptr<GatewayRuntime>>(
+                codeharness::ErrorKind::Internal,
+                "unexpected factory call");
+        },
+        temp.path};
+
+    auto accepted = service.accept_stdio_line("{");
+    REQUIRE_FALSE(accepted.has_value());
+    CHECK(accepted.error().kind == codeharness::ErrorKind::InvalidArgument);
+    CHECK(service.bus().inbound().empty());
+}
+
+TEST_CASE("gateway service turns runtime failures into stdio error output")
+{
+    TempDir temp{"codeharness-gateway-service-error-test"};
+    GatewayService service{
+        [](const GatewaySessionKey&) -> codeharness::Result<std::unique_ptr<GatewayRuntime>> {
+            return codeharness::fail<std::unique_ptr<GatewayRuntime>>(
+                codeharness::ErrorKind::Config,
+                "service factory unavailable");
+        },
+        temp.path};
+
+    REQUIRE(service.accept_stdio_line(nlohmann::json{
+        {"channel", "telegram"},
+        {"conversation_id", "chat-1"},
+        {"user_id", "user-1"},
+        {"text", "will fail"},
+    }.dump()).has_value());
+
+    auto step = service.process_next();
+    REQUIRE(step.has_value());
+    CHECK(step->processed);
+    CHECK(step->published_error);
+
+    auto lines = service.drain_outbound_lines();
+    REQUIRE(lines.size() == 1);
+    const auto output = nlohmann::json::parse(lines.front());
+    CHECK(output.at("channel") == "telegram");
+    CHECK(output.at("conversation_id") == "chat-1");
+    CHECK(output.at("user_id") == "user-1");
+    CHECK(output.at("text") == "[gateway error] service factory unavailable");
+    CHECK(output.at("is_error") == true);
 }
