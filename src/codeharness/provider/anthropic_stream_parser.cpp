@@ -43,6 +43,15 @@ auto error_message_from(const nlohmann::json& input) -> std::string
     return "Anthropic response failed";
 }
 
+auto unsupported_event(std::string_view type) -> std::string
+{
+    if (type.empty())
+    {
+        return "Anthropic stream event is missing a type";
+    }
+    return "unsupported Anthropic stream event: " + std::string{type};
+}
+
 } // namespace
 
 auto AnthropicStreamParser::feed(std::string_view chunk) -> ParsedEvent
@@ -55,6 +64,11 @@ auto AnthropicStreamParser::feed(std::string_view chunk) -> ParsedEvent
         {
             auto json = nlohmann::json::parse(event.data);
             handle_json_event(json, result);
+            if (!result.error.empty())
+            {
+                result.done = true;
+                return result;
+            }
         }
         catch (const nlohmann::json::exception& error)
         {
@@ -75,6 +89,11 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
     {
         result.error = error_message_from(event);
         result.done = true;
+        return;
+    }
+
+    if (type == "message_start" || type == "message_delta" || type == "ping")
+    {
         return;
     }
 
@@ -130,6 +149,9 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
             }
             return;
         }
+
+        result.error = unsupported_event("content_block_delta." + delta_type);
+        return;
     }
 
     if (type == "content_block_stop")
@@ -144,7 +166,10 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
         result.events.insert(result.events.end(), tool_events.begin(), tool_events.end());
         result.events.push_back(MessageFinished{});
         result.done = true;
+        return;
     }
+
+    result.error = unsupported_event(type);
 }
 
 auto AnthropicStreamParser::emit_tool_start(int index, ParsedEvent& result) -> void

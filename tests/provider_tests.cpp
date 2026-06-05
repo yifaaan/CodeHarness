@@ -333,6 +333,13 @@ TEST_CASE("provider anthropic stream parser handles text tool use completion and
         "\n\n");
     CHECK(error.done);
     CHECK(error.error.find("bad request") != std::string::npos);
+
+    codeharness::AnthropicStreamParser unsupported_parser;
+    auto unsupported = unsupported_parser.feed(
+        R"(data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hidden"}})"
+        "\n\n");
+    CHECK(unsupported.done);
+    CHECK(unsupported.error.find("unsupported Anthropic stream event") != std::string::npos);
 }
 
 TEST_CASE("provider sse parser handles order partial chunks comments and multi-line data")
