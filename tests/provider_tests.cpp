@@ -14,8 +14,7 @@
 namespace
 {
 
-auto make_runtime_bundle(TempDir& temp, codeharness::ProviderConfig provider_config)
-    -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+auto make_runtime_bundle(TempDir& temp, codeharness::ProviderConfig provider_config) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
 {
     const auto repo = temp.path / "repo";
     const auto memory_root = temp.path / "memory-root";
@@ -40,9 +39,7 @@ auto has_event_text(const std::vector<codeharness::ProviderEvent>& events, std::
 
 auto has_message_finished(const std::vector<codeharness::ProviderEvent>& events) -> bool
 {
-    return std::ranges::any_of(events, [](const auto& event) {
-        return std::holds_alternative<codeharness::MessageFinished>(event);
-    });
+    return std::ranges::any_of(events, [](const auto& event) { return std::holds_alternative<codeharness::MessageFinished>(event); });
 }
 
 } // namespace
@@ -95,8 +92,7 @@ namespace
 class ToolDeltaBeforeStartProvider final : public codeharness::Provider
 {
 public:
-    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink) -> codeharness::Result<void> override
     {
         sink(
             codeharness::ToolUseInputDelta{
@@ -124,7 +120,7 @@ TEST_CASE("provider generate rejects tool input before tool start")
     CHECK(result.error().kind == codeharness::ErrorKind::Provider);
 }
 
-TEST_CASE("http client validates URLs before opening a socket")
+TEST_CASE("provider http client validates URLs before opening a socket")
 {
     codeharness::network::HttpClient client;
 
@@ -139,22 +135,18 @@ TEST_CASE("http client validates URLs before opening a socket")
 
 TEST_CASE("provider HTTP helpers join endpoints and preserve API error messages")
 {
-    CHECK(codeharness::provider_endpoint_url("", "responses", "https://api.openai.com/v1/responses") ==
-          "https://api.openai.com/v1/responses");
-    CHECK(codeharness::provider_endpoint_url("https://api.example.test/v1", "responses", "") ==
-          "https://api.example.test/v1/responses");
-    CHECK(codeharness::provider_endpoint_url("https://api.example.test/v1/messages", "messages", "") ==
-          "https://api.example.test/v1/messages");
+    CHECK(codeharness::provider_endpoint_url("", "responses", "https://api.openai.com/v1/responses") == "https://api.openai.com/v1/responses");
+    CHECK(codeharness::provider_endpoint_url("https://api.example.test/v1", "responses", "") == "https://api.example.test/v1/responses");
+    CHECK(codeharness::provider_endpoint_url("https://api.example.test/v1/messages", "messages", "") == "https://api.example.test/v1/messages");
 
     codeharness::network::HttpResponse response;
     response.status_code = 401;
     response.body = R"({"error":{"message":"bad key"}})";
 
-    CHECK(codeharness::provider_http_error_message("OpenAI", response) ==
-          "OpenAI API returned status 401: bad key");
+    CHECK(codeharness::provider_http_error_message("OpenAI", response) == "OpenAI API returned status 401: bad key");
 }
 
-TEST_CASE("openai responses serialization maps messages and tools")
+TEST_CASE("provider openai responses serialization maps messages and tools")
 {
     std::vector<codeharness::Message> messages;
     messages.push_back(codeharness::make_text_message(codeharness::Role::System, "You are concise."));
@@ -170,8 +162,7 @@ TEST_CASE("openai responses serialization maps messages and tools")
             .input_json = R"({"path":"main.cpp"})",
         });
     messages.push_back(std::move(assistant));
-    messages.push_back(codeharness::make_tool_result_message(
-        {codeharness::ToolResultBlock{.tool_use_id = "call_1", .content = "file text", .is_error = false}}));
+    messages.push_back(codeharness::make_tool_result_message({codeharness::ToolResultBlock{.tool_use_id = "call_1", .content = "file text", .is_error = false}}));
 
     auto input = codeharness::serialize_openai_input(messages);
     REQUIRE(input.is_array());
@@ -194,7 +185,7 @@ TEST_CASE("openai responses serialization maps messages and tools")
     CHECK(tools.at(0).at("strict") == false);
 }
 
-TEST_CASE("openai responses stream parser handles text tool calls completion and errors")
+TEST_CASE("provider openai responses stream parser handles text tool calls completion and errors")
 {
     codeharness::OpenAIStreamParser parser;
 
@@ -253,7 +244,7 @@ TEST_CASE("openai responses stream parser handles text tool calls completion and
     CHECK(error.error.find("Invalid API key") != std::string::npos);
 }
 
-TEST_CASE("anthropic serialization maps messages tools and system prompt")
+TEST_CASE("provider anthropic serialization maps messages tools and system prompt")
 {
     std::vector<codeharness::Message> messages;
     messages.push_back(codeharness::make_text_message(codeharness::Role::System, "System rules."));
@@ -269,8 +260,7 @@ TEST_CASE("anthropic serialization maps messages tools and system prompt")
             .input_json = R"({"path":"main.cpp"})",
         });
     messages.push_back(std::move(assistant));
-    messages.push_back(codeharness::make_tool_result_message(
-        {codeharness::ToolResultBlock{.tool_use_id = "toolu_1", .content = "file text", .is_error = true}}));
+    messages.push_back(codeharness::make_tool_result_message({codeharness::ToolResultBlock{.tool_use_id = "toolu_1", .content = "file text", .is_error = true}}));
 
     CHECK(codeharness::serialize_anthropic_system(messages) == "System rules.");
 
@@ -291,7 +281,7 @@ TEST_CASE("anthropic serialization maps messages tools and system prompt")
     CHECK(tools.at(0).at("input_schema").at("additionalProperties") == true);
 }
 
-TEST_CASE("anthropic stream parser handles text tool use completion and errors")
+TEST_CASE("provider anthropic stream parser handles text tool use completion and errors")
 {
     codeharness::AnthropicStreamParser parser;
 
@@ -345,16 +335,17 @@ TEST_CASE("anthropic stream parser handles text tool use completion and errors")
     CHECK(error.error.find("bad request") != std::string::npos);
 }
 
-TEST_CASE("sse parser handles order partial chunks comments and multi-line data")
+TEST_CASE("provider sse parser handles order partial chunks comments and multi-line data")
 {
     codeharness::network::SseParser parser;
 
-    auto first = parser.feed(": comment\n"
-                            "event: first\n"
-                            "data: one\n"
-                            "data: two\n\n"
-                            "event: second\n"
-                            "da");
+    auto first = parser.feed(
+        ": comment\n"
+        "event: first\n"
+        "data: one\n"
+        "data: two\n\n"
+        "event: second\n"
+        "da");
     REQUIRE(first.size() == 1);
     CHECK(first.at(0).event == "first");
     CHECK(first.at(0).data == "one\ntwo");
