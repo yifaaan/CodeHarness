@@ -42,7 +42,6 @@ add_subdirectory(prompts)
 add_subdirectory(tasks)
 add_subdirectory(mailbox)
 add_subdirectory(coordinator)
-add_subdirectory(gateway)
 add_subdirectory(engine)
 add_subdirectory(cli)
 
@@ -55,7 +54,6 @@ target_link_libraries(codeharness_core
         codeharness_engine
         codeharness_extensions
         codeharness_foundation
-        codeharness_gateway
         codeharness_hooks
         codeharness_mailbox
         codeharness_memory

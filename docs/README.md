@@ -21,7 +21,7 @@ docs/OpenHarness
 5. `02-tools/design.md` 和 `05-permissions/cpp20-rewrite.md`：理解模型如何调用本地工具，以及如何加安全边界。
 6. `08-mcp/cpp20-rewrite.md`：理解外部工具服务器接入。
 7. `09-memory/cpp20-rewrite.md`、`03-skills/cpp20-rewrite.md`、`04-plugins/cpp20-rewrite.md`：理解上下文、记忆和扩展系统。
-8. `14-ui/cpp20-rewrite.md`：最后理解交互式 TUI 和 ohmo/gateway。
+8. `14-ui/cpp20-rewrite.md`：最后理解交互式 TUI 和可选 ohmo workspace。
 
 ## 文档目录
 
@@ -42,7 +42,7 @@ docs/
   11-coordinator/   多 agent、swarm、mailbox、team lifecycle
   12-prompts/       system prompt 拼装、CLAUDE.md、环境注入
   13-config/        Settings、profile、路径、持久化
-  14-ui/            React TUI 协议、backend-only、ohmo gateway
+  14-ui/            React TUI 协议、backend-only、ohmo workspace
   15-provider/      Anthropic/OpenAI/Copilot/Codex provider 适配
   OpenHarness/      上游源码 submodule
 ```
@@ -92,7 +92,7 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 | skills/plugins/commands/prompts/memory/MCP | 已有 C++ 骨架与 focused tests，可作为后续 runtime 组装材料 |
 | tasks | 已实现 `TaskManager` v1、一次性 `local_agent`、`task_*` 工具和最小 `agent` 工具：后台 shell/agent task、JSON 状态、log、tail、stop、ToolRegistry 接入；stop 采用 request-stop 机制，避免 `reproc::process` 跨线程并发访问 |
 | mailbox/coordinator | 已实现文件系统 Mailbox、`send_message` 工具、TeamLifecycleManager v1、AgentDefinitionLoader v1、AgentDefinitionRegistry v1，以及 SubprocessBackend::spawn 最小版（创建 `local_agent` task 并记录 team membership） |
-| swarm/UI/gateway | 仍处设计阶段；下一步依赖 worker 消息消费、spawn config 与 agent definition 合并逻辑、backend-only UI 协议继续推进 |
+| swarm/UI | 仍处设计阶段；下一步依赖 worker 消息消费、spawn config 与 agent definition 合并逻辑、backend-only UI 协议继续推进 |
 
 与上游 `docs/OpenHarness` 对比，Mailbox、`send_message`、TeamLifecycleManager、AgentDefinitionLoader、AgentDefinitionRegistry 和 SubprocessBackend::spawn 已进入 C++ 第一版；当前最自然的后续实现顺序是：worker 消息消费、spawn config 与 agent definition 合并逻辑、backend-only UI 协议。
 

@@ -131,7 +131,7 @@ OpenHarness 不直接让 engine 操作 UI，而是让 engine 产出事件：
 8. 注册内置工具和 MCP 工具。
 9. 构建 system prompt。
 10. 创建 QueryEngine。
-11. 进入 print mode、TUI mode 或 gateway mode。
+11. 进入 print mode 或 TUI mode。
 
 ## 推荐 C++20 总体模块
 
@@ -196,12 +196,12 @@ src/codeharness/
 - Subprocess subagent。
 - Mailbox 和 team lifecycle。
 
-### 阶段 6：ohmo 和 gateway
+### 阶段 6：coding agent refinement
 
 - ohmo workspace。
-- MessageBus。
-- Channel adapter。
-- Gateway runtime pool。
+- CLI / TUI runtime assembly。
+- session resume 和 permission UX。
+- coding-agent workflow polish。
 
 ## 初学者常见误区
 

@@ -75,9 +75,9 @@ Phases 1-5 have substantial implementations in `src/`. Phase 6 is planned.
 - TaskManager, subprocess subagent
 - Mailbox and team lifecycle
 
-### Phase 6: ohmo and Gateway
-- ohmo workspace, MessageBus, Channel adapter
-- Gateway runtime pool
+### Phase 6: Coding Agent Refinement
+- Runtime assembly for CLI and TUI entrypoints
+- Session resume, permission UX, and coding-agent workflow polish
 
 ## Build & Test
 

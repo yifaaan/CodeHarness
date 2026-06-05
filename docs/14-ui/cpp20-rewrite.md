@@ -1,8 +1,9 @@
-# UI、ohmo、Gateway C++20 重写方案
+# UI and ohmo C++20 rewrite plan
 
-UI 模块负责把 engine 事件展示给用户，并把用户输入、权限确认、选择弹窗传回 runtime。
+The UI layer presents engine events to the user and sends user input,
+permission decisions, and selection responses back to the runtime.
 
-上游关键文件：
+Upstream reference files:
 
 - `docs/OpenHarness/src/openharness/ui/protocol.py`
 - `docs/OpenHarness/src/openharness/ui/backend_host.py`
@@ -10,12 +11,10 @@ UI 模块负责把 engine 事件展示给用户，并把用户输入、权限确
 - `docs/OpenHarness/src/openharness/ui/react_launcher.py`
 - `docs/OpenHarness/frontend/terminal/src/*`
 - `docs/OpenHarness/ohmo/*`
-- `docs/OpenHarness/ohmo/gateway/*`
-- `docs/OpenHarness/src/openharness/channels/*`
 
-## UI 架构
+## UI architecture
 
-上游默认是双进程：
+The upstream default is a two-process shape:
 
 ```text
 React Ink TUI (Node.js)
@@ -25,37 +24,38 @@ Python backend host
   -> QueryEngine
 ```
 
-后端输出事件前缀：
+Backend events use this prefix:
 
 ```text
 OHJSON:{...json...}
 ```
 
-前端发送普通 JSON line。
+Frontend requests are plain JSON lines.
 
-## C++ 建议路线
+## Recommended C++ route
 
-不要第一版重写完整 TUI。建议分两步：
+Do not rewrite the full TUI first. Keep the first step focused on the
+coding-agent runtime path.
 
-### 阶段 A：backend-only 兼容协议
+### Phase A: backend-only protocol
 
-实现：
+Implement:
 
 ```text
 codeharness --backend-only
 ```
 
-它从 stdin 读 JSON request，从 stdout 写 `OHJSON:` event。这样可以复用上游 React TUI，先验证 C++ runtime。
+It reads JSON requests from stdin and writes `OHJSON:` events to stdout. This
+lets the existing React TUI exercise the C++ runtime before native UI work.
 
-### 阶段 B：原生 TUI
+### Phase B: native TUI
 
-核心稳定后再用 `FTXUI` 做原生 TUI。
-
-原生 TUI 只需要消费同一套内部 `StreamEvent`。
+After the runtime and event stream stabilize, implement a native TUI. The
+native TUI should consume the same internal event model as backend-only mode.
 
 ## FrontendRequest
 
-上游请求类型：
+Common upstream request types:
 
 - `submit_line`
 - `permission_response`
@@ -66,7 +66,7 @@ codeharness --backend-only
 - `interrupt`
 - `shutdown`
 
-C++ 结构：
+C++ shape:
 
 ```cpp
 struct FrontendRequest {
@@ -83,7 +83,7 @@ struct FrontendRequest {
 
 ## BackendEvent
 
-常见事件：
+Common events:
 
 - `ready`
 - `state_snapshot`
@@ -119,15 +119,15 @@ private:
 };
 ```
 
-`emit()` 输出：
+`emit()` writes:
 
 ```text
 OHJSON:{json}\n
 ```
 
-## 权限弹窗
+## Permission modal
 
-工具需要确认时，后端发：
+When a tool requires confirmation, the backend emits:
 
 ```json
 {
@@ -141,137 +141,56 @@ OHJSON:{json}\n
 }
 ```
 
-前端回：
+Frontend response:
 
 ```json
 {"type":"permission_response","request_id":"...","allowed":true}
 ```
 
-C++ 后端需要用 pending map 等待 response：
+The C++ backend can keep a pending map while waiting for responses:
 
 ```cpp
 std::unordered_map<std::string, std::promise<bool>> pendingPermissions;
 ```
 
-权限弹窗应串行化，避免多个弹窗同时出现。
+Permission prompts should be serialized so multiple prompts do not appear at
+the same time.
 
 ## ohmo personal agent
 
-ohmo 是基于 OpenHarness runtime 的个人 agent 应用，主要增加：
+ohmo is an optional personal-agent layer on top of the coding-agent runtime.
+For C++, keep it focused on local workspace composition:
 
-- `~/.ohmo` workspace。
-- `soul.md`、`identity.md`、`user.md`。
-- personal memory。
-- gateway 配置。
-- IM channel 接入。
+- `~/.ohmo` workspace.
+- `soul.md`, `identity.md`, and `user.md`.
+- personal memory.
+- a reusable runtime configuration for the local coding agent.
 
-C++ 后续可以做：
+Possible future commands:
 
 ```text
 codeharness-ohmo init
 codeharness-ohmo
-codeharness-ohmo gateway run
 ```
 
-不要一开始实现完整 ohmo。先把核心 runtime 做成可复用，再给 ohmo 注入不同 workspace、prompt、memory backend。
+Do not implement full ohmo first. Make the core runtime reusable, then let ohmo
+inject a different workspace, prompt, and memory backend.
 
-## Gateway 架构
+## First route
 
-Gateway 用于把 Telegram、Slack、Discord、Feishu 等消息接入 agent。
+1. Implement the `--backend-only` JSON Lines protocol.
+2. Use a fake backend to test the React TUI protocol.
+3. Connect the real runtime assembly.
+4. Support permission modals.
+5. Support select commands.
+6. Support session list and resume.
+7. Later, implement the native TUI.
+8. Later, add the local ohmo workspace layer.
 
-上游结构：
+## Test checklist
 
-```text
-Channel adapter
-  -> MessageBus.inbound
-  -> GatewayBridge
-  -> SessionRuntimePool
-  -> RuntimeBundle / QueryEngine
-  -> MessageBus.outbound
-  -> ChannelManager
-  -> channel.send
-```
-
-C++ 结构：
-
-```cpp
-struct InboundMessage {
-    std::string channel;
-    std::string senderId;
-    std::string chatId;
-    std::string content;
-    nlohmann::json metadata;
-};
-
-struct OutboundMessage {
-    std::string channel;
-    std::string chatId;
-    std::string content;
-    nlohmann::json metadata;
-};
-
-class MessageBus {
-public:
-    BlockingQueue<InboundMessage> inbound;
-    BlockingQueue<OutboundMessage> outbound;
-};
-```
-
-## Session key 隔离
-
-远程聊天必须防止不同用户共享上下文。
-
-规则建议：
-
-- 私聊：`channel:chat_id`
-- 群聊：`channel:chat_id:sender_id`
-- 群聊 thread：`channel:chat_id:thread_id:sender_id`
-
-这样同一个群里的不同用户不会共享 agent session。
-
-## Channels
-
-C++ 直接实现所有 IM SDK 成本高。建议：
-
-1. 第一版 gateway 只做本地 HTTP/WebSocket 或 stdio adapter 协议。
-2. 具体 Telegram/Slack/Feishu adapter 可以用外部进程实现。
-3. C++ core 只处理统一 `InboundMessage` / `OutboundMessage`。
-
-如果实现网络 adapter，按你的约束也应统一使用 standalone Asio。
-
-## Remote command 安全
-
-远程消息默认不能执行本地高风险 slash commands。
-
-建议配置：
-
-```json
-{
-  "allow_remote_admin_commands": false,
-  "allowed_remote_admin_commands": []
-}
-```
-
-命令本身也要声明：
-
-- `remoteInvocable`
-- `remoteAdminOptIn`
-
-## 第一版路线
-
-1. 实现 `--backend-only` JSON Lines 协议。
-2. Fake backend 测试 React TUI 协议。
-3. 接入真实 RuntimeBundle。
-4. 支持 permission modal。
-5. 支持 select command。
-6. 支持 session list/resume。
-7. 后续实现 FTXUI 原生 UI。
-8. 最后实现 ohmo workspace 和 gateway。
-
-## 测试清单
-
-- 收到 `submit_line` 后输出 transcript、assistant delta、line complete。
-- permission modal request/response 能 unblock 工具。
-- shutdown 能保存 session 并退出。
-- JSON Lines 半包或无效 JSON 有错误处理。
-- remote command 安全策略生效。
+- Receiving `submit_line` emits transcript, assistant delta, and line complete.
+- Permission modal request/response unblocks tool execution.
+- Shutdown saves the session and exits.
+- Partial JSON Lines input and invalid JSON return structured errors.
+- Session list/resume uses the same runtime/session model as CLI.

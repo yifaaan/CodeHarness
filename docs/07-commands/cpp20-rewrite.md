@@ -98,14 +98,9 @@ Plugin command 与 skill command 类似，但命名带 namespace。
 /security:review
 ```
 
-## Remote command 安全
+## Command 安全
 
-ohmo gateway 允许远程聊天触发命令，但有安全限制。C++ 设计里建议命令带两个字段：
-
-- `remoteInvocable`：远程是否可调用。
-- `remoteAdminOptIn`：是否需要管理员配置显式允许。
-
-高风险命令默认禁止远程调用：
+高风险命令默认只允许在本地 CLI/TUI 会话中触发：
 
 - `/resume`
 - `/diff`
@@ -120,5 +115,5 @@ ohmo gateway 允许远程聊天触发命令，但有安全限制。C++ 设计里
 - alias 能命中。
 - 未知命令返回错误。
 - command 能返回 `submitPrompt` 并进入 QueryEngine。
-- remote 模式拒绝本地敏感命令。
+- 本地会话拒绝敏感命令的危险参数或不安全目标。
 - skill slash command 能替换参数。

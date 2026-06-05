@@ -179,7 +179,7 @@ OpenAI streaming 里 function arguments 可能这样到达：
 
 ## HTTP client 选择
 
-按当前项目约束，网络库统一使用 standalone Asio。Provider、MCP HTTP、后续 gateway 本地网络能力都应复用同一套 `network/` 基础设施。
+按当前项目约束，网络库统一使用 standalone Asio。Provider 和 MCP HTTP 都应复用同一套 `network/` 基础设施。
 
 建议模块：
 

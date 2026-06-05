@@ -1,6 +1,6 @@
 # Tasks C++20 重写方案
 
-Tasks 管理后台运行的 shell 或 agent 任务。它是 subagent、cron、gateway 长任务的基础。
+Tasks 管理后台运行的 shell 或 agent 任务。它是 subagent、cron 和长任务编排的基础。
 
 上游关键文件：
 
