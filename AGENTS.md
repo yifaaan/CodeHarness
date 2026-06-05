@@ -2,7 +2,7 @@
 
 ## Project Description
 
-CodeHarness is a C++20 rewrite of [OpenHarness](https://github.com/HKUDS/OpenHarness) (the `docs/` directory contains detailed design documents). OpenHarness is an agent harness that wraps LLMs into agents capable of working safely — providing model clients, context assembly, a tool system, a permission system, memory, UI, and session management.
+CodeHarness is a C++20 rewrite of [OpenHarness](https://github.com/HKUDS/OpenHarness) (the `docs/` directory contains detailed design documents). OpenHarness is an agent harness that wraps LLMs into agents capable of working safely -- providing model clients, context assembly, a tool system, a permission system, memory, UI, and session management.
 
 Core execution path:
 
@@ -47,7 +47,7 @@ User input
 
 ## Implementation Phases
 
-Phases 1–5 have substantial implementations in `src/`. Phase 6 is planned.
+Phases 1-5 have substantial implementations in `src/`. Phase 6 is planned.
 
 ### Phase 1: Agent Loop
 - CLI: `codeharness -p "prompt"`
@@ -84,7 +84,7 @@ Phases 1–5 have substantial implementations in `src/`. Phase 6 is planned.
 Requires [vcpkg](https://vcpkg.io/) with `VCPKG_ROOT` set. All dependencies are declared in `vcpkg.json`.
 
 ```bash
-# Windows (MSVC — current platform)
+# Windows (MSVC -- current platform)
 cmake --preset windows-msvc
 cmake --build --preset windows-msvc-debug
 ctest --preset windows-msvc-debug
@@ -170,7 +170,7 @@ Test framework: [doctest](https://github.com/doctest/doctest). Tests live in `te
 
 1. **Avoid reinventing the wheel**: If a third-party library already provides stable functionality (e.g., nlohmann/json for parsing, asio for networking, reproc for process management, spdlog for logging), use it directly rather than building an in-house replacement.
 2. **Keep code clear and direct**: Don't pursue over-abstraction. Prefer simple `struct`s + free functions over complex class hierarchies.
-3. **Moderate safety**: The permission system must run before tool execution; sensitive paths must not be bypassable by `full_auto`. But avoid overly strict security — don't introduce unnecessary sandboxes, don't over-sanitize input, don't write defensive code beyond runtime type checking. Trust the type system. Trust the chosen third-party libraries.
+3. **Moderate safety**: The permission system must run before tool execution; sensitive paths must not be bypassable by `full_auto`. But avoid overly strict security -- don't introduce unnecessary sandboxes, don't over-sanitize input, don't write defensive code beyond runtime type checking. Trust the type system. Trust the chosen third-party libraries.
 4. **Unified message model**: All providers convert to the same internal message model; the engine does not depend on any specific provider format.
 5. **Event-driven**: The engine emits events rather than directly manipulating the UI. CLI, TUI, JSON output, and tests all consume the same set of events.
 6. **Tool failure does not crash**: A tool failure becomes `ToolResultBlock{is_error=true}` returned to the model.
