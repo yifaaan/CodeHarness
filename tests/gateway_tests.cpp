@@ -1,8 +1,11 @@
 #include "test_support.h"
 
+#include "codeharness/gateway/message_bus.h"
 #include "codeharness/gateway/runtime_pool.h"
 
 using codeharness::gateway::GatewayInboundMessage;
+using codeharness::gateway::GatewayMessageBus;
+using codeharness::gateway::GatewayMessageQueue;
 using codeharness::gateway::GatewayOutboundMessage;
 using codeharness::gateway::GatewayRuntime;
 using codeharness::gateway::GatewayRuntimeFactory;
@@ -202,4 +205,85 @@ TEST_CASE("gateway runtime pool returns runtime submit failures")
     CHECK(result.error().kind == codeharness::ErrorKind::Provider);
     CHECK(result.error().message == "runtime unavailable");
     CHECK(pool.active_session_count() == 1);
+}
+
+TEST_CASE("gateway message queue pops inbound messages in fifo order")
+{
+    GatewayMessageQueue<GatewayInboundMessage> queue;
+
+    auto first = valid_message("one");
+    auto second = valid_message("two");
+    second.key.conversation_id = "chat-2";
+    queue.push(std::move(first));
+    queue.push(std::move(second));
+
+    CHECK(queue.size() == 2);
+    CHECK(!queue.empty());
+
+    auto popped_first = queue.try_pop();
+    REQUIRE(popped_first.has_value());
+    CHECK(popped_first->text == "one");
+    CHECK(popped_first->key.conversation_id == "chat-1");
+
+    auto popped_second = queue.try_pop();
+    REQUIRE(popped_second.has_value());
+    CHECK(popped_second->text == "two");
+    CHECK(popped_second->key.conversation_id == "chat-2");
+
+    CHECK(queue.try_pop() == std::nullopt);
+    CHECK(queue.empty());
+}
+
+TEST_CASE("gateway message queue drains outbound messages in fifo order")
+{
+    GatewayMessageQueue<GatewayOutboundMessage> queue;
+
+    queue.push(GatewayOutboundMessage{
+        .key = valid_key(),
+        .text = "first",
+    });
+    queue.push(GatewayOutboundMessage{
+        .key = GatewaySessionKey{
+            .channel = "slack",
+            .conversation_id = "thread-1",
+            .user_id = "user-2",
+        },
+        .text = "second",
+        .is_error = true,
+    });
+
+    auto drained = queue.drain();
+    REQUIRE(drained.size() == 2);
+    CHECK(drained.front().text == "first");
+    CHECK(drained.back().text == "second");
+    CHECK(drained.back().is_error);
+    CHECK(queue.empty());
+
+    auto drained_again = queue.drain();
+    CHECK(drained_again.empty());
+}
+
+TEST_CASE("gateway message bus keeps inbound and outbound queues independent")
+{
+    GatewayMessageBus bus;
+
+    bus.inbound().push(valid_message("incoming"));
+    bus.outbound().push(GatewayOutboundMessage{
+        .key = valid_key(),
+        .text = "outgoing",
+    });
+
+    CHECK(bus.inbound().size() == 1);
+    CHECK(bus.outbound().size() == 1);
+
+    auto inbound = bus.inbound().try_pop();
+    REQUIRE(inbound.has_value());
+    CHECK(inbound->text == "incoming");
+    CHECK(bus.inbound().empty());
+    CHECK(bus.outbound().size() == 1);
+
+    auto outbound = bus.outbound().try_pop();
+    REQUIRE(outbound.has_value());
+    CHECK(outbound->text == "outgoing");
+    CHECK(bus.outbound().empty());
 }
