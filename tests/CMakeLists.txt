@@ -24,6 +24,7 @@ add_executable(codeharness_tests
     team_lifecycle_tests.cpp
     test_support.cpp
     tool_tests.cpp
+    ui_backend_tests.cpp
     version_tests.cpp
 )
 target_link_libraries(codeharness_tests PRIVATE codeharness_core doctest::doctest)

@@ -44,6 +44,7 @@ add_subdirectory(mailbox)
 add_subdirectory(coordinator)
 add_subdirectory(engine)
 add_subdirectory(runtime)
+add_subdirectory(ui_backend)
 add_subdirectory(cli)
 
 add_library(codeharness_core INTERFACE)
@@ -65,6 +66,7 @@ target_link_libraries(codeharness_core
         codeharness_runtime
         codeharness_tasks
         codeharness_tools
+        codeharness_ui_backend
 )
 
 add_library(codeharness::core ALIAS codeharness_core)

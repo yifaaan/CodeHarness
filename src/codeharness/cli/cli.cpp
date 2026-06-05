@@ -4,6 +4,7 @@
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/runtime/runtime.h"
+#include "codeharness/ui_backend/ui_backend.h"
 #include "codeharness/version.h"
 
 #include <spdlog/spdlog.h>
@@ -27,11 +28,13 @@ auto run_cli(int argc, char** argv) -> Result<int>
     CLI::App app{"CodeHarness"};
 
     bool show_version = false;
+    bool backend_only = false;
     std::string prompt;
     std::string cwd;
     int max_turns = 10;
 
     app.add_flag("--version", show_version, "Print version and exit");
+    app.add_flag("--backend-only", backend_only, "Run the backend-only JSON Lines protocol");
     app.add_option("-p,--prompt", prompt, "Prompt to run in non-interactive mode");
     app.add_option("--cwd", cwd, "Working directory");
     app.add_option("--max-turns", max_turns, "Maximum number of turns");
@@ -62,7 +65,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
         }
     }
 
-    if (prompt.empty())
+    if (!backend_only && prompt.empty())
     {
         std::cout << app.help() << '\n';
         return 0;
@@ -77,6 +80,18 @@ auto run_cli(int argc, char** argv) -> Result<int>
     if (!runtime_bundle)
     {
         return nonstd::make_unexpected(runtime_bundle.error());
+    }
+
+    if (backend_only)
+    {
+        ui_backend::BackendHost host{**runtime_bundle, std::cin, std::cout, max_turns};
+        auto hosted = host.run();
+        if (!hosted)
+        {
+            return nonstd::make_unexpected(hosted.error());
+        }
+
+        return 0;
     }
 
     if (!prompt.empty() && prompt.front() == '/')
