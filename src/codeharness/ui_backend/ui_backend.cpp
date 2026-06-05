@@ -18,7 +18,7 @@ namespace codeharness::ui_backend
 namespace
 {
 
-constexpr std::string_view BACKEND_EVENT_PREFIX = "CHJSON:";
+constexpr std::string_view BACKEND_EVENT_PREFIX = "OHJSON:";
 
 auto prefixed_json_line(nlohmann::json event) -> std::string
 {

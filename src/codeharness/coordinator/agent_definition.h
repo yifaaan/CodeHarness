@@ -11,26 +11,47 @@
 #include <unordered_map>
 #include <vector>
 
-// AgentDefinitionLoader —— coordinator/swarm 的角色定义加载器
+//==============================================================================
+// agent_definition.h — Agent 定义加载器
 //
-// Coordinator 创建 worker agent 时，需要回答两个问题：
-//   1. 这个 worker 是什么角色？例如 general-purpose、reviewer、tester。
-//   2. 这个角色应该带哪些系统提示、工具限制、模型偏好和技能？
+// 架构角色：配置模型层
+// 职责：定义 AgentDefinition 数据结构、加载选项和注册表。
 //
-// 本模块只负责“把磁盘上的 Markdown agent 定义解析成结构化数据”。
+// 设计原理：
+//   AgentDefinition 描述了一个”agent 角色”的默认配置。它是子 agent 生成时的
+//   模板参数来源。用户可以在 Markdown 文件中编写角色定义：
 //
-// 文件格式使用 Markdown + YAML frontmatter
+//   .agents/reviewer.md:
+//     ---
+//     name: reviewer
+//     description: Review changed C++ files
+//     tools: [read_file, grep, glob]
+//     disallowed_tools: [bash]
+//     model: claude-sonnet-4-6
+//     max_turns: 8
+//     ---
+//     You are a careful C++ reviewer...
 //
-//   ---
-//   name: reviewer
-//   description: Review changed C++ files
-//   tools: [read_file, grep, glob]
-//   disallowed_tools: [bash]
-//   model: claude-sonnet-4-6
-//   max_turns: 8
-//   skills: [review]
-//   ---
-//   You are a careful C++ reviewer...
+//   当主 agent 调用 agent tool 并指定 subagent_type=”reviewer” 时，
+//   coordinator 会：
+//   1. 从 registry 找到 reviewer 定义
+//   2. 将其字段作为”默认值”填充到 spawn config 中
+//   3. 主 agent 显式传入的参数（如 prompt）会覆盖定义中的默认值
+//
+// 加载优先级（后注册覆盖先注册）：
+//   1. 默认用户目录 ~/.codeharness/agents/（最低优先级）
+//      ~/.openharness/agents/
+//      ~/.claude/agents/
+//      ~/.agents/agents/
+//   2. user_agent_dirs（用户指定的额外目录）
+//   3. extra_agent_dirs（运行时传递的额外目录）
+//   4. project agent 目录（项目级定义，最高优先级）
+//      从 cwd 开始向上查找直到 git 根目录
+//
+//   为什么后注册覆盖先注册？
+//     registry 内部用 unordered_map，”同 name 覆盖”是自然行为。
+//     用户级代理应该优先于系统级，项目级应该优先于用户级。
+//==============================================================================
 
 namespace codeharness::coordinator
 {

@@ -1,3 +1,30 @@
+//==============================================================================
+// spawn_config.cpp — Agent spawn 配置解析
+//
+// 核心函数 resolve_spawn_config 的完整算法：
+//
+//   输入：TeammateSpawnConfig + AgentDefinitionRegistry + agent_type
+//
+//   1. agent_type 为空 → 不需要解析定义，直接返回 config（原样）
+//   2. agent_type 非空 → 从 registry 查找对应的 AgentDefinition
+//   3. apply_agent_definition(config, definition)：
+//      逐一检查 config 中的字段，如果为空则使用 definition 中的值填充。
+//
+//   覆盖规则（definition 字段作为"默认值"，config 字段优先）：
+//     - name: 如果 config.name 为空，使用 definition.name
+//     - model: 如果 config.model 为空且 definition.model 存在，使用
+//     - system_prompt: 如果 config.system_prompt 为空，使用 definition 的
+//     - tools/permissions: definition 和 config 的合并（append_unique）
+//     - skills: definition 的 skills 在前，config 的 skills 在后（append_unique）
+//     - agent_definition: 自动设置为 definition.name，用于溯源
+//
+//   为什么需要 apply_agent_definition？
+//     如果用显式参数（prompt/model/tools）创建子 agent，不需要 definition。
+//     如果用类型名（subagent_type = "write-tui"）创建，则需要查找定义文件
+//     并应用其默认值。这样用户可以在 .agents/**/*.md 中定义 agent 模板，
+//     然后在 prompt 中只需引用类型名即可。
+//==============================================================================
+
 #include "codeharness/coordinator/spawn_config.h"
 
 #include "codeharness/core/strings.h"

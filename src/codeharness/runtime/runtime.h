@@ -1,3 +1,39 @@
+//==============================================================================
+// runtime.h — RuntimeBundle（运行时包）
+//
+// 架构角色：系统组装层
+// 职责：将 engine、tool、skill、coordinator、memory、permission 等全部
+//       子系统组装成一个可用的运行时包。这是 monte（main）函数直接使用的
+//       最高层抽象。
+//
+// RuntimeBundle 拥有的子系统：
+//   SkillRegistry       — 技能注册表（slash commands 和 agent skills）
+//   MemoryStore         — 记忆存储（持久化的用户/项目记忆）
+//   CommandRegistry     — 命令注册表（/help, /skills, /model 等）
+//   ToolRegistry        — 工具注册表（LLM 可调用的 bash/read/edit 等）
+//   CoordinatorRuntime  — coordinator（子 agent 管理）
+//   PermissionChecker   — 权限检查器
+//   Engine              — LLM 交互引擎
+//
+// 设计原理：
+//   这是典型的"组合根"（Composition Root）模式——在应用启动时一次性
+//   创建所有依赖项，而不是让每个组件自行发现依赖。create_runtime_bundle
+//   就是组装工厂：
+//     1. 加载 skills（技能 + 插件）
+//     2. 创建 memory store
+//     3. 创建 coordinator runtime
+//     4. 构造 ToolRegistry（工具 + coordinator 工具 + mailbox 工具）
+//     5. 构造 CommandRegistry（内置命令）
+//     6. 构造 PermissionChecker
+//     7. 构造 Engine（LLM 调用循环）
+//
+//   两个主要操作：
+//     build_run_request  — 构造 RunRequest（系统提示词 + 用户提示词）
+//     run_prompt         — 执行一次完整的 prompt → LLM → tool_use → 结果
+//
+//   运行时包被设计为不可复制、不可移动。其生命周期从创建到进程结束。
+//==============================================================================
+
 #pragma once
 
 #include "codeharness/commands/command_registry.h"

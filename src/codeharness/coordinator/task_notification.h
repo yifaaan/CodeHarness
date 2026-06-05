@@ -5,10 +5,30 @@
 
 #include <string>
 
-// task_notification.h — worker 完成任务后发给 coordinator 的结果信封
+//==============================================================================
+// task_notification.h — agent 任务结果的通知格式
 //
-// 上游 prompt 使用 <task-notification> XML 包装 worker 结果。这里保留这个
-// 轻量格式，方便 coordinator 把 task_result mailbox 消息直接注入对话上下文。
+// 架构角色：消息格式层
+// 职责：定义子 agent 完成任务后，通过 mailbox 发送给 coordinator 的
+//       结果信封格式。使用 XML 序列化以便于 LLM 解析。
+//
+// 设计原理：
+//   当子 agent 完成任务后，它把结果写成 <task-notification> XML 消息，
+//   发送到 coordinator 的 mailbox。coordinator 在下一轮 drain mailbox 时
+//   收到这个 XML，可以直接注入到主 agent 的对话上下文中。
+//
+//   XML 格式（而非 JSON）的选择原因：
+//   上游 prompt 模板使用 XML 标签体系嵌入上下文（如 <task-notification>、
+//   <permission-result> 等）。LLM 对这些 XML 标签的识别更可靠。
+//   使用相同的 XML 格式意味着 coordinator 可以直接把 mailbox 消息内容
+//   原样粘贴到对话中，无需格式转换。
+//
+// 数据结构：
+//   TaskNotification:
+//     task_id  — 任务标识
+//     status   — 任务状态（completed/failed/killed）
+//     summary  — 任务摘要（用于快速预览）
+//     result   — 完整结果内容（通常是子 agent 的最终输出）
 
 namespace codeharness::coordinator
 {

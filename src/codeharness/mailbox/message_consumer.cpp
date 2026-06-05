@@ -1,3 +1,21 @@
+//==============================================================================
+// message_consumer.cpp — Mailbox 消息消费实现
+//
+// drain_worker_mailbox 的完整操作序列：
+//   1. mailbox.poll(worker_id, mark_read=false)：扫描 inbox 获取所有未读消息
+//   2. 对每条消息：mailbox.mark_read(id, message_id) → 标记已读
+//   3. 按 MessageType 分类放入 WorkerMailboxDrain 的对应字段
+//
+// 为什么分两步（poll + mark_read）而不是一步"读取并标记"？
+//   因为 mailbox 层的设计原则是"底层接口语义最小化"——poll 只做读，
+//   mark_read 只做标记，组合成 drain 是 consumer 层的责任。
+//   这样 mailbox 层可以被不同的消费策略复用（例如"先预览再确认"）。
+//
+// 注意：如果在 mark_read 和分类之间进程崩溃，已读的消息在重启后
+// 不会被二次消费（poll 返回的是未读消息）。这是"至少一次"语义——
+// 消息最多丢，不会重复处理。
+//==============================================================================
+
 #include "codeharness/mailbox/message_consumer.h"
 
 #include <nonstd/expected.hpp>

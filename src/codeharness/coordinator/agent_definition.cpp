@@ -1,3 +1,34 @@
+//==============================================================================
+// agent_definition.cpp — Agent 定义加载器
+//
+// 架构角色：配置加载层
+// 职责：从 .md 文件中加载 AgentDefinition（agent 配置模板），支持通过
+//       YAML frontmatter 和 Markdown body 描述一个子 agent 的默认行为。
+//
+// 设计原理：
+//   每个 agent 定义是一个 Markdown 文件（如 .agents/skills/write-tui/SKILL.md）。
+//   文件结构：
+//     ---
+//     name: write-tui
+//     description: Builds terminal UI components
+//     model: sonnet
+//     tools: [read, edit, bash]
+//     ---
+//     System prompt body here...
+//
+//   frontmatter 中的字段会被 parse_agent_definition_markdown 提取为
+//   AgentDefinition 结构体。body 内容成了 system_prompt。
+//
+// 调用位置优先级（以覆盖顺序排列）：
+//   1. 用户级目录：~/.codeharness/agents/*.md（最后加载，同等 name 覆盖
+//      前面加载的，但注意 load 是 append，registry 是 map 替换）
+//   2. 项目级目录：.agents/**/*.md（遍历 cwd 到 git root）
+//   3. 额外目录：options.extra_agent_dirs
+//
+// 命名冲突处理：AgentDefinitionRegistry::register_agent 使用 map，后注册的
+// 覆盖先注册的。所以用户级 > 项目级。
+//==============================================================================
+
 #include "codeharness/coordinator/agent_definition.h"
 
 #include "codeharness/core/paths.h"

@@ -1,3 +1,25 @@
+//==============================================================================
+// cli.cpp — CodeHarness CLI 入口
+//
+// 架构角色：应用入口
+// 职责：解析命令行参数，初始化运行时，选择运行模式（交互式 /
+//       非交互式 / backend-only），执行 prompt。
+//
+// 运行模式：
+//   1. --version：打印版本号后退出
+//   2. --backend-only：JSON Lines 协议模式，通过 stdin/stdout 与 UI 通信
+//   3. --prompt "..."：非交互式模式，执行单条 prompt 后退出
+//   4. 无参数（交互式）：打印帮助后退出（TUI 交互由前端实现）
+//
+// 启动流程：
+//   1. 初始化日志（init_logger）
+//   2. 切换工作目录（--cwd）
+//   3. 创建 RuntimeBundle（组装所有子系统）
+//   4. 根据 --backend-only 选择不同路由：
+//      a. backend-only → BackendHost::run()
+//      b. slash command → execute_slash_command()
+//      c. 普通 prompt → run_prompt()
+//   5. EngineEvent 通过 lambda 回调处理（流式输出到终端）
 #include "codeharness/cli/cli.h"
 
 #include "codeharness/commands/command_registry.h"

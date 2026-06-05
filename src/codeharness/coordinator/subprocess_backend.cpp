@@ -1,6 +1,28 @@
+//==============================================================================
+// subprocess_backend.cpp — 子进程后端
+//
+// 架构角色：process spawn 层
+// 职责：将 TeammateSpawnConfig 转化为实际的子进程创建操作。这是
+//       coordinator 中"干活"的部分——前面都是配置解析和校验，到这里
+//       才真正创建 task 和注册 team member。
+//
+// 设计原理：
+//   SubprocessBackend 本身不启动子进程——它调用 TaskManager::create_agent_task
+//   让 TaskManager 去创建和启动。Backend 只负责：
+//   1. 验证 config（名称、team、prompt 不能为空）
+//   2. 规范名称（normalized_agent_name/team_name）
+//   3. 将 config 中的所有可选项序列化为 metadata map（用于 JSON 持久化）
+//   4. 调用 TaskManager 创建 agent 任务
+//   5. 将 agent 注册为 team 成员
+//
+//   为什么叫"Backend"？因为未来可能支持其他 spawn 方式（如 Docker
+//   容器、SSH 远程等），通过不同的 Backend 实现。但目前只有 subprocess。
+//==============================================================================
+
 #include "codeharness/coordinator/subprocess_backend.h"
 
 #include "codeharness/coordinator/spawn_config.h"
+
 #include "codeharness/core/strings.h"
 
 #include <fmt/ranges.h>

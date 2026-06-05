@@ -1,3 +1,31 @@
+//==============================================================================
+// runtime.cpp — CoordinatorRuntime 实现
+//
+// 包含了 spawn_agent 的完整流程：
+//
+//   LLM 调用 "agent" tool
+//          ↓
+//   AgentTool::execute()
+//          ↓
+//   spawn_handler (= CoordinatorRuntime::spawn_agent)
+//          ↓
+//   1. 验证 mode == "local_agent"
+//   2. 构建 TeammateSpawnConfig
+//   3. resolve_spawn_config() ← 应用 agent definition
+//   4. ensure_team_exists()   ← 确保目标团队存在
+//   5. subprocess_backend_.spawn() ← 创建子进程任务
+//   6. 查询 TaskRecord
+//   7. 返回 AgentSpawnResponse
+//          ↓
+//   CoordinatorRuntime::publish_task_result
+//          收集子 agent 的输出 → 封装 <task-notification> XML →
+//          发送到 coordinator mailbox
+//
+// CoordinatorRuntime 的"双重身份"：
+//   - 对上层（RuntimeBundle）：它提供 spawn_agent / drain_mailbox / publish
+//   - 对下层（子 agent）：它的 mailbox 接收子 agent 发来的结果
+//==============================================================================
+
 #include "codeharness/coordinator/runtime.h"
 
 #include "codeharness/coordinator/spawn_config.h"

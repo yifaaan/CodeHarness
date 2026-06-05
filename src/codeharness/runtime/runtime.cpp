@@ -1,3 +1,31 @@
+//==============================================================================
+// runtime.cpp — RuntimeBundle 实现
+//
+// 这部分的核心逻辑在 RuntimeBundle 的构造函数和 create_runtime_bundle
+// 工厂函数中。构造时的关键细节：
+//
+//   1. create_command_registry — 构建内置命令（slash commands）
+//      这些命令包括 /help, /skills, /model, /clear 等。
+//      SkillRegistry 中的每个 skill 也可能注册自己的命令。
+//
+//   2. create_tool_registry — 构建 LLM 可调用工具
+//      这是 LLM agent 的核心能力来源：
+//      - 文件操作：ReadFileTool, EditFileTool, GlobTool, GrepTool
+//      - 命令执行：BashTool
+//      - 技能调用：SkillTool
+//      - 任务管理：task_create, task_list, task_get, task_output, task_stop
+//      - 子 agent：agent tool（通过 register_task_tools 注入 spawn_handler）
+//      - 消息：mailbox tools（register_mailbox_tools）
+//
+//   3. load_relevant_memories_for_prompt — 记忆检索
+//      在构建 prompt 时，从 memory store 中检索与当前提示词相关的记忆。
+//      这些记忆以 <relevant-memories> XML 标签嵌入系统提示词。
+//
+//   4. build_run_request — 构造完整请求
+//      合并系统提示词 + 项目上下文文件 + 相关记忆 + 可用 skill 列表
+//      + 可用命令列表 → 形成完整的 RunRequest，交给 Engine 执行。
+//==============================================================================
+
 #include "codeharness/runtime/runtime.h"
 
 #include "codeharness/mailbox/mailbox_tools.h"

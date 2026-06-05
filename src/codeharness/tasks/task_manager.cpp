@@ -1,3 +1,42 @@
+//==============================================================================
+// task_manager.cpp — 任务管理系统
+//
+// 架构角色：核心服务层
+// 职责：管理子进程（subprocess）的创建、执行、监控、生命周期。
+//       它是 CodeHarness 中 agent spawning 体系的最底层基础设施。
+//
+// 核心概念：
+//   1. TaskRecord（任务记录）—— 持久化到磁盘 JSON 文件的任务状态快照。
+//      每次状态变更后写回文件，保证进程重启后能从磁盘恢复。
+//   2. TaskState（运行时状态）—— 进程运行时内存中的状态，包含：
+//       - record: 当前记录
+//       - process: reproc 子进程句柄
+//       - worker: 后台监视线程
+//       - stop_requested: atomic 标志，实现"协作者请求停止 → worker 自行处理"
+//   3. 线程模型：
+//       - 调用方线程：创建任务、读取状态、请求停止
+//       - worker 线程：独占 process->poll/read/wait/kill 操作
+//       - 使用 mutex 保护 tasks map，使用 atomic 跨线程传递停止信号
+//
+// 设计原理：
+//   - worker 线程独立 poll：子进程的 stdout 被管道捕获，worker 线程
+//     以 50ms 间隔 poll，将输出写入 .log 文件。这样调用方不必阻塞等待。
+//   - stop_requested atomic：调用方不直接调用 process->kill()，而是
+//     设置 atomic 标志让 worker 线程自行 kill+wait。这避免了竞态——
+//     worker 正在 poll 时如果调用方 kill+wait，会产生双重 wait 或
+//     管道读取混乱。
+//   - 幂等停止：如果任务已自然结束（Completed/Failed），stop_task()
+//     直接返回当前状态，不再标记 Killed。
+//   - 持久化在锁外执行：update_record 在锁内生成快照，然后解锁再写文件，
+//     避免磁盘 I/O 长锁阻塞整个 tasks map。
+//   - TaskManager 析构时会清理所有 running 任务：先标记 Killed，再请求
+//     stop，最后 join 所有 worker 线程。
+//
+// 新人提示：这是整个项目中最"传统"的系统编程代码——多线程、进程管理、
+// 文件 I/O。其他模块（coordinator/task_tools）在此基础上提供更高级的
+// agent 抽象。理解这里的线程模型是理解 agent spawn 的关键。
+//==============================================================================
+
 #include "codeharness/tasks/task_manager.h"
 
 #include <fmt/format.h>
@@ -36,10 +75,16 @@ namespace codeharness::tasks
 namespace
 {
 
+// worker 线程每次从进程管道读取的块大小（4KB）
 constexpr std::size_t kProcessReadChunkSize = 4096;
 constexpr auto kTaskRecordExtension = ".json";
 constexpr auto kTaskLogExtension = ".log";
 
+// 根据任务类型生成 ID 前缀字符：
+//   'b' = local_bash（本地 shell 命令）
+//   'a' = local_agent（本地子 agent 进程）
+//   'r' = remote_agent（预留，未来支持远程 agent）
+// 后续拼接 4 字节随机十六进制，形成唯一 ID（如 "a3f7a1b2"）
 auto task_prefix(TaskType type) -> char
 {
     switch (type)
@@ -52,6 +97,11 @@ auto task_prefix(TaskType type) -> char
     return 't';
 }
 
+// generate_task_id —— 生成唯一任务 ID
+//
+// 原理：1 字节类型前缀 + 4 字节随机数 → 9 字符 ASCII 字符串。
+// 使用 std::random_device（真随机数生成器）而非伪随机，
+// 避免长时间运行后的 ID 碰撞概率升高。
 auto generate_task_id(TaskType type) -> std::string
 {
     std::array<unsigned int, 4> bytes{};
@@ -317,6 +367,17 @@ auto default_task_root() -> Result<std::filesystem::path>
     return *data_dir / "tasks";
 }
 
+// TaskManager::Impl（PIMPL 模式）
+//
+// PIMPL（Pointer to Implementation）是 C++ 惯用设计模式：
+// 将实现细节放到 .cpp 文件的私有 impl 类中，头文件只暴露不完整类型指针。
+// 好处：
+//   1. 编译期隔离——头文件改 Impl 细节不触发依赖者重编译
+//   2. 实现隐藏——TaskState 等内幕完全对调用方不可见
+//   3. 接口稳定——公共头文件只需前向声明、不暴露内部 include
+//
+// 代价：所有成员访问多一层指针间接。但在 agent runtime 这种启动一次、
+// 持续运行的场景中，这层间接完全可以接受。
 struct TaskManager::Impl
 {
     explicit Impl(std::filesystem::path root_path) : root{std::move(root_path)}
@@ -331,6 +392,11 @@ struct TaskManager::Impl
     Impl(const Impl&) = delete;
     auto operator=(const Impl&) -> Impl& = delete;
 
+    // persist —— 将 TaskRecord 持久化到磁盘 JSON 文件
+    //
+    // 路径：{root}/{task_id}.json
+    // 用 atomic_write_text_file（先写临时文件再 rename）保证写入原子性，
+    // 避免进程崩溃时产生半写文件。
     auto persist(const TaskRecord& record) const -> Result<void>
     {
         const nlohmann::json record_json = record;
@@ -343,6 +409,14 @@ struct TaskManager::Impl
         return {};
     }
 
+    // update_record —— 线程安全地更新任务状态
+    //
+    // 参数 update 是一个泛型 lambda/函数，接受 TaskRecord&，在里面做修改。
+    // 步骤：
+    //   1. 加锁找到对应的 TaskState
+    //   2. 在锁内执行 update(record) 修改内存状态
+    //   3. 取出快照后释放锁
+    //   4. 在锁外执行文件持久化（避免 I/O 延迟阻塞其他 task 操作）
     auto update_record(std::string_view id, const auto& update) -> Result<TaskRecord>
     {
         TaskRecord snapshot;
@@ -386,6 +460,10 @@ struct TaskManager::Impl
         return std::optional<TaskRecord>{std::move(*record)};
     }
 
+    // join_task —— 等待 worker 线程结束
+    //
+    // 注意：锁内只移动 worker thread，解锁后在实际调用线程上 join。
+    // 这样不会在持锁时阻塞（join 可能等很久）。
     auto join_task(std::string_view id) -> Result<void>
     {
         std::thread worker;
@@ -517,6 +595,26 @@ auto TaskManager::root() const -> const std::filesystem::path&
     return impl_->root;
 }
 
+// === TaskManager 对外开放接口 ==============================================
+
+// create_shell_task —— 创建并启动一个 shell 子进程任务
+//
+// 完整流程：
+//   1. 确保任务目录存在
+//   2. 解析工作目录为绝对路径（canonical_directory）
+//   3. 解析命令或 argv（argv_for_spec）
+//   4. 生成唯一 task ID（首字符按类型区分，避免跨类型碰撞）
+//   5. 创建空输出 .log 文件
+//   6. 构造 TaskRecord（初始状态 Running）
+//   7. 启动 reproc 子进程（管道重定向 stdout+stderr）
+//   8. 持久化 TaskRecord 到 JSON 文件
+//   9. 注册到 in-memory tasks map
+//  10. 创建 worker 线程开始轮询子进程输出
+//
+// 关键设计决策：worker 线程为何不直接用阻塞 read？
+//   因为我们需要同时监听 process exit 和管道可读两种事件。
+// reproc::poll 支持 select-like 的多事件等待（out | exit），
+// 而阻塞 read 无法区分"进程结束"和"管道暂时无数据"。
 auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRecord>
 {
     if (auto mkdir = ensure_directory(impl_->root, "task directory"); !mkdir)
@@ -627,6 +725,20 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
         std::scoped_lock lock{impl_->mutex};
         auto& state = impl_->tasks.at(worker_id);
         state.worker = std::thread{[impl, worker_id, worker_root] {
+            // === worker 线程 ===
+            // 这个 lambda 在一个独立线程中运行，生命周期等于子进程生命周期。
+            // 职责：
+            //   1. 以 50ms 间隔 poll 子进程（out / exit 事件）
+            //   2. 将 stdout 输出附加写入 .log 文件
+            //   3. 检查 stop_requested，收到后执行 kill+wait
+            //   4. 进程退出后更新 TaskRecord 为 Completed/Failed
+            //   5. 清理 process 指针（重置 unique_ptr）
+            //
+            // 线程安全约定：
+            //   - 读取 process/stop_flag：在锁内抓取原始指针，后续都在锁外使用
+            //   - 写 tasks map：通过 Impl::update_record（内部加锁）
+            //   - process->kill() 等操作只在 worker 线程调用。调用方线程只设
+            //     stop_requested atomic，绝不碰 process 指针。
             auto output = std::ofstream{output_path_for(worker_root, worker_id), std::ios::binary | std::ios::app};
             if (!output)
             {
@@ -651,8 +763,12 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
             bool was_killed = false;
             while (true)
             {
+                // 步骤 A：检查停止请求
                 // 在 poll 之前检查 stop_requested。如果调用方设置了该标志，
-                // 由 worker 线程（而非调用方线程）执行 process->kill()
+                // 由 worker 线程（而非调用方线程）执行 process->kill()。
+                // memory_order_acquire 保证看到调用方 store(..., release)
+                // 之前的所有写入——即 stop_requested=true 时，调用方对
+                // tasks map 的修改也已可见。
                 if (stop_flag->load(std::memory_order_acquire))
                 {
                     // 在 kill 之前尽量刷出管道中缓冲的输出
@@ -669,6 +785,12 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
                     break;
                 }
 
+                // 步骤 B：轮询子进程事件
+                // reproc::poll 同时监听两种事件：
+                //   - out: stdout 可读（有新增输出）
+                //   - exit: 子进程已退出
+                // 超时 50ms，让 worker 线程可以及时响应 stop_requested。
+                // 如果只阻塞 read，stop_requested 可能延迟很久才被检查。
                 auto [events, poll_error] = process->poll(reproc::event::out | reproc::event::exit, reproc::milliseconds{50});
                 if (poll_error)
                 {
@@ -732,6 +854,20 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
     return record_snapshot;
 }
 
+// create_agent_task —— 创建 agent 子进程任务
+//
+// Agent 任务本质上是特殊的 shell 任务：启动一个新的 codeharness 实例
+// 作为子 agent。关键逻辑：
+//   1. 使用 prompt 而非 command——子 agent 接收的是自然语言指令
+//   2. 如果未指定 command/argv，使用 default_agent_argv 构造默认参数：
+//      codeharness -p "<prompt>" --cwd "<cwd>"
+//   3. model 等信息存入 metadata，不作为直接参数（由子 agent 自行解析）
+//   4. 类型固定为 TaskType::LocalAgent
+//
+// 为什么用 subprocess 实现 agent spawn？
+//   这是"进程级隔离"的方式。每个 agent 运行在独立子进程中，拥有自己的
+//   内存空间。如果有子 agent 崩溃，不会影响主 agent。代价是启动成本
+//   稍高（约 50-100ms），但对于 coding agent 的长时间运行场景可接受。
 auto TaskManager::create_agent_task(const AgentTaskSpec& spec) -> Result<TaskRecord>
 {
     const auto prompt = std::string{trim(spec.prompt)};

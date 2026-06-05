@@ -659,6 +659,23 @@ AgentTool::AgentTool(TaskManager& manager) : manager_{manager}
 {
 }
 
+// AgentTool —— "agent" tool 的实现
+//
+// 这是 LLM 调用 spawn agent 的入口。有两种运行模式：
+//
+// 模式 A（有 spawn_handler）：
+//   调用 CoordinatorRuntime::spawn_agent → 走完整 coordinator 流程
+//   （应用 agent definition、创建 team、注册成员等）。
+//   这是 agent farm 场景（主 agent 生成子 agent）。
+//
+// 模式 B（无 spawn_handler）：
+//   直接调用 TaskManager::create_agent_task，跳过 coordinator。
+//   这是简化场景（例如用户手动创建 agent 任务）。
+//
+// 为什么两种模式都存在？
+//   权限分离：task_tools 单独编译时不知道 coordinator 的存在。
+//   register_task_tools 的第二个重载接收 spawn_handler，在 runtime
+//   初始化时由 runtime.cpp 注入。
 AgentTool::AgentTool(TaskManager& manager, AgentSpawnHandler spawn_handler)
     : manager_{manager}
     , spawn_handler_{std::move(spawn_handler)}
