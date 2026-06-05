@@ -1,6 +1,8 @@
 codeharness_add_static_module(codeharness_gateway
+    bridge.cpp
     message_bus.cpp
     runtime_pool.cpp
+    stdio_adapter.cpp
 )
 
 target_link_libraries(codeharness_gateway
