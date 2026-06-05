@@ -36,7 +36,9 @@ find_package(date CONFIG REQUIRED)
 find_package(expected-lite CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(Glob CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS beast url)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(pugixml CONFIG REQUIRED)
 find_package(re2 CONFIG REQUIRED)
 find_package(reproc++ CONFIG REQUIRED)
@@ -49,7 +51,12 @@ find_package(llhttp CONFIG REQUIRED)
 add_library(codeharness_options INTERFACE)
 target_include_directories(codeharness_options INTERFACE "${PROJECT_SOURCE_DIR}/src")
 target_compile_features(codeharness_options INTERFACE cxx_std_20)
-target_compile_definitions(codeharness_options INTERFACE "CODEHARNESS_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\"")
+target_compile_definitions(codeharness_options INTERFACE
+    "CODEHARNESS_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\""
+    $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0A00>
+    $<$<PLATFORM_ID:Windows>:NOMINMAX>
+    $<$<PLATFORM_ID:Windows>:WIN32_LEAN_AND_MEAN>
+)
 
 add_subdirectory(src)
 

@@ -54,12 +54,20 @@ auto run_cli(int argc, char** argv) -> Result<int>
     std::string prompt;
     std::string cwd;
     int max_turns = 10;
+    std::string provider_type = "echo";
+    std::string model;
+    std::string api_key;
+    std::string base_url;
 
     app.add_flag("--version", show_version, "Print version and exit");
     app.add_flag("--backend-only", backend_only, "Run the backend-only JSON Lines protocol");
     app.add_option("-p,--prompt", prompt, "Prompt to run in non-interactive mode");
     app.add_option("--cwd", cwd, "Working directory");
     app.add_option("--max-turns", max_turns, "Maximum number of turns");
+    app.add_option("--provider", provider_type, "Provider type: echo (default), openai, anthropic");
+    app.add_option("--model", model, "Model name (provider default when omitted)");
+    app.add_option("--api-key", api_key, "API key (defaults to OPENAI_API_KEY or ANTHROPIC_API_KEY env var)");
+    app.add_option("--base-url", base_url, "API base URL");
 
     try
     {
@@ -93,11 +101,38 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return 0;
     }
 
+    // Resolve API key from CLI arg or environment variable.
+    if (api_key.empty())
+    {
+        if (provider_type == "openai")
+        {
+            auto* env_key = std::getenv("OPENAI_API_KEY");
+            if (env_key)
+            {
+                api_key = env_key;
+            }
+        }
+        else if (provider_type == "anthropic")
+        {
+            auto* env_key = std::getenv("ANTHROPIC_API_KEY");
+            if (env_key)
+            {
+                api_key = env_key;
+            }
+        }
+    }
+
     auto runtime_bundle = runtime::create_runtime_bundle(
         runtime::RuntimeBundleOptions{
             .cwd = std::filesystem::current_path(),
             .permission_mode = PermissionMode::Default,
             .load_default_user_plugins = true,
+            .provider_config = ProviderConfig{
+                .type = provider_type,
+                .model = model,
+                .api_key = api_key,
+                .base_url = base_url,
+            },
         });
     if (!runtime_bundle)
     {

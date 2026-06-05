@@ -43,7 +43,7 @@
 #include "codeharness/memory/memory_store.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/plugins/plugin_loader.h"
-#include "codeharness/provider/echo_provider.h"
+#include "codeharness/provider/provider_config.h"
 #include "codeharness/skills/skill_loader.h"
 #include "codeharness/skills/skill_registry.h"
 #include "codeharness/tools/tool_registry.h"
@@ -62,6 +62,7 @@ struct RuntimeBundleOptions
     std::filesystem::path memory_root;
     PermissionMode permission_mode = PermissionMode::Default;
     bool load_default_user_plugins = true;
+    ProviderConfig provider_config;
 };
 
 class RuntimeBundle
@@ -71,7 +72,9 @@ public:
                   PermissionMode permission_mode,
                   SkillRegistryLoadResult loaded_skills,
                   memory::MemoryStore memory_store,
-                  std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime);
+                  std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
+                  ToolRegistry tools,
+                  std::unique_ptr<Provider> provider);
 
     RuntimeBundle(const RuntimeBundle&) = delete;
     auto operator=(const RuntimeBundle&) -> RuntimeBundle& = delete;
@@ -102,7 +105,7 @@ private:
     std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime_;
     ToolRegistry tools_;
     PermissionChecker permissions_;
-    EchoProvider provider_;
+    std::unique_ptr<Provider> provider_;
     Engine engine_;
 };
 

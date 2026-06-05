@@ -1,4 +1,5 @@
 add_subdirectory(core)
+add_subdirectory(network)
 add_subdirectory(provider)
 add_subdirectory(permissions)
 add_subdirectory(hooks)
@@ -57,6 +58,7 @@ target_link_libraries(codeharness_core
         codeharness_extensions
         codeharness_foundation
         codeharness_hooks
+        codeharness_network
         codeharness_mailbox
         codeharness_memory
         codeharness_mcp

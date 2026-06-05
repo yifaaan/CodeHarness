@@ -29,6 +29,9 @@
 #include "codeharness/runtime/runtime.h"
 
 #include "codeharness/mailbox/mailbox_tools.h"
+#include "codeharness/provider/anthropic_provider.h"
+#include "codeharness/provider/echo_provider.h"
+#include "codeharness/provider/openai_provider.h"
 #include "codeharness/prompts/project_context.h"
 #include "codeharness/prompts/system_prompt.h"
 #include "codeharness/skills/skill_loader.h"
@@ -110,17 +113,19 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
                              PermissionMode permission_mode,
                              SkillRegistryLoadResult loaded_skills,
                              memory::MemoryStore memory_store,
-                             std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime) :
+                             std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
+                             ToolRegistry tools,
+                             std::unique_ptr<Provider> provider) :
     cwd_{std::move(cwd)},
     permission_mode_{permission_mode},
     loaded_skills_{std::move(loaded_skills)},
     memory_store_{std::move(memory_store)},
     commands_{create_command_registry(loaded_skills_.registry, memory_store_, loaded_skills_.plugins)},
     coordinator_runtime_{std::move(coordinator_runtime)},
-    tools_{create_tool_registry(loaded_skills_.registry, *coordinator_runtime_)},
+    tools_{std::move(tools)},
     permissions_{PermissionSettings{.mode = permission_mode_}},
-    provider_{},
-    engine_{provider_, tools_, &permissions_}
+    provider_{std::move(provider)},
+    engine_{*provider_, tools_, &permissions_}
 {
 }
 
@@ -232,6 +237,47 @@ auto create_memory_store(const std::filesystem::path& cwd, const std::filesystem
     return memory::MemoryStore::for_project(cwd, memory_root);
 }
 
+auto tool_descriptions_from(const ToolRegistry& tools) -> std::vector<std::pair<std::string, std::string>>
+{
+    std::vector<std::pair<std::string, std::string>> descriptions;
+    for (const auto& name : tools.names())
+    {
+        if (const auto* tool = tools.find(name))
+        {
+            descriptions.emplace_back(name, tool->description());
+        }
+    }
+    return descriptions;
+}
+
+auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) -> Result<std::unique_ptr<Provider>>
+{
+    if (config.type == "echo" || config.type.empty())
+    {
+        return std::make_unique<EchoProvider>();
+    }
+
+    if (config.type == "openai")
+    {
+        if (config.api_key.empty())
+        {
+            return fail<std::unique_ptr<Provider>>(ErrorKind::Config, "openai provider requires an API key");
+        }
+        return std::make_unique<OpenAIProvider>(config, tool_descriptions_from(tools));
+    }
+
+    if (config.type == "anthropic")
+    {
+        if (config.api_key.empty())
+        {
+            return fail<std::unique_ptr<Provider>>(ErrorKind::Config, "anthropic provider requires an API key");
+        }
+        return std::make_unique<AnthropicProvider>(config, tool_descriptions_from(tools));
+    }
+
+    return fail<std::unique_ptr<Provider>>(ErrorKind::InvalidArgument, "unknown provider type: " + config.type);
+}
+
 auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_ptr<RuntimeBundle>>
 {
     if (options.cwd.empty())
@@ -260,11 +306,20 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
         return nonstd::make_unexpected(coordinator_runtime.error());
     }
 
+    auto tools = create_tool_registry(loaded_skills->registry, **coordinator_runtime);
+    auto provider = create_provider(options.provider_config, tools);
+    if (!provider)
+    {
+        return nonstd::make_unexpected(provider.error());
+    }
+
     return std::make_unique<RuntimeBundle>(std::move(options.cwd),
                                            options.permission_mode,
                                            std::move(*loaded_skills),
                                            std::move(*memory_store),
-                                           std::move(*coordinator_runtime));
+                                           std::move(*coordinator_runtime),
+                                           std::move(tools),
+                                           std::move(*provider));
 }
 
 } // namespace codeharness::runtime
