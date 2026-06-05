@@ -70,13 +70,14 @@ auto load_relevant_memories_for_prompt(const memory::MemoryStore& store,
     }
 
     std::vector<RelevantMemory> memories;
-    memories.resize(entries->size());
-    std::ranges::transform(*entries, memories.begin(), [](const auto& entry) {
-        return RelevantMemory{
+    memories.reserve(entries->size());
+    for (const auto& entry : *entries)
+    {
+        memories.push_back(RelevantMemory{
             .title = entry.header.title,
             .content = entry.body,
-        };
-    });
+        });
+    }
 
     return memories;
 }

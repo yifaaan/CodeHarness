@@ -1,7 +1,5 @@
 #include "codeharness/commands/command_registry.h"
 
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <cctype>
 #include <memory>
@@ -156,7 +154,7 @@ auto make_skill_slash_command(SkillDefinition skill) -> SlashCommand
     };
 }
 
-auto split_memory_command(std::string_view args) -> std::pair<std::string_view, std::string>
+auto split_subcommand(std::string_view args) -> std::pair<std::string_view, std::string>
 {
     args = trim(args);
     if (args.empty())
@@ -240,7 +238,7 @@ auto parse_add_memory_request(std::string_view args) -> Result<memory::AddMemory
 
 auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -> Result<CommandResult>
 {
-    const auto [subcommand, rest] = split_memory_command(args);
+    const auto [subcommand, rest] = split_subcommand(args);
 
     if (subcommand == "list")
     {
@@ -358,8 +356,8 @@ auto format_plugin_list(std::span<const LoadedPlugin> plugins) -> std::string
 
 auto execute_plugin_command(std::string_view plugin_list, std::string_view args) -> Result<CommandResult>
 {
-    const auto [subcommand, rest] = split_memory_command(args);
-    (void)rest;
+    const auto [subcommand, rest] = split_subcommand(args);
+    std::ignore = rest;
 
     if (subcommand == "list")
     {

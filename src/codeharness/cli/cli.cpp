@@ -23,6 +23,7 @@
 #include "codeharness/cli/cli.h"
 
 #include "codeharness/commands/command_registry.h"
+#include "codeharness/config/config_loader.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/runtime/runtime.h"
@@ -53,11 +54,12 @@ auto run_cli(int argc, char** argv) -> Result<int>
     bool backend_only = false;
     std::string prompt;
     std::string cwd;
-    int max_turns = 10;
-    std::string provider_type = "echo";
+    int max_turns = 0;
+    std::string provider_type;
     std::string model;
     std::string api_key;
     std::string base_url;
+    std::string profile;
 
     app.add_flag("--version", show_version, "Print version and exit");
     app.add_flag("--backend-only", backend_only, "Run the backend-only JSON Lines protocol");
@@ -66,8 +68,9 @@ auto run_cli(int argc, char** argv) -> Result<int>
     app.add_option("--max-turns", max_turns, "Maximum number of turns");
     app.add_option("--provider", provider_type, "Provider type: echo (default), openai, anthropic");
     app.add_option("--model", model, "Model name (provider default when omitted)");
-    app.add_option("--api-key", api_key, "API key (defaults to OPENAI_API_KEY or ANTHROPIC_API_KEY env var)");
+    app.add_option("--api-key", api_key, "API key (defaults to env or credentials file)");
     app.add_option("--base-url", base_url, "API base URL");
+    app.add_option("--profile", profile, "Configuration profile to use");
 
     try
     {
@@ -101,37 +104,34 @@ auto run_cli(int argc, char** argv) -> Result<int>
         return 0;
     }
 
-    // Resolve API key from CLI arg or environment variable.
-    if (api_key.empty())
+    // Load configuration via ConfigLoader (defaults → settings.json → env → CLI).
+    config::ConfigLoader loader;
+    auto settings = loader.load(config::CliOptions{
+        .provider_type = provider_type,
+        .model = model,
+        .api_key = api_key,
+        .base_url = base_url,
+        .max_turns = max_turns,
+        .cwd = !cwd.empty() ? std::filesystem::path{cwd} : std::filesystem::current_path(),
+        .profile = profile,
+    });
+    if (!settings)
     {
-        if (provider_type == "openai")
-        {
-            auto* env_key = std::getenv("OPENAI_API_KEY");
-            if (env_key)
-            {
-                api_key = env_key;
-            }
-        }
-        else if (provider_type == "anthropic")
-        {
-            auto* env_key = std::getenv("ANTHROPIC_API_KEY");
-            if (env_key)
-            {
-                api_key = env_key;
-            }
-        }
+        return fail<int>(ErrorKind::Config,
+                         "configuration error: " + settings.error().message);
     }
 
     auto runtime_bundle = runtime::create_runtime_bundle(
         runtime::RuntimeBundleOptions{
-            .cwd = std::filesystem::current_path(),
-            .permission_mode = PermissionMode::Default,
+            .cwd = settings->cwd,
+            .memory_root = settings->memory_root,
+            .permission_mode = settings->permission.mode,
             .load_default_user_plugins = true,
             .provider_config = ProviderConfig{
-                .type = provider_type,
-                .model = model,
-                .api_key = api_key,
-                .base_url = base_url,
+                .type = settings->provider_type,
+                .model = settings->model,
+                .api_key = settings->api_key,
+                .base_url = settings->base_url,
             },
         });
     if (!runtime_bundle)
@@ -141,7 +141,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     if (backend_only)
     {
-        ui_backend::BackendHost host{**runtime_bundle, std::cin, std::cout, max_turns};
+        ui_backend::BackendHost host{**runtime_bundle, std::cin, std::cout, settings->max_turns};
         auto hosted = host.run();
         if (!hosted)
         {
@@ -181,7 +181,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     bool printed_text = false;
 
-    auto result = (*runtime_bundle)->run_prompt(prompt, max_turns, [&](const EngineEvent& event) {
+    auto result = (*runtime_bundle)->run_prompt(prompt, settings->max_turns, [&](const EngineEvent& event) {
         if (auto delta = std::get_if<EngineAssistantTextDelta>(&event))
         {
             std::cout << delta->text << std::flush;

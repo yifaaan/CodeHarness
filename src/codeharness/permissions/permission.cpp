@@ -3,6 +3,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <span>
 #include <utility>
@@ -33,23 +34,26 @@ auto is_sensitive_path(const std::filesystem::path& path) -> bool
 {
     auto text = to_lower_ascii(path.generic_string());
 
-    return text.find(".ssh/") != std::string::npos || text.find("/.ssh") != std::string::npos ||
-           text.find(".aws/credentials") != std::string::npos || text.find(".aws/config") != std::string::npos ||
-           text.find(".gnupg/") != std::string::npos || text.find("/.gnupg") != std::string::npos ||
-           text.find(".docker/config.json") != std::string::npos || text.find(".kube/config") != std::string::npos ||
-           text.find(".azure/") != std::string::npos || text.find("/.azure") != std::string::npos ||
-           text.find(".config/gcloud/") != std::string::npos ||
-           text.find(".codeharness/credentials.json") != std::string::npos ||
-           text.find(".openharness/credentials.json") != std::string::npos ||
-           text.find(".openharness/copilot_auth.json") != std::string::npos;
+    static constexpr auto sensitive_patterns = std::to_array<std::string_view>({
+        ".ssh/", "/.ssh", ".aws/credentials", ".aws/config",
+        ".gnupg/", "/.gnupg", ".docker/config.json", ".kube/config",
+        ".azure/", "/.azure", ".config/gcloud/",
+        ".codeharness/credentials.json", ".openharness/credentials.json",
+        ".openharness/copilot_auth.json",
+    });
+    return std::ranges::any_of(sensitive_patterns,
+        [&](auto p) { return text.find(p) != std::string::npos; });
 }
 
 auto looks_dangerous_command(const std::string& command) -> bool
 {
     auto text = to_lower_ascii(command);
 
-    return text.find("rm -rf /") != std::string::npos || text.find("del /s /q c:\\") != std::string::npos ||
-           text.find("format c:") != std::string::npos || text.find("drop database") != std::string::npos;
+    static constexpr auto dangerous_patterns = std::to_array<std::string_view>({
+        "rm -rf /", "del /s /q c:\\", "format c:", "drop database",
+    });
+    return std::ranges::any_of(dangerous_patterns,
+        [&](auto p) { return text.find(p) != std::string::npos; });
 }
 
 } // namespace

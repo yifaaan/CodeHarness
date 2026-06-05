@@ -6,6 +6,7 @@ target_link_libraries(fake_mcp_server PRIVATE codeharness_foundation)
 add_executable(codeharness_tests
     main.cpp
     command_tests.cpp
+    config_tests.cpp
     coordinator_tests.cpp
     core_tests.cpp
     engine_permission_tests.cpp

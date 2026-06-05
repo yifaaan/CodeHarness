@@ -45,6 +45,16 @@ auto join_csv(std::span<const std::string> values) -> std::string
     return fmt::format("{}", fmt::join(values, ","));
 }
 
+auto insert_if(std::map<std::string, std::string>& m, std::string key, const std::optional<std::string>& value) -> void
+{
+    if (value) { m[std::move(key)] = *value; }
+}
+
+auto insert_csv_if(std::map<std::string, std::string>& m, std::string key, const std::vector<std::string>& values) -> void
+{
+    if (!values.empty()) { m[std::move(key)] = join_csv(values); }
+}
+
 auto validate_spawn_config(const TeammateSpawnConfig& config) -> Result<void>
 {
     if (trim(config.name).empty())
@@ -102,46 +112,19 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
     {
         metadata["model"] = *config.model;
     }
-    if (config.system_prompt)
-    {
-        metadata["system_prompt"] = *config.system_prompt;
-    }
-    if (!config.skills.empty())
-    {
-        metadata["skills"] = join_csv(config.skills);
-    }
-    if (!config.permissions.empty())
-    {
-        metadata["permissions"] = join_csv(config.permissions);
-    }
-    if (!config.disallowed_tools.empty())
-    {
-        metadata["disallowed_tools"] = join_csv(config.disallowed_tools);
-    }
-    if (config.effort)
-    {
-        metadata["effort"] = *config.effort;
-    }
-    if (config.permission_mode)
-    {
-        metadata["permission_mode"] = *config.permission_mode;
-    }
+    insert_if(metadata, "system_prompt", config.system_prompt);
+    insert_csv_if(metadata, "skills", config.skills);
+    insert_csv_if(metadata, "permissions", config.permissions);
+    insert_csv_if(metadata, "disallowed_tools", config.disallowed_tools);
+    insert_if(metadata, "effort", config.effort);
+    insert_if(metadata, "permission_mode", config.permission_mode);
     if (config.max_turns)
     {
         metadata["max_turns"] = std::to_string(*config.max_turns);
     }
-    if (!config.mcp_servers.empty())
-    {
-        metadata["mcp_servers"] = join_csv(config.mcp_servers);
-    }
-    if (config.agent_definition)
-    {
-        metadata["agent_definition"] = *config.agent_definition;
-    }
-    if (config.agent_definition_source)
-    {
-        metadata["agent_definition_source"] = *config.agent_definition_source;
-    }
+    insert_csv_if(metadata, "mcp_servers", config.mcp_servers);
+    insert_if(metadata, "agent_definition", config.agent_definition);
+    insert_if(metadata, "agent_definition_source", config.agent_definition_source);
     if (config.agent_definition_path)
     {
         metadata["agent_definition_path"] = config.agent_definition_path->string();

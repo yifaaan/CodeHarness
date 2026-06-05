@@ -23,31 +23,12 @@ inline auto init_logger() -> void
 
     if (const char* env = std::getenv("LOG_CODEHARNESS_LEVEL"))
     {
-        const std::string level{env};
-        if (level == "trace")
+        auto level = spdlog::level::from_str(env);
+        if (level == spdlog::level::off)
         {
-            spdlog::set_level(spdlog::level::trace);
+            level = spdlog::level::info;
         }
-        else if (level == "debug")
-        {
-            spdlog::set_level(spdlog::level::debug);
-        }
-        else if (level == "warn" || level == "warning")
-        {
-            spdlog::set_level(spdlog::level::warn);
-        }
-        else if (level == "error")
-        {
-            spdlog::set_level(spdlog::level::err);
-        }
-        else if (level == "critical")
-        {
-            spdlog::set_level(spdlog::level::critical);
-        }
-        else
-        {
-            spdlog::set_level(spdlog::level::info);
-        }
+        spdlog::set_level(level);
     }
     else
     {

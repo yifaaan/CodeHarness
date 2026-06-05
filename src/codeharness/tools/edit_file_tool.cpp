@@ -146,14 +146,17 @@ auto EditFileTool::execute(const ToolRequest& request, const ToolContext& contex
             "edit_file old_string matched multiple locations; set replace_all=true to replace all matches");
     }
 
-    auto edited = parsed->replace_all
-                      ? replace_all_occurrences(std::move(*content), parsed->old_string, parsed->new_string)
-                      : [&] {
-                            auto text = std::move(*content);
-                            const auto position = text.find(parsed->old_string);
-                            text.replace(position, parsed->old_string.size(), parsed->new_string);
-                            return text;
-                        }();
+    std::string edited;
+    if (parsed->replace_all)
+    {
+        edited = replace_all_occurrences(std::move(*content), parsed->old_string, parsed->new_string);
+    }
+    else
+    {
+        edited = std::move(*content);
+        const auto position = edited.find(parsed->old_string);
+        edited.replace(position, parsed->old_string.size(), parsed->new_string);
+    }
 
     auto write_result = atomic_write_text_file(*resolved, edited);
     if (!write_result)

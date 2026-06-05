@@ -45,28 +45,6 @@ namespace codeharness::coordinator
 namespace
 {
 
-auto required_default_mailbox_root() -> Result<std::filesystem::path>
-{
-    auto root = mailbox::default_mailbox_root();
-    if (!root)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
-    }
-
-    return *root;
-}
-
-auto required_default_teams_root() -> Result<std::filesystem::path>
-{
-    auto root = mailbox::default_teams_root();
-    if (!root)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
-    }
-
-    return *root;
-}
-
 auto agent_type_for_lookup(const std::optional<std::string>& value) -> std::string_view
 {
     if (!value)
@@ -264,16 +242,16 @@ auto create_default_runtime(const std::filesystem::path& cwd,
         return nonstd::make_unexpected(task_root.error());
     }
 
-    auto team_root = required_default_teams_root();
+    auto team_root = mailbox::default_teams_root();
     if (!team_root)
     {
-        return nonstd::make_unexpected(team_root.error());
+        return fail<std::unique_ptr<CoordinatorRuntime>>(ErrorKind::Config, "home directory is not available");
     }
 
-    auto mailbox_root = required_default_mailbox_root();
+    auto mailbox_root = mailbox::default_mailbox_root();
     if (!mailbox_root)
     {
-        return nonstd::make_unexpected(mailbox_root.error());
+        return fail<std::unique_ptr<CoordinatorRuntime>>(ErrorKind::Config, "home directory is not available");
     }
 
     auto definitions = load_agent_definition_registry(cwd, std::move(options));

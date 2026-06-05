@@ -267,6 +267,35 @@ auto run_tls_request(asio::io_context& io,
 
 } // namespace
 
+namespace
+{
+
+auto do_request(asio::io_context& io,
+                ssl::context& tls,
+                http::verb method,
+                std::string_view url_str,
+                const std::map<std::string, std::string>& headers,
+                std::string_view body,
+                const OnChunk& on_chunk) -> Result<HttpResponse>
+{
+    auto parsed = parse_http_url(url_str);
+    if (!parsed)
+    {
+        return nonstd::make_unexpected(parsed.error());
+    }
+
+    auto request = make_request(method, *parsed, headers, body);
+    io.restart();
+    if (parsed->scheme == "https")
+    {
+        return run_tls_request(io, tls, *parsed, std::move(request), on_chunk);
+    }
+
+    return run_plain_request(io, *parsed, std::move(request), on_chunk);
+}
+
+} // namespace
+
 struct HttpClient::Impl
 {
     asio::io_context io;
@@ -288,40 +317,14 @@ auto HttpClient::post(std::string_view url_str,
                       std::string_view body,
                       const OnChunk& on_chunk) -> Result<HttpResponse>
 {
-    auto parsed = parse_http_url(url_str);
-    if (!parsed)
-    {
-        return nonstd::make_unexpected(parsed.error());
-    }
-
-    auto request = make_request(http::verb::post, *parsed, headers, body);
-    impl_->io.restart();
-    if (parsed->scheme == "https")
-    {
-        return run_tls_request(impl_->io, impl_->tls, *parsed, std::move(request), on_chunk);
-    }
-
-    return run_plain_request(impl_->io, *parsed, std::move(request), on_chunk);
+    return do_request(impl_->io, impl_->tls, http::verb::post, url_str, headers, body, on_chunk);
 }
 
 auto HttpClient::get(std::string_view url_str,
                      const std::map<std::string, std::string>& headers,
                      const OnChunk& on_chunk) -> Result<HttpResponse>
 {
-    auto parsed = parse_http_url(url_str);
-    if (!parsed)
-    {
-        return nonstd::make_unexpected(parsed.error());
-    }
-
-    auto request = make_request(http::verb::get, *parsed, headers, {});
-    impl_->io.restart();
-    if (parsed->scheme == "https")
-    {
-        return run_tls_request(impl_->io, impl_->tls, *parsed, std::move(request), on_chunk);
-    }
-
-    return run_plain_request(impl_->io, *parsed, std::move(request), on_chunk);
+    return do_request(impl_->io, impl_->tls, http::verb::get, url_str, headers, {}, on_chunk);
 }
 
 } // namespace codeharness::network

@@ -7,6 +7,7 @@ add_subdirectory(tools)
 add_subdirectory(mcp)
 add_subdirectory(skills)
 add_subdirectory(plugins)
+add_subdirectory(config)
 
 add_library(codeharness_extensions STATIC)
 target_sources(codeharness_extensions PRIVATE
@@ -25,7 +26,7 @@ codeharness_link_first_existing(codeharness_extensions PUBLIC yaml-cpp yaml-cpp:
 codeharness_link_first_existing(codeharness_extensions PRIVATE fmt fmt::fmt)
 codeharness_link_first_existing(codeharness_extensions PRIVATE Glob Glob)
 codeharness_link_first_existing(codeharness_extensions PRIVATE nlohmann_json nlohmann_json::nlohmann_json)
-codeharness_link_first_existing(codeharness_extensions PRIVATE spdlog spdlog::spdlog)
+target_link_libraries(codeharness_extensions PRIVATE spdlog::spdlog)
 
 add_library(codeharness_skills INTERFACE)
 target_link_libraries(codeharness_skills INTERFACE codeharness_extensions)
@@ -53,6 +54,7 @@ target_link_libraries(codeharness_core
     INTERFACE
         codeharness_cli
         codeharness_commands
+        codeharness_config
         codeharness_coordinator
         codeharness_engine
         codeharness_extensions

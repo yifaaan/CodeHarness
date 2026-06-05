@@ -101,7 +101,7 @@ public:
     auto list() const -> std::vector<AgentDefinition>;
 
 private:
-    std::unordered_map<std::string, std::shared_ptr<AgentDefinition>> by_name_;
+    std::unordered_map<std::string, std::unique_ptr<AgentDefinition>> by_name_;
 };
 
 // 默认用户级 agent 目录。

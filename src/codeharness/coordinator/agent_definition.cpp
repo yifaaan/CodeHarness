@@ -47,7 +47,6 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -273,7 +272,7 @@ auto AgentDefinitionRegistry::register_agent(AgentDefinition definition) -> void
         return;
     }
 
-    auto stored = std::make_shared<AgentDefinition>(std::move(definition));
+    auto stored = std::make_unique<AgentDefinition>(std::move(definition));
     by_name_[stored->name] = std::move(stored);
 }
 

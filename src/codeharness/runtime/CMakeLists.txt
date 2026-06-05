@@ -5,6 +5,7 @@ codeharness_add_static_module(codeharness_runtime
 target_link_libraries(codeharness_runtime
     PUBLIC
         codeharness_commands
+        codeharness_config
         codeharness_coordinator
         codeharness_engine
         codeharness_foundation

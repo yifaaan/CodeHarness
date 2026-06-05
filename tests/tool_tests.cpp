@@ -172,8 +172,6 @@ TEST_CASE("write_file creates a new file")
     auto file_path = temp.path / "output.txt";
     REQUIRE(std::filesystem::exists(file_path));
 
-    // 验证文件内容
-    REQUIRE(std::filesystem::exists(file_path));
     CHECK(read_file_text(file_path) == "hello world");
 }
 

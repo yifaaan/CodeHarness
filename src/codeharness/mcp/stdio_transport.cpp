@@ -232,8 +232,8 @@ auto McpStdioTransport::read() -> Result<nlohmann::json>
 
         if ((events & reproc::event::exit) != 0)
         {
-            (void)read_available(reproc::stream::out, stdout_buffer_);
-            (void)read_available(reproc::stream::err, stderr_buffer_);
+            std::ignore = read_available(reproc::stream::out, stdout_buffer_);
+            std::ignore = read_available(reproc::stream::err, stderr_buffer_);
             log_stderr_lines();
 
             if (auto line = next_stdout_line())
@@ -266,8 +266,7 @@ auto McpStdioTransport::close() noexcept -> void
         spdlog::debug("failed to close MCP stdio stdin for {}: {}", config_.name, error.message());
     }
 
-    auto [status, error] = process_.stop(stop_actions(options_.stop_timeout_ms));
-    (void)status;
+    [[maybe_unused]] auto [status, error] = process_.stop(stop_actions(options_.stop_timeout_ms));
     if (error)
     {
         spdlog::debug("failed to stop MCP stdio server {}: {}", config_.name, error.message());

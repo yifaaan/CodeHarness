@@ -14,6 +14,6 @@ codeharness_link_first_existing(codeharness_tasks PRIVATE date date::date)
 codeharness_link_first_existing(codeharness_tasks PRIVATE fmt fmt::fmt)
 codeharness_link_first_existing(codeharness_tasks PRIVATE nlohmann_json nlohmann_json::nlohmann_json)
 codeharness_link_first_existing(codeharness_tasks PRIVATE reproc++ reproc++ reproc::reproc++)
-codeharness_link_first_existing(codeharness_tasks PRIVATE spdlog spdlog::spdlog)
+target_link_libraries(codeharness_tasks PRIVATE spdlog::spdlog)
 
 add_library(codeharness::tasks ALIAS codeharness_tasks)

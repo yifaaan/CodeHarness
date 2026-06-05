@@ -12,5 +12,5 @@ target_link_libraries(codeharness_skills_objects
 
 codeharness_link_first_existing(codeharness_skills_objects PRIVATE fmt fmt::fmt)
 codeharness_link_first_existing(codeharness_skills_objects PRIVATE Glob Glob)
-codeharness_link_first_existing(codeharness_skills_objects PRIVATE spdlog spdlog::spdlog)
+target_link_libraries(codeharness_skills_objects PRIVATE spdlog::spdlog)
 codeharness_link_first_existing(codeharness_skills_objects PRIVATE yaml-cpp yaml-cpp::yaml-cpp)

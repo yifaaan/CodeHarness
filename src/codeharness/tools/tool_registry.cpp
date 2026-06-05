@@ -1,7 +1,6 @@
 #include "codeharness/tools/tool_registry.h"
 
 #include <algorithm>
-#include <nonstd/expected.hpp>
 #include <utility>
 
 #include "codeharness/core/error.h"

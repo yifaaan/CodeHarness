@@ -998,20 +998,13 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
     auto path = has_duplicate ? duplicate->path : next_memory_path(root_, slugify(title));
     if (has_duplicate)
     {
-        metadata = duplicate->metadata;
+        metadata.id = duplicate->metadata.id;
+        metadata.created_at = duplicate->metadata.created_at;
+        metadata.importance = duplicate->metadata.importance;
     }
     else
     {
         metadata.id = generate_memory_id();
-        metadata.created_at = now;
-    }
-
-    if (metadata.id.empty())
-    {
-        metadata.id = generate_memory_id();
-    }
-    if (metadata.created_at.empty())
-    {
         metadata.created_at = now;
     }
 

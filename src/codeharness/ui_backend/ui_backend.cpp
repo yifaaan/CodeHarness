@@ -52,16 +52,6 @@ auto engine_event_to_backend_event(const EngineEvent& event) -> BackendEvent
         event);
 }
 
-auto is_submit_line(const FrontendRequest& request) -> bool
-{
-    return request.type == "submit_line";
-}
-
-auto is_shutdown(const FrontendRequest& request) -> bool
-{
-    return request.type == "shutdown";
-}
-
 } // namespace
 
 auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
@@ -175,13 +165,13 @@ auto BackendHost::emit(const BackendEvent& event) -> void
 
 auto BackendHost::handle_request(const FrontendRequest& request) -> bool
 {
-    if (is_shutdown(request))
+    if (request.type == "shutdown")
     {
         emit(BackendShutdown{});
         return false;
     }
 
-    if (!is_submit_line(request))
+    if (request.type != "submit_line")
     {
         emit(BackendError{.message = "unsupported frontend request type: " + request.type});
         return true;

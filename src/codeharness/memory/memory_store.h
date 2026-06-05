@@ -2,7 +2,6 @@
 
 #include "codeharness/core/result.h"
 
-#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <optional>

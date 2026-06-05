@@ -16,7 +16,6 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include <variant>
 
 #include "codeharness/core/json_parse.h"
 #include "codeharness/core/paths.h"
@@ -28,6 +27,31 @@ namespace codeharness
 
 namespace
 {
+
+// Try parsing a field from JSON using snake_case first, then camelCase as fallback.
+// This accommodates both naming conventions in plugin manifests.
+template <typename T>
+auto read_aliased_field(const nlohmann::json& json, std::string_view snake_key, std::string_view camel_key, std::string_view context, T& target) -> Result<void>
+{
+    for (auto key : {snake_key, camel_key})
+    {
+        if (!json.contains(std::string{key}))
+        {
+            continue;
+        }
+
+        auto value = read_json_field<T>(json, key, context);
+        if (!value)
+        {
+            return nonstd::make_unexpected(value.error());
+        }
+
+        target = std::move(*value);
+        return {};
+    }
+
+    return {};
+}
 
 auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path& manifest_path)
     -> Result<PluginManifest>
@@ -46,105 +70,25 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
 
     auto manifest = PluginManifest{.name = std::move(*name)};
 
-    auto version = read_optional_json_field<std::string>(json, "version", "plugin manifest");
-    if (!version)
-    {
-        return nonstd::make_unexpected(version.error());
-    }
-    if (*version)
-    {
-        manifest.version = std::move(**version);
-    }
+    if (auto r = read_aliased_field(json, "version", "version", "plugin manifest", manifest.version); !r) { return nonstd::make_unexpected(r.error()); }
+    if (auto r = read_aliased_field(json, "description", "description", "plugin manifest", manifest.description); !r) { return nonstd::make_unexpected(r.error()); }
+    if (auto r = read_aliased_field(json, "enabled_by_default", "enabledByDefault", "plugin manifest", manifest.enabled_by_default); !r) { return nonstd::make_unexpected(r.error()); }
 
-    auto description = read_optional_json_field<std::string>(json, "description", "plugin manifest");
-    if (!description)
-    {
-        return nonstd::make_unexpected(description.error());
-    }
-    if (*description)
-    {
-        manifest.description = std::move(**description);
-    }
-
-    auto enabled = read_optional_json_field<bool>(json, "enabled_by_default", "plugin manifest");
-    if (!enabled)
-    {
-        return nonstd::make_unexpected(enabled.error());
-    }
-    if (*enabled)
-    {
-        manifest.enabled_by_default = **enabled;
-    }
-
-    auto enabled_camel = read_optional_json_field<bool>(json, "enabledByDefault", "plugin manifest");
-    if (!enabled_camel)
-    {
-        return nonstd::make_unexpected(enabled_camel.error());
-    }
-    if (*enabled_camel)
-    {
-        manifest.enabled_by_default = **enabled_camel;
-    }
-
-    auto skills_dir = read_optional_json_field<std::string>(json, "skills_dir", "plugin manifest");
-    if (!skills_dir)
-    {
-        return nonstd::make_unexpected(skills_dir.error());
-    }
-    if (*skills_dir)
-    {
-        manifest.skills_dir = **skills_dir;
-    }
-
-    auto skills_dir_camel = read_optional_json_field<std::string>(json, "skillsDir", "plugin manifest");
-    if (!skills_dir_camel)
-    {
-        return nonstd::make_unexpected(skills_dir_camel.error());
-    }
-    if (*skills_dir_camel)
-    {
-        manifest.skills_dir = **skills_dir_camel;
-    }
-
-    auto commands_dir = read_optional_json_field<std::string>(json, "commands_dir", "plugin manifest");
-    if (!commands_dir)
-    {
-        return nonstd::make_unexpected(commands_dir.error());
-    }
-    if (*commands_dir)
-    {
-        manifest.commands_dir = **commands_dir;
-    }
-
-    auto commands_dir_camel = read_optional_json_field<std::string>(json, "commandsDir", "plugin manifest");
-    if (!commands_dir_camel)
-    {
-        return nonstd::make_unexpected(commands_dir_camel.error());
-    }
-    if (*commands_dir_camel)
-    {
-        manifest.commands_dir = **commands_dir_camel;
-    }
-
-    auto mcp_file = read_optional_json_field<std::string>(json, "mcp_file", "plugin manifest");
-    if (!mcp_file)
-    {
-        return nonstd::make_unexpected(mcp_file.error());
-    }
-    if (*mcp_file)
-    {
-        manifest.mcp_file = **mcp_file;
-    }
-
-    auto mcp_file_camel = read_optional_json_field<std::string>(json, "mcpFile", "plugin manifest");
-    if (!mcp_file_camel)
-    {
-        return nonstd::make_unexpected(mcp_file_camel.error());
-    }
-    if (*mcp_file_camel)
-    {
-        manifest.mcp_file = **mcp_file_camel;
-    }
+    // Path fields: read as string then convert to std::filesystem::path.
+    auto read_path_field = [&](const char* snake, const char* camel, std::filesystem::path& target) -> Result<void> {
+        for (auto key : {snake, camel})
+        {
+            if (!json.contains(key)) { continue; }
+            auto value = read_json_field<std::string>(json, key, "plugin manifest");
+            if (!value) { return nonstd::make_unexpected(value.error()); }
+            target = std::filesystem::path{std::move(*value)};
+            return {};
+        }
+        return {};
+    };
+    if (auto r = read_path_field("skills_dir", "skillsDir", manifest.skills_dir); !r) { return nonstd::make_unexpected(r.error()); }
+    if (auto r = read_path_field("commands_dir", "commandsDir", manifest.commands_dir); !r) { return nonstd::make_unexpected(r.error()); }
+    if (auto r = read_path_field("mcp_file", "mcpFile", manifest.mcp_file); !r) { return nonstd::make_unexpected(r.error()); }
 
     if (!is_safe_relative_path(manifest.skills_dir))
     {
@@ -421,31 +365,21 @@ auto mcp_servers_json(const nlohmann::json& json, const std::filesystem::path& p
             ErrorKind::InvalidArgument, "plugin MCP config must be a JSON object: " + path.string());
     }
 
-    if (json.contains("mcpServers"))
+    for (const auto* key : {"mcpServers", "mcp_servers"})
     {
-        const auto& servers = json.at("mcpServers");
-        if (!servers.is_object())
+        if (json.contains(key))
         {
-            return fail<const nlohmann::json*>(
-                ErrorKind::InvalidArgument, "plugin MCP config mcpServers must be a JSON object: " + path.string());
+            const auto& servers = json.at(key);
+            if (!servers.is_object())
+            {
+                return fail<const nlohmann::json*>(
+                    ErrorKind::InvalidArgument, "plugin MCP config " + std::string{key} + " must be a JSON object: " + path.string());
+            }
+            return &servers;
         }
-
-        return &servers;
     }
 
-    if (json.contains("mcp_servers"))
-    {
-        const auto& servers = json.at("mcp_servers");
-        if (!servers.is_object())
-        {
-            return fail<const nlohmann::json*>(
-                ErrorKind::InvalidArgument, "plugin MCP config mcp_servers must be a JSON object: " + path.string());
-        }
-
-        return &servers;
-    }
-
-    return static_cast<const nlohmann::json*>(nullptr);
+    return nullptr;
 }
 
 auto load_plugin_mcp_servers(const std::filesystem::path& path) -> Result<std::vector<McpServerConfig>>

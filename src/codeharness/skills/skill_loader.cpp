@@ -404,6 +404,19 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
 {
     SkillRegistry registry;
 
+    auto load_and_register = [&](std::span<const std::filesystem::path> dirs, std::string_view source) -> Result<void> {
+        auto skills = load_skills_from_dirs(dirs, source);
+        if (!skills)
+        {
+            return nonstd::make_unexpected(skills.error());
+        }
+        for (auto& skill : *skills)
+        {
+            registry.register_skill(std::move(skill));
+        }
+        return {};
+    };
+
     // 1) bundled skills。
     //
     // 先注册默认 bundled,再注册调用方传入的 bundled_skills。这样测试或未来的
@@ -436,27 +449,15 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
         user_skill_dirs.insert(user_skill_dirs.begin(), defaults.begin(), defaults.end());
     }
 
-    auto user_skills = load_skills_from_dirs(user_skill_dirs, "user");
-    if (!user_skills)
+    if (auto loaded = load_and_register(user_skill_dirs, "user"); !loaded)
     {
-        return nonstd::make_unexpected(user_skills.error());
-    }
-
-    for (auto& skill : *user_skills)
-    {
-        registry.register_skill(std::move(skill));
+        return nonstd::make_unexpected(loaded.error());
     }
 
     // 3) extra skill 目录(CLI/配置追加,语义上仍属 user 范围)
-    auto extra_skills = load_skills_from_dirs(options.extra_skill_dirs, "user");
-    if (!extra_skills)
+    if (auto loaded = load_and_register(options.extra_skill_dirs, "user"); !loaded)
     {
-        return nonstd::make_unexpected(extra_skills.error());
-    }
-
-    for (auto& skill : *extra_skills)
-    {
-        registry.register_skill(std::move(skill));
+        return nonstd::make_unexpected(loaded.error());
     }
 
     // 4) plugin skills:默认由调用方显式开启,避免测试或受限运行时意外加载本机全局插件
@@ -488,15 +489,9 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
             return nonstd::make_unexpected(project_dirs.error());
         }
 
-        auto project_skills = load_skills_from_dirs(*project_dirs, "project");
-        if (!project_skills)
+        if (auto loaded = load_and_register(*project_dirs, "project"); !loaded)
         {
-            return nonstd::make_unexpected(project_skills.error());
-        }
-
-        for (auto& skill : *project_skills)
-        {
-            registry.register_skill(std::move(skill));
+            return nonstd::make_unexpected(loaded.error());
         }
     }
 

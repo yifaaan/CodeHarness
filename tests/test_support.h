@@ -76,6 +76,7 @@ struct TempDir
 
 auto set_request_input(codeharness::ToolRequest& request, std::string input_json) -> void;
 auto read_file_text(const std::filesystem::path& path) -> std::string;
+auto write_file(const std::filesystem::path& path, const std::string& content) -> void;
 auto init_git_repository_with_head(const std::filesystem::path& repo, std::string_view branch) -> void;
 
 class WriteFileRequestProvider final : public codeharness::Provider

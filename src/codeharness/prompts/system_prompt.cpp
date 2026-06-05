@@ -175,7 +175,7 @@ auto format_permission_mode(PermissionMode mode) -> std::string_view
         return "FullAuto: scoped mutating tool calls are allowed, while hard safety denies still apply.";
     }
 
-    return "Default: read-only tools can run directly; mutating tools may require confirmation.";
+    __assume(false);
 }
 
 

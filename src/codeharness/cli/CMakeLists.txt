@@ -7,11 +7,12 @@ target_link_libraries(codeharness_cli
         codeharness_foundation
     PRIVATE
         codeharness_commands
+        codeharness_config
         codeharness_runtime
         codeharness_ui_backend
 )
 
 codeharness_link_first_existing(codeharness_cli PRIVATE CLI11 CLI11::CLI11)
-codeharness_link_first_existing(codeharness_cli PRIVATE spdlog spdlog::spdlog)
+target_link_libraries(codeharness_cli PRIVATE spdlog::spdlog)
 
 add_library(codeharness::cli ALIAS codeharness_cli)

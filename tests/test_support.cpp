@@ -28,6 +28,15 @@ auto read_file_text(const std::filesystem::path& path) -> std::string
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
+auto write_file(const std::filesystem::path& path, const std::string& content) -> void
+{
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream file(path);
+    REQUIRE(file.is_open());
+    file << content;
+}
+
 namespace
 {
 

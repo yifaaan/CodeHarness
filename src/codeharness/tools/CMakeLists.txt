@@ -19,6 +19,6 @@ codeharness_link_first_existing(codeharness_tools PRIVATE fmt fmt::fmt)
 codeharness_link_first_existing(codeharness_tools PRIVATE Glob Glob)
 codeharness_link_first_existing(codeharness_tools PRIVATE re2 re2::re2)
 codeharness_link_first_existing(codeharness_tools PRIVATE reproc++ reproc++ reproc::reproc++)
-codeharness_link_first_existing(codeharness_tools PRIVATE spdlog spdlog::spdlog)
+target_link_libraries(codeharness_tools PRIVATE spdlog::spdlog)
 
 add_library(codeharness::tools ALIAS codeharness_tools)

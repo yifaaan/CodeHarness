@@ -95,15 +95,13 @@ auto ProjectContextLoader::load(const std::filesystem::path& cwd) const -> Resul
             if (content->size() > remaining_chars)
             {
                 content->resize(remaining_chars);
-                files.push_back(
-                    ContextFile{
-                        .path = candidate,
-                        .content = std::move(*content),
-                    });
-                return files;
+                remaining_chars = 0;
+            }
+            else
+            {
+                remaining_chars -= content->size();
             }
 
-            remaining_chars -= content->size();
             files.push_back(
                 ContextFile{
                     .path = candidate,

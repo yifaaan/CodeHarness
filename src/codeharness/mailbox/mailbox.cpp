@@ -14,7 +14,6 @@
 #include <string>
 #include <system_error>
 #include <ranges>
-#include <algorithm>
 
 namespace codeharness::mailbox
 {
@@ -129,6 +128,20 @@ auto generate_message_id() -> std::string
     return std::format("msg-{0:08x}", value);
 }
 
+// 遍历 inbox 目录，返回所有有效的 .json 文件路径。
+auto inbox_json_files(const std::filesystem::path& inbox, std::error_code& error)
+    -> std::vector<std::filesystem::path>
+{
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator{inbox, error})
+    {
+        if (!entry.is_regular_file()) { continue; }
+        if (entry.path().extension() != ".json") { continue; }
+        files.push_back(entry.path());
+    }
+    return files;
+}
+
 // 构造收件箱目录路径：root / task_id / "inbox"
 auto inbox_path(const std::filesystem::path& root, std::string_view task_id) -> std::filesystem::path
 {
@@ -145,24 +158,10 @@ auto next_sequence_file(const std::filesystem::path& inbox) -> std::string
     int max_seq = 0;
 
     std::error_code error;
-
-    for (const auto& entry : std::filesystem::directory_iterator{inbox, error})
+    for (const auto& path : inbox_json_files(inbox, error))
     {
-        if (!entry.is_regular_file())
-        {
-            continue;
-        }
-
-        auto filename = entry.path().filename();
-
-
-        if (entry.path().extension() != ".json")
-        {
-            continue;
-        }
-
         // 提取文件名中的数字部分：000001.json → "000001"
-        auto num_str = filename.stem().string();
+        auto num_str = path.stem().string();
 
         int seq = 0;
         auto [ptr, ec] = std::from_chars(num_str.data(), num_str.data() + num_str.size(), seq);
@@ -337,23 +336,10 @@ auto Mailbox::poll(const std::string& task_id, bool unread_only) const -> Result
     // 收集所有pair<文件名, 消息>
     std::vector<std::pair<std::string, MailboxMessage>> messages;
 
-    for (const auto& entry : std::filesystem::directory_iterator{inbox, error})
+    for (const auto& path : inbox_json_files(inbox, error))
     {
-        if (!entry.is_regular_file())
-        {
-            continue;
-        }
-
-        auto filename = entry.path().filename();
-
-
-        if (entry.path().extension() != ".json")
-        {
-            continue;
-        }
-
         // 读取并解析消息文件
-        auto msg = read_message_file(entry.path());
+        auto msg = read_message_file(path);
         if (!msg)
         {
             // 文件损坏——跳过
@@ -366,7 +352,7 @@ auto Mailbox::poll(const std::string& task_id, bool unread_only) const -> Result
             continue;
         }
 
-        messages.emplace_back(filename.string(), std::move(*msg));
+        messages.emplace_back(path.filename().string(), std::move(*msg));
     }
 
     // 按文件名排序
@@ -389,22 +375,9 @@ auto Mailbox::mark_read(const std::string& task_id, const std::string& message_i
     }
 
     // 遍历收件箱，查找目标消息
-    for (const auto& entry : std::filesystem::directory_iterator{inbox, error})
+    for (const auto& path : inbox_json_files(inbox, error))
     {
-        if (!entry.is_regular_file())
-        {
-            continue;
-        }
-
-        auto filename = entry.path().filename();
-
-
-        if (entry.path().extension() != ".json")
-        {
-            continue;
-        }
-
-        auto msg = read_message_file(entry.path());
+        auto msg = read_message_file(path);
         if (!msg)
         {
             continue;
@@ -415,7 +388,7 @@ auto Mailbox::mark_read(const std::string& task_id, const std::string& message_i
             // 找到目标消息——更新 read 字段并原子重写
             msg->read = true;
             const nlohmann::json json = *msg;
-            return atomic_write_file(entry.path(), json.dump(2));
+            return atomic_write_file(path, json.dump(2));
         }
     }
 
@@ -434,23 +407,10 @@ auto Mailbox::clear(const std::string& task_id) -> Result<void>
         return {};
     }
 
-    for (const auto& entry : std::filesystem::directory_iterator{inbox, error})
+    for (const auto& path : inbox_json_files(inbox, error))
     {
-        if (!entry.is_regular_file())
-        {
-            continue;
-        }
-
-        auto filename = entry.path().filename();
-
-
-        if (entry.path().extension() != ".json")
-        {
-            continue;
-        }
-
         std::error_code ignored;
-        std::filesystem::remove(entry.path(), ignored);
+        std::filesystem::remove(path, ignored);
     }
 
     return {};
