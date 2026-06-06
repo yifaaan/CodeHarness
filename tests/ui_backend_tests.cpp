@@ -160,6 +160,113 @@ TEST_CASE("ui backend message-only slash command emits output and completes")
     CHECK(events.at(2).at("type") == "line_complete");
 }
 
+TEST_CASE("ui backend sessions command lists saved sessions")
+{
+    TempDir temp{"codeharness-ui-backend-sessions-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "listed";
+    snapshot.summary = "listed summary";
+    snapshot.model = "echo";
+    snapshot.message_count = 2;
+    snapshot.created_at = 10.0;
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "listed summary"));
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"submit_line","line":"/sessions"})" "\n");
+
+    REQUIRE(events.size() == 3);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "assistant_delta");
+    const auto text = events.at(1).at("text").get<std::string>();
+    CHECK(text.find("Sessions:") != std::string::npos);
+    CHECK(text.find("listed") != std::string::npos);
+    CHECK(text.find("listed summary") != std::string::npos);
+    CHECK(events.at(2).at("type") == "line_complete");
+}
+
+TEST_CASE("ui backend resume command loads session without invoking provider")
+{
+    TempDir temp{"codeharness-ui-backend-resume-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "resume-backend";
+    snapshot.summary = "old work";
+    snapshot.message_count = 1;
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "old work"));
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"submit_line","line":"/resume latest"})" "\n");
+
+    REQUIRE(events.size() == 3);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "assistant_delta");
+    CHECK(events.at(1).at("text").get<std::string>().find("Resumed session resume-backend: old work") !=
+          std::string::npos);
+    CHECK(events.at(2).at("type") == "line_complete");
+
+    auto active = (*bundle)->active_session_summary();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == "resume-backend");
+}
+
+TEST_CASE("ui backend prompt after resume continues and saves same session")
+{
+    TempDir temp{"codeharness-ui-backend-resume-continue-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "same-backend";
+    snapshot.summary = "first backend";
+    snapshot.created_at = 25.0;
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "first backend"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::Assistant, "first answer"));
+    snapshot.message_count = static_cast<int>(snapshot.messages.size());
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"/resume same-backend"})"
+        "\n"
+        R"({"type":"submit_line","line":"second backend"})"
+        "\n");
+
+    REQUIRE(events.size() == 5);
+    CHECK(events.at(1).at("type") == "assistant_delta");
+    CHECK(events.at(1).at("text").get<std::string>().find("Resumed session same-backend") != std::string::npos);
+    CHECK(events.at(2).at("type") == "line_complete");
+    CHECK(events.at(3).at("type") == "assistant_delta");
+    CHECK(events.at(3).at("text") == "second backend");
+    CHECK(events.at(4).at("type") == "line_complete");
+
+    auto saved = (*bundle)->sessions().load_by_id("same-backend");
+    REQUIRE(saved);
+    REQUIRE(saved->has_value());
+    CHECK((*saved)->session_id == "same-backend");
+    CHECK((*saved)->summary == "first backend");
+    CHECK((*saved)->created_at == doctest::Approx(25.0));
+    CHECK((*saved)->message_count >= 4);
+}
+
+TEST_CASE("ui backend resume missing session emits error")
+{
+    TempDir temp{"codeharness-ui-backend-resume-missing-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"submit_line","line":"/resume missing"})" "\n");
+
+    REQUIRE(events.size() == 2);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "error");
+    CHECK(events.at(1).at("message") == "session not found: missing");
+}
+
 TEST_CASE("ui backend processes multiple frontend requests in order")
 {
     TempDir temp{"codeharness-ui-backend-multiple-test"};

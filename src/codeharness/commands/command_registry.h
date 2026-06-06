@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/core/result.h"
+#include "codeharness/sessions/session_store.h"
 #include "codeharness/skills/skill_registry.h"
 
 #include <functional>
@@ -22,9 +23,19 @@ class MemoryStore;
 
 struct LoadedPlugin;
 
+struct SessionCommandSummary
+{
+    std::string session_id;
+    std::string model;
+    std::string summary;
+    int message_count = 0;
+};
+
 struct BuiltinCommandRegistryOptions
 {
     memory::MemoryStore* memory_store = nullptr;
+    sessions::SessionStore* session_store = nullptr;
+    std::function<Result<SessionCommandSummary>(std::string_view id)> resume_session;
     std::span<const LoadedPlugin> plugins;
 };
 

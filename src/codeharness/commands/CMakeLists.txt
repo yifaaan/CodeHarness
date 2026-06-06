@@ -6,6 +6,7 @@ target_link_libraries(codeharness_commands
     PUBLIC
         codeharness_extensions
         codeharness_foundation
+        codeharness_sessions
     PRIVATE
         codeharness_memory
 )

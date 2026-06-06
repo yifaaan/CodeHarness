@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <span>
 #include <sstream>
@@ -329,6 +331,133 @@ auto register_memory_command(CommandRegistry& registry, memory::MemoryStore* mem
         });
 }
 
+auto format_sessions_list(const std::vector<sessions::SessionSnapshot>& snapshots) -> std::string
+{
+    if (snapshots.empty())
+    {
+        return "No sessions.\n";
+    }
+
+    std::ostringstream output;
+    output << "Sessions:\n";
+    for (const auto& snapshot : snapshots)
+    {
+        output << "- " << snapshot.session_id << " (" << snapshot.message_count << " messages)";
+        if (!snapshot.model.empty())
+        {
+            output << " [" << snapshot.model << "]";
+        }
+        if (!snapshot.summary.empty())
+        {
+            output << ": " << snapshot.summary;
+        }
+        output << '\n';
+    }
+
+    return output.str();
+}
+
+auto execute_sessions_command(sessions::SessionStore& store, std::string_view args) -> Result<CommandResult>
+{
+    auto rest = std::string{trim(args)};
+    if (rest.starts_with("list"))
+    {
+        rest = std::string{trim(std::string_view{rest}.substr(4))};
+    }
+
+    int limit = 20;
+    if (!rest.empty())
+    {
+        try
+        {
+            std::size_t parsed_chars = 0;
+            limit = std::stoi(rest, &parsed_chars);
+            if (trim(std::string_view{rest}.substr(parsed_chars)).empty() == false)
+            {
+                return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /sessions [LIMIT]");
+            }
+        }
+        catch (const std::exception&)
+        {
+            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /sessions [LIMIT]");
+        }
+
+        if (limit <= 0)
+        {
+            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /sessions [LIMIT]");
+        }
+    }
+
+    auto snapshots = store.list(limit);
+    if (!snapshots)
+    {
+        return nonstd::make_unexpected(snapshots.error());
+    }
+
+    return CommandResult{.message = format_sessions_list(*snapshots)};
+}
+
+auto register_sessions_command(CommandRegistry& registry, sessions::SessionStore* session_store) -> void
+{
+    if (session_store == nullptr)
+    {
+        return;
+    }
+
+    registry.register_command(
+        SlashCommand{
+            .name = "sessions",
+            .description = "List saved sessions.",
+            .handler = [session_store](std::string_view args) -> Result<CommandResult> {
+                return execute_sessions_command(*session_store, args);
+            },
+        });
+}
+
+auto execute_resume_command(const std::function<Result<SessionCommandSummary>(std::string_view id)>& resume_session,
+                            std::string_view args) -> Result<CommandResult>
+{
+    if (!resume_session)
+    {
+        return fail<CommandResult>(ErrorKind::InvalidArgument, "session resume is not available");
+    }
+
+    auto id = std::string{trim(args)};
+    if (id.empty())
+    {
+        id = "latest";
+    }
+
+    auto summary = resume_session(id);
+    if (!summary)
+    {
+        return nonstd::make_unexpected(summary.error());
+    }
+
+    std::ostringstream output;
+    output << "Resumed session " << summary->session_id;
+    if (!summary->summary.empty())
+    {
+        output << ": " << summary->summary;
+    }
+    output << '\n';
+
+    return CommandResult{.message = output.str()};
+}
+
+auto register_resume_command(CommandRegistry& registry,
+                             std::function<Result<SessionCommandSummary>(std::string_view id)> resume_session) -> void
+{
+    registry.register_command(
+        SlashCommand{
+            .name = "resume",
+            .description = "Resume a saved session.",
+            .handler = [resume_session = std::move(resume_session)](std::string_view args) -> Result<CommandResult> {
+                return execute_resume_command(resume_session, args);
+            },
+        });
+}
+
 auto format_plugin_list(std::span<const LoadedPlugin> plugins) -> std::string
 {
     if (plugins.empty())
@@ -504,6 +633,8 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
             },
         });
     register_memory_command(registry, options.memory_store);
+    register_sessions_command(registry, options.session_store);
+    register_resume_command(registry, std::move(options.resume_session));
     register_plugin_command(registry, options.plugins);
     register_plugin_slash_commands(registry, options.plugins);
 
