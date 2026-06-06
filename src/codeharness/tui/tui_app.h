@@ -18,6 +18,7 @@ enum class TuiAction
     InsertCommand,
     ApprovePermission,
     DenyPermission,
+    Interrupt,
     Quit,
 };
 
@@ -48,6 +49,7 @@ struct TuiState
     std::vector<TranscriptItem> transcript;
     std::string composer;
     bool busy = false;
+    bool interrupt_requested = false;
     bool should_quit = false;
     std::optional<PermissionPrompt> pending_permission;
     std::optional<CommandPaletteState> command_palette;
@@ -72,6 +74,7 @@ public:
     auto handle_quit() -> TuiAction;
     auto handle_command_select() -> TuiAction;
     auto handle_command_cancel() -> TuiAction;
+    auto handle_interrupt() -> TuiAction;
     auto handle_permission_approve() -> TuiAction;
     auto handle_permission_deny() -> TuiAction;
 

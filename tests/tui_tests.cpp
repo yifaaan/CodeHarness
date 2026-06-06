@@ -40,6 +40,39 @@ TEST_CASE("tui model composer submit and quit states")
     CHECK(model.state().should_quit);
 }
 
+TEST_CASE("tui model interrupt marks busy run and renders status")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("hello tui");
+
+    CHECK(model.handle_interrupt() == codeharness::tui::TuiAction::Interrupt);
+    model.apply_engine_event(codeharness::EngineError{.message = "interrupted"});
+    CHECK(model.state().interrupt_requested);
+    CHECK(model.render_text().find("interrupted") != std::string::npos);
+    REQUIRE(model.state().transcript.size() == 2);
+
+    model.complete_prompt();
+    CHECK(!model.state().busy);
+    CHECK(!model.state().interrupt_requested);
+}
+
+TEST_CASE("tui model interrupt clears pending permission")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("write file");
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "default mode requires confirmation for mutating tools",
+        });
+
+    CHECK(model.handle_interrupt() == codeharness::tui::TuiAction::Interrupt);
+    CHECK(!model.state().pending_permission.has_value());
+    CHECK(model.state().interrupt_requested);
+}
+
 TEST_CASE("tui model command palette filters navigates and inserts")
 {
     codeharness::tui::TuiAppModel model;

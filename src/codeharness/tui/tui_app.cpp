@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -81,6 +82,12 @@ auto command_entries_from_registry(const CommandRegistry& registry) -> std::vect
 auto is_slash_command_prefix(std::string_view input) -> bool
 {
     return input.starts_with('/') && input.find_first_of(" \t\r\n") == std::string_view::npos;
+}
+
+auto last_transcript_is_error(const TuiState& state, std::string_view text) -> bool
+{
+    return !state.transcript.empty() && state.transcript.back().kind == "error" &&
+           state.transcript.back().text == text;
 }
 
 } // namespace
@@ -285,6 +292,23 @@ auto TuiAppModel::handle_command_cancel() -> TuiAction
     return TuiAction::None;
 }
 
+auto TuiAppModel::handle_interrupt() -> TuiAction
+{
+    if (!state_.busy && !state_.pending_permission)
+    {
+        return TuiAction::None;
+    }
+
+    if (!state_.interrupt_requested && !last_transcript_is_error(state_, "interrupted"))
+    {
+        state_.transcript.push_back(TranscriptItem{.kind = "error", .text = "interrupted", .is_error = true});
+    }
+    state_.interrupt_requested = true;
+    state_.pending_permission.reset();
+    state_.command_palette.reset();
+    return TuiAction::Interrupt;
+}
+
 auto TuiAppModel::handle_permission_approve() -> TuiAction
 {
     if (!state_.pending_permission)
@@ -308,12 +332,14 @@ auto TuiAppModel::begin_prompt(std::string prompt) -> void
     state_.transcript.push_back(TranscriptItem{.kind = "user", .text = std::move(prompt)});
     state_.composer.clear();
     state_.command_palette.reset();
+    state_.interrupt_requested = false;
     state_.busy = true;
 }
 
 auto TuiAppModel::complete_prompt() -> void
 {
     state_.busy = false;
+    state_.interrupt_requested = false;
 }
 
 auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
@@ -339,6 +365,10 @@ auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
                     TranscriptItem{.kind = "tool_result", .text = result.content, .is_error = result.is_error});
             },
             [this](const EngineError& error) {
+                if (last_transcript_is_error(state_, error.message))
+                {
+                    return;
+                }
                 state_.transcript.push_back(TranscriptItem{.kind = "error", .text = error.message, .is_error = true});
             },
         },
@@ -391,10 +421,13 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
     std::mutex mutex;
     std::condition_variable permission_cv;
     std::optional<PermissionResponse> permission_response;
+    std::unique_ptr<CancellationSource> cancellation_source;
 
     auto run_prompt = [&](std::string prompt) {
         model.begin_prompt(prompt);
-        std::thread worker{[&, prompt = std::move(prompt)] {
+        cancellation_source = std::make_unique<CancellationSource>();
+        auto cancellation = cancellation_source->token();
+        std::thread worker{[&, prompt = std::move(prompt), cancellation] {
             auto result = runtime.run_prompt(
                 prompt,
                 runtime::RunPromptOptions{
@@ -409,13 +442,17 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                         screen.PostEvent(Event::Custom);
 
                         std::unique_lock lock{mutex};
-                        permission_cv.wait(lock, [&] { return permission_response.has_value(); });
-                        auto response = *permission_response;
+                        permission_cv.wait(lock, [&] {
+                            return permission_response.has_value() || model.state().interrupt_requested;
+                        });
+                        auto response = permission_response.value_or(
+                            PermissionResponse{.allowed = false, .reason = "interrupted"});
                         permission_response.reset();
                         model.clear_permission();
                         screen.PostEvent(Event::Custom);
                         return response;
                     },
+                    .cancellation = cancellation,
                 },
                 [&](const EngineEvent& event) {
                     std::lock_guard lock{mutex};
@@ -430,6 +467,7 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                     model.apply_engine_event(EngineError{.message = result.error().message});
                 }
                 model.complete_prompt();
+                cancellation_source.reset();
             }
             screen.PostEvent(Event::Custom);
         }};
@@ -442,6 +480,17 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
             std::lock_guard lock{mutex};
             if (model.state().pending_permission)
             {
+                if (event == Event::CtrlC)
+                {
+                    if (cancellation_source)
+                    {
+                        cancellation_source->cancel();
+                    }
+                    model.handle_interrupt();
+                    permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
+                    permission_cv.notify_one();
+                    return true;
+                }
                 if (event == Event::Character("a") || event == Event::Character("A"))
                 {
                     permission_response = PermissionResponse{.allowed = true};
@@ -461,6 +510,16 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
         if (event == Event::CtrlC || event == Event::CtrlD)
         {
             std::lock_guard lock{mutex};
+            if (model.state().busy)
+            {
+                if (cancellation_source)
+                {
+                    cancellation_source->cancel();
+                }
+                model.handle_interrupt();
+                permission_cv.notify_all();
+                return true;
+            }
             if (model.handle_quit() == TuiAction::Quit)
             {
                 screen.ExitLoopClosure()();
