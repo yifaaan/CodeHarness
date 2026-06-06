@@ -106,6 +106,9 @@ public:
     auto run(const RunRequest& request) -> Result<RunResult>;
     auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> Result<RunResult>;
 
+    /// Replace the permission checker mid-session (e.g. on /plan toggle).
+    auto set_permission_checker(const PermissionChecker* checker) -> void { permissions_ = checker; }
+
 private:
     auto execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
         -> ToolResultBlock;

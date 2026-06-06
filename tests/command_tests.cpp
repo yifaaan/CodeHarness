@@ -1,5 +1,7 @@
 #include "test_support.h"
 
+#include <algorithm>
+
 TEST_CASE("command registry resolves slash command names arguments and aliases")
 {
     codeharness::CommandRegistry registry;
@@ -24,6 +26,35 @@ TEST_CASE("command registry resolves slash command names arguments and aliases")
 
     auto missing = registry.lookup("/missing");
     CHECK(missing.command == nullptr);
+}
+
+TEST_CASE("plan mode commands are discoverable as message-only commands")
+{
+    codeharness::SkillRegistry skills;
+    auto commands = codeharness::build_builtin_command_registry(skills);
+
+    const auto plan = commands.lookup("/plan");
+    REQUIRE(plan.command != nullptr);
+    CHECK(plan.command->name == "plan");
+    CHECK(plan.command->description.find("plan mode") != std::string::npos);
+    CHECK(plan.command->invocation == codeharness::CommandInvocationKind::MessageOnly);
+
+    const auto act = commands.lookup("/act");
+    REQUIRE(act.command != nullptr);
+    CHECK(act.command->name == "act");
+    CHECK(act.command->description.find("default execution mode") != std::string::npos);
+    CHECK(act.command->invocation == codeharness::CommandInvocationKind::MessageOnly);
+
+    const auto mode = commands.lookup("/mode");
+    REQUIRE(mode.command != nullptr);
+    CHECK(mode.command->name == "mode");
+    CHECK(mode.command->description.find("permission mode") != std::string::npos);
+    CHECK(mode.command->invocation == codeharness::CommandInvocationKind::MessageOnly);
+
+    const auto listed = commands.list();
+    CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "plan"; }));
+    CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "act"; }));
+    CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "mode"; }));
 }
 
 TEST_CASE("skills command lists bundled user and project skills")

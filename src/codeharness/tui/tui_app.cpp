@@ -466,7 +466,12 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                 {
                     model.apply_engine_event(EngineError{.message = result.error().message});
                 }
+                else if (!result->output_text.empty())
+                {
+                    model.apply_engine_event(EngineAssistantTextDelta{.text = result->output_text});
+                }
                 model.complete_prompt();
+                model.set_permission_mode(runtime.permission_mode());
                 cancellation_source.reset();
             }
             screen.PostEvent(Event::Custom);
@@ -662,7 +667,20 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
         }
 
         rows.push_back(separator());
-        rows.push_back(hbox({text(model.state().busy ? "Running " : "Ready "), input_component->Render()}));
+        {
+            auto mode_label = [&]() -> std::string {
+                switch (model.state().permission_mode) {
+                    case PermissionMode::Plan: return "Plan";
+                    case PermissionMode::FullAuto: return "FullAuto";
+                    default: return "Default";
+                }
+            }();
+            rows.push_back(hbox({
+                text((model.state().busy ? "Running" : "Ready") + std::string{" [" + mode_label + "]"}) | bold,
+                separator(),
+                input_component->Render(),
+            }));
+        }
         return vbox(std::move(rows)) | border;
     });
 

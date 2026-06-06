@@ -94,6 +94,7 @@ public:
 
     [[nodiscard]] auto cwd() const noexcept -> const std::filesystem::path&;
     [[nodiscard]] auto permission_mode() const noexcept -> PermissionMode;
+    auto set_permission_mode(PermissionMode mode) -> void;
 
     [[nodiscard]] auto skills() const noexcept -> const SkillRegistry&;
     [[nodiscard]] auto plugins() const noexcept -> const std::vector<LoadedPlugin>&;

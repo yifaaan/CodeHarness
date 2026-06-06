@@ -22,6 +22,8 @@
 //   5. EngineEvent 通过 lambda 回调处理（流式输出到终端）
 #include "codeharness/cli/cli.h"
 
+#include "codeharness/core/strings.h"
+
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/config/config_loader.h"
 #include "codeharness/core/log.h"
@@ -53,6 +55,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     bool show_version = false;
     bool backend_only = false;
+    bool plan_mode = false;
     std::string prompt;
     std::string cwd;
     int max_turns = 0;
@@ -64,6 +67,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     app.add_flag("--version", show_version, "Print version and exit");
     app.add_flag("--backend-only", backend_only, "Run the backend-only JSON Lines protocol");
+    app.add_flag("--plan", plan_mode, "Start in plan mode (read-only analysis)");
     app.add_option("-p,--prompt", prompt, "Prompt to run in non-interactive mode");
     app.add_option("--cwd", cwd, "Working directory");
     app.add_option("--max-turns", max_turns, "Maximum number of turns");
@@ -120,7 +124,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
         runtime::RuntimeBundleOptions{
             .cwd = settings->cwd,
             .memory_root = settings->memory_root,
-            .permission_mode = settings->permission.mode,
+            .permission_mode = plan_mode ? PermissionMode::Plan : settings->permission.mode,
             .load_default_user_plugins = true,
             .provider_config = ProviderConfig{
                 .type = settings->provider_type,
@@ -153,6 +157,30 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     if (!prompt.empty() && prompt.front() == '/')
     {
+        // Plan mode toggle commands are handled directly (no engine needed).
+        auto trimmed = std::string{codeharness::trim(prompt)};
+        if (trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter")
+        {
+            (*runtime_bundle)->set_permission_mode(codeharness::PermissionMode::Plan);
+            std::cout << "Entered plan mode. Read-only tools only.\n";
+            return 0;
+        }
+        if (trimmed == "/act" || trimmed == "/plan off" || trimmed == "/plan exit")
+        {
+            (*runtime_bundle)->set_permission_mode(codeharness::PermissionMode::Default);
+            std::cout << "Default mode. Mutating tools allowed with confirmation.\n";
+            return 0;
+        }
+        if (trimmed == "/mode" || trimmed == "/permissions")
+        {
+            auto mode = (*runtime_bundle)->permission_mode();
+            auto label = mode == codeharness::PermissionMode::Plan ? "plan"
+                       : mode == codeharness::PermissionMode::FullAuto ? "full_auto"
+                       : "default";
+            std::cout << "Current permission mode: " << label << '\n';
+            return 0;
+        }
+
         auto command_result = execute_slash_command((*runtime_bundle)->commands(), prompt);
         if (!command_result)
         {

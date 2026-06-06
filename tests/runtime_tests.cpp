@@ -107,6 +107,50 @@ TEST_CASE("runtime build_run_request includes prompt options context memory and 
     CHECK(request->system_prompt->find("Use CMake when building CodeHarness.") != std::string::npos);
 }
 
+TEST_CASE("runtime plan mode commands toggle and report permission mode")
+{
+    TempDir temp{"codeharness-runtime-plan-mode-command-test"};
+
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::Default);
+
+    auto entered = (*bundle)->run_prompt("/plan", 3, {});
+    REQUIRE(entered.has_value());
+    CHECK(entered->output_text.find("Entered plan mode") != std::string::npos);
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::Plan);
+
+    auto mode = (*bundle)->run_prompt("/mode", 3, {});
+    REQUIRE(mode.has_value());
+    CHECK(mode->output_text == "Current permission mode: plan");
+
+    auto request = (*bundle)->build_run_request("inspect only", 3);
+    REQUIRE(request.has_value());
+    REQUIRE(request->system_prompt.has_value());
+    CHECK(request->system_prompt->find("Plan: treat the session as read-only planning") != std::string::npos);
+
+    auto exited = (*bundle)->run_prompt("/act", 3, {});
+    REQUIRE(exited.has_value());
+    CHECK(exited->output_text.find("Default mode") != std::string::npos);
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::Default);
+}
+
+TEST_CASE("runtime set_permission_mode updates future run request permission guidance")
+{
+    TempDir temp{"codeharness-runtime-set-plan-mode-test"};
+
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    (*bundle)->set_permission_mode(codeharness::PermissionMode::Plan);
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::Plan);
+
+    auto request = (*bundle)->build_run_request("plan this", 5);
+    REQUIRE(request.has_value());
+    REQUIRE(request->system_prompt.has_value());
+    CHECK(request->system_prompt->find("Plan: treat the session as read-only planning") != std::string::npos);
+}
+
 TEST_CASE("runtime slash command registry exposes message-only skills command")
 {
     TempDir temp{"codeharness-runtime-command-test"};

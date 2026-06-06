@@ -2,6 +2,7 @@
 
 #include "codeharness/core/result.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/permissions/permission.h"
 #include "codeharness/runtime/runtime.h"
 
 #include <optional>
@@ -51,6 +52,7 @@ struct TuiState
     bool busy = false;
     bool interrupt_requested = false;
     bool should_quit = false;
+    PermissionMode permission_mode = PermissionMode::Default;
     std::optional<PermissionPrompt> pending_permission;
     std::optional<CommandPaletteState> command_palette;
 };
@@ -83,6 +85,7 @@ public:
     auto apply_engine_event(const EngineEvent& event) -> void;
     auto show_permission(const PermissionPrompt& prompt) -> void;
     auto clear_permission() -> void;
+    auto set_permission_mode(PermissionMode mode) -> void { state_.permission_mode = mode; }
 
 private:
     auto refresh_command_palette_matches() -> void;

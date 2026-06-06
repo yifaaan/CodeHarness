@@ -640,6 +640,33 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
             },
             .invocation = CommandInvocationKind::MessageOnly,
         });
+    registry.register_command(
+        SlashCommand{
+            .name = "plan",
+            .description = "Enter plan mode (read-only analysis).",
+            .handler = [](std::string_view) -> Result<CommandResult> {
+                return CommandResult{.message = "Entered plan mode. Read-only tools only."};
+            },
+            .invocation = CommandInvocationKind::MessageOnly,
+        });
+    registry.register_command(
+        SlashCommand{
+            .name = "act",
+            .description = "Exit plan mode and return to default execution mode.",
+            .handler = [](std::string_view) -> Result<CommandResult> {
+                return CommandResult{.message = "Default mode. Mutating tools allowed with confirmation."};
+            },
+            .invocation = CommandInvocationKind::MessageOnly,
+        });
+    registry.register_command(
+        SlashCommand{
+            .name = "mode",
+            .description = "Show the current permission mode.",
+            .handler = [](std::string_view) -> Result<CommandResult> {
+                return CommandResult{.message = "Use /mode in the runtime to show the current permission mode."};
+            },
+            .invocation = CommandInvocationKind::MessageOnly,
+        });
     register_memory_command(registry, options.memory_store);
     register_sessions_command(registry, options.session_store);
     register_resume_command(registry, std::move(options.resume_session));

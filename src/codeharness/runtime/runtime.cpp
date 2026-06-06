@@ -43,6 +43,8 @@
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/skill_tool.h"
 
+#include "codeharness/core/strings.h"
+
 #include <nonstd/expected.hpp>
 #include <spdlog/spdlog.h>
 
@@ -252,6 +254,13 @@ auto RuntimeBundle::permission_mode() const noexcept -> PermissionMode
     return permission_mode_;
 }
 
+auto RuntimeBundle::set_permission_mode(PermissionMode mode) -> void
+{
+    permission_mode_ = mode;
+    permissions_ = PermissionChecker(PermissionSettings{mode});
+    engine_.set_permission_checker(&permissions_);
+}
+
 auto RuntimeBundle::skills() const noexcept -> const SkillRegistry&
 {
     return loaded_skills_.registry;
@@ -375,6 +384,30 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, int max_turns, const Eng
 auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& options, const EngineEventSink& sink)
     -> Result<RunResult>
 {
+    // Handle plan mode toggle commands directly (no engine needed).
+    auto trimmed = trim(prompt);
+    if (trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter")
+    {
+        set_permission_mode(PermissionMode::Plan);
+        return RunResult{.output_text = "Entered plan mode. Read-only tools only."};
+    }
+    if (trimmed == "/act" || trimmed == "/plan off" || trimmed == "/plan exit")
+    {
+        set_permission_mode(PermissionMode::Default);
+        return RunResult{.output_text = "Default mode. Mutating tools allowed with confirmation."};
+    }
+    if (trimmed == "/mode" || trimmed == "/permissions")
+    {
+        auto mode_str = [this]() -> std::string_view {
+            switch (permission_mode_) {
+                case PermissionMode::Plan: return "plan";
+                case PermissionMode::FullAuto: return "full_auto";
+                default: return "default";
+            }
+        }();
+        return RunResult{.output_text = std::string{"Current permission mode: "} + std::string{mode_str}};
+    }
+
     auto request = build_run_request(prompt, options.max_turns);
     if (!request)
     {
