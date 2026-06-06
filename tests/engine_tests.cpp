@@ -64,6 +64,40 @@ TEST_CASE("engine prepends system prompt when provided")
     CHECK(provider.seen_messages[1].role == codeharness::Role::User);
 }
 
+TEST_CASE("engine continues from initial messages and replaces prior system prompt")
+{
+    CapturingProvider provider;
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "next";
+    request.system_prompt = "fresh system";
+    request.initial_messages = std::vector<codeharness::Message>{
+        codeharness::make_text_message(codeharness::Role::System, "old system"),
+        codeharness::make_text_message(codeharness::Role::User, "previous"),
+        codeharness::make_text_message(codeharness::Role::Assistant, "prior answer"),
+    };
+    request.options.max_turns = 1;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->messages.size() == 5);
+    CHECK(result->messages[0].role == codeharness::Role::System);
+    CHECK(codeharness::collect_text(result->messages[0]) == "fresh system");
+    CHECK(result->messages[1].role == codeharness::Role::User);
+    CHECK(codeharness::collect_text(result->messages[1]) == "previous");
+    CHECK(result->messages[2].role == codeharness::Role::Assistant);
+    CHECK(result->messages[3].role == codeharness::Role::User);
+    CHECK(codeharness::collect_text(result->messages[3]) == "next");
+    CHECK(result->messages[4].role == codeharness::Role::Assistant);
+
+    REQUIRE(provider.seen_messages.size() == 4);
+    CHECK(codeharness::collect_text(provider.seen_messages[0]) == "fresh system");
+    CHECK(codeharness::collect_text(provider.seen_messages[3]) == "next");
+}
+
 namespace
 {
 

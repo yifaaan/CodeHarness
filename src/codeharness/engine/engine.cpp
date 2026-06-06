@@ -76,12 +76,18 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 {
     RunResult result;
 
-    // Provider adapters expect the conversation history in model order.
-    // System prompt is optional so existing tests and minimal Engine callers keep
-    // the old User -> Assistant shape unless the CLI/runtime explicitly supplies one.
+    if (request.initial_messages)
+    {
+        result.messages = *request.initial_messages;
+        if (!result.messages.empty() && result.messages.front().role == Role::System)
+        {
+            result.messages.erase(result.messages.begin());
+        }
+    }
+
     if (request.system_prompt && !request.system_prompt->empty())
     {
-        result.messages.push_back(make_text_message(Role::System, *request.system_prompt));
+        result.messages.insert(result.messages.begin(), make_text_message(Role::System, *request.system_prompt));
     }
 
     result.messages.push_back(make_text_message(Role::User, request.prompt));

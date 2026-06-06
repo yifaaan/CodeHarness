@@ -143,3 +143,91 @@ TEST_CASE("runtime run_prompt forwards prompt through engine and streams assista
     REQUIRE(result->messages.size() >= 2);
     CHECK(result->messages.front().role == codeharness::Role::System);
 }
+
+TEST_CASE("runtime resumes a saved session by id and exposes summary")
+{
+    TempDir temp{"codeharness-runtime-resume-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "resume-me";
+    snapshot.cwd = (*bundle)->cwd();
+    snapshot.model = "echo";
+    snapshot.summary = "previous prompt";
+    snapshot.message_count = 2;
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::System, "old system"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "previous prompt"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::Assistant, "previous answer"));
+    snapshot.message_count = static_cast<int>(snapshot.messages.size());
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+
+    auto resumed = (*bundle)->resume_session("resume-me");
+    REQUIRE(resumed.has_value());
+    CHECK(resumed->session_id == "resume-me");
+    CHECK(resumed->summary == "previous prompt");
+
+    auto active = (*bundle)->active_session_summary();
+    REQUIRE(active.has_value());
+    CHECK(active->session_id == "resume-me");
+}
+
+TEST_CASE("runtime resumed run includes history replaces system prompt and reuses session id")
+{
+    TempDir temp{"codeharness-runtime-resume-run-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    {
+        std::ofstream file{(*bundle)->cwd() / "AGENTS.md", std::ios::binary};
+        file << "fresh runtime project instructions";
+    }
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "continued";
+    snapshot.cwd = (*bundle)->cwd();
+    snapshot.model = "echo";
+    snapshot.summary = "first prompt";
+    snapshot.created_at = 42.0;
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::System, "stale system"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "first prompt"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::Assistant, "first answer"));
+    snapshot.message_count = static_cast<int>(snapshot.messages.size());
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+    REQUIRE((*bundle)->resume_session("continued").has_value());
+
+    auto request = (*bundle)->build_run_request("second prompt", 3);
+    REQUIRE(request.has_value());
+    REQUIRE(request->initial_messages.has_value());
+    REQUIRE(request->initial_messages->size() == 3);
+    CHECK(codeharness::collect_text(request->initial_messages->front()) == "stale system");
+    REQUIRE(request->system_prompt.has_value());
+    CHECK(request->system_prompt->find("fresh runtime project instructions") != std::string::npos);
+
+    auto result = (*bundle)->run_prompt("second prompt", 3, {});
+    REQUIRE(result.has_value());
+    REQUIRE(result->messages.size() >= 5);
+    CHECK(result->messages.front().role == codeharness::Role::System);
+    CHECK(codeharness::collect_text(result->messages.front()).find("fresh runtime project instructions") !=
+          std::string::npos);
+    CHECK(result->output_text == "second prompt");
+
+    auto saved = (*bundle)->sessions().load_by_id("continued");
+    REQUIRE(saved);
+    REQUIRE(saved->has_value());
+    CHECK((*saved)->session_id == "continued");
+    CHECK((*saved)->message_count == static_cast<int>(result->messages.size()));
+    CHECK((*saved)->created_at == doctest::Approx(42.0));
+    CHECK((*saved)->summary == "first prompt");
+}
+
+TEST_CASE("runtime resume missing session returns not found")
+{
+    TempDir temp{"codeharness-runtime-resume-missing-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto resumed = (*bundle)->resume_session("missing");
+    REQUIRE(!resumed.has_value());
+    CHECK(resumed.error().kind == codeharness::ErrorKind::NotFound);
+}

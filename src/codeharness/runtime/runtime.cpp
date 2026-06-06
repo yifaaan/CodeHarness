@@ -44,10 +44,13 @@
 #include "codeharness/tools/skill_tool.h"
 
 #include <nonstd/expected.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -84,12 +87,16 @@ auto load_relevant_memories_for_prompt(const memory::MemoryStore& store,
 
 auto create_command_registry(SkillRegistry& skills,
                              memory::MemoryStore& memory_store,
+                             sessions::SessionStore& session_store,
+                             std::function<Result<SessionCommandSummary>(std::string_view id)> resume_session,
                              std::span<const LoadedPlugin> plugins) -> CommandRegistry
 {
     return build_builtin_command_registry(
         skills,
         BuiltinCommandRegistryOptions{
             .memory_store = &memory_store,
+            .session_store = &session_store,
+            .resume_session = std::move(resume_session),
             .plugins = plugins,
         });
 }
@@ -108,6 +115,59 @@ auto create_tool_registry(const SkillRegistry& skills, coordinator::CoordinatorR
     return tools;
 }
 
+auto session_summary_from(const sessions::SessionSnapshot& snapshot) -> SessionCommandSummary
+{
+    return SessionCommandSummary{
+        .session_id = snapshot.session_id,
+        .model = snapshot.model,
+        .summary = snapshot.summary,
+        .message_count = snapshot.message_count,
+    };
+}
+
+auto extract_system_prompt(const std::vector<Message>& messages) -> std::string
+{
+    for (const auto& msg : messages)
+    {
+        if (msg.role == Role::System)
+        {
+            return collect_text(msg);
+        }
+    }
+
+    return {};
+}
+
+auto extract_summary(const std::vector<Message>& messages, std::size_t max_chars = 80) -> std::string
+{
+    for (const auto& msg : messages)
+    {
+        if (msg.role != Role::User)
+        {
+            continue;
+        }
+
+        auto text = collect_text(msg);
+        if (!text.empty())
+        {
+            if (text.size() > max_chars)
+            {
+                text.resize(max_chars);
+            }
+            return text;
+        }
+    }
+
+    return {};
+}
+
+auto unix_timestamp_now() -> double
+{
+    return std::chrono::duration<double>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 } // namespace
 
 RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
@@ -116,17 +176,26 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
                              memory::MemoryStore memory_store,
                              std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
                              ToolRegistry tools,
-                             std::unique_ptr<Provider> provider) :
-    cwd_{std::move(cwd)},
-    permission_mode_{permission_mode},
-    loaded_skills_{std::move(loaded_skills)},
-    memory_store_{std::move(memory_store)},
-    commands_{create_command_registry(loaded_skills_.registry, memory_store_, loaded_skills_.plugins)},
-    coordinator_runtime_{std::move(coordinator_runtime)},
-    tools_{std::move(tools)},
-    permissions_{PermissionSettings{.mode = permission_mode_}},
-    provider_{std::move(provider)},
-    engine_{*provider_, tools_, &permissions_}
+                             std::unique_ptr<Provider> provider,
+                             std::string model,
+                             sessions::SessionStore sessions) :
+    cwd_(std::move(cwd)),
+    model_(std::move(model)),
+    permission_mode_(permission_mode),
+    loaded_skills_(std::move(loaded_skills)),
+    memory_store_(std::move(memory_store)),
+    sessions_(std::move(sessions)),
+    commands_(create_command_registry(
+        loaded_skills_.registry,
+        memory_store_,
+        sessions_,
+        [this](std::string_view id) { return resume_session(id); },
+        loaded_skills_.plugins)),
+    coordinator_runtime_(std::move(coordinator_runtime)),
+    tools_(std::move(tools)),
+    permissions_(PermissionSettings{permission_mode_}),
+    provider_(std::move(provider)),
+    engine_(*provider_, tools_, &permissions_)
 {
 }
 
@@ -180,6 +249,44 @@ auto RuntimeBundle::coordinator_runtime() const noexcept -> const coordinator::C
     return *coordinator_runtime_;
 }
 
+auto RuntimeBundle::sessions() noexcept -> sessions::SessionStore&
+{
+    return sessions_;
+}
+
+auto RuntimeBundle::sessions() const noexcept -> const sessions::SessionStore&
+{
+    return sessions_;
+}
+
+auto RuntimeBundle::active_session_summary() const noexcept -> std::optional<SessionCommandSummary>
+{
+    if (!active_session_)
+    {
+        return std::nullopt;
+    }
+
+    return session_summary_from(*active_session_);
+}
+
+auto RuntimeBundle::resume_session(std::string_view id) -> Result<SessionCommandSummary>
+{
+    const auto session_id = std::string{id.empty() ? std::string_view{"latest"} : id};
+    auto loaded = sessions_.load_by_id(session_id);
+    if (!loaded)
+    {
+        return nonstd::make_unexpected(loaded.error());
+    }
+
+    if (!*loaded)
+    {
+        return fail<SessionCommandSummary>(ErrorKind::NotFound, "session not found: " + session_id);
+    }
+
+    active_session_ = std::move(**loaded);
+    return session_summary_from(*active_session_);
+}
+
 auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) -> Result<RunRequest>
 {
     auto project_context_files = load_project_context_files(cwd_);
@@ -212,6 +319,7 @@ auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) ->
     return RunRequest{
         .prompt = std::string{prompt},
         .system_prompt = std::move(*system_prompt),
+        .initial_messages = active_session_ ? std::make_optional(active_session_->messages) : std::nullopt,
         .options = EngineOptions{.max_turns = max_turns},
     };
 }
@@ -224,7 +332,43 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, int max_turns, const Eng
         return nonstd::make_unexpected(request.error());
     }
 
-    return engine_.run_streaming(*request, sink);
+    auto result = engine_.run_streaming(*request, sink);
+    if (!result)
+    {
+        return nonstd::make_unexpected(result.error());
+    }
+
+    sessions::SessionSnapshot snapshot;
+    if (active_session_)
+    {
+        snapshot = std::move(*active_session_);
+    }
+    else
+    {
+        snapshot.session_id = sessions::generate_session_id();
+        snapshot.cwd = cwd_;
+        snapshot.created_at = unix_timestamp_now();
+    }
+
+    snapshot.cwd = cwd_;
+    snapshot.model = model_;
+    snapshot.messages = result->messages;
+    snapshot.message_count = static_cast<int>(snapshot.messages.size());
+    snapshot.system_prompt = extract_system_prompt(snapshot.messages);
+    if (snapshot.created_at == 0.0)
+    {
+        snapshot.created_at = unix_timestamp_now();
+    }
+    snapshot.summary = extract_summary(snapshot.messages);
+
+    auto saved = sessions_.save(snapshot);
+    if (!saved)
+    {
+        spdlog::warn("failed to save session: {}", saved.error().message);
+    }
+
+    active_session_ = std::move(snapshot);
+    return std::move(*result);
 }
 
 auto create_memory_store(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
@@ -314,13 +458,21 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
         return nonstd::make_unexpected(provider.error());
     }
 
+    auto session_store = sessions::SessionStore::for_project(options.cwd);
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
     return std::make_unique<RuntimeBundle>(std::move(options.cwd),
                                            options.permission_mode,
                                            std::move(*loaded_skills),
                                            std::move(*memory_store),
                                            std::move(*coordinator_runtime),
                                            std::move(tools),
-                                           std::move(*provider));
+                                           std::move(*provider),
+                                           options.provider_config.model,
+                                           std::move(*session_store));
 }
 
 } // namespace codeharness::runtime

@@ -26,6 +26,7 @@ struct RunRequest
 {
     std::string prompt;
     std::optional<std::string> system_prompt;
+    std::optional<std::vector<Message>> initial_messages;
     EngineOptions options;
 };
 

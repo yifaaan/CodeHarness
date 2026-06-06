@@ -44,12 +44,14 @@
 #include "codeharness/permissions/permission.h"
 #include "codeharness/plugins/plugin_loader.h"
 #include "codeharness/provider/provider_config.h"
+#include "codeharness/sessions/session_store.h"
 #include "codeharness/skills/skill_loader.h"
 #include "codeharness/skills/skill_registry.h"
 #include "codeharness/tools/tool_registry.h"
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -74,7 +76,9 @@ public:
                   memory::MemoryStore memory_store,
                   std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
                   ToolRegistry tools,
-                  std::unique_ptr<Provider> provider);
+                  std::unique_ptr<Provider> provider,
+                  std::string model,
+                  sessions::SessionStore sessions);
 
     RuntimeBundle(const RuntimeBundle&) = delete;
     auto operator=(const RuntimeBundle&) -> RuntimeBundle& = delete;
@@ -93,20 +97,28 @@ public:
     [[nodiscard]] auto coordinator_runtime() noexcept -> coordinator::CoordinatorRuntime&;
     [[nodiscard]] auto coordinator_runtime() const noexcept -> const coordinator::CoordinatorRuntime&;
 
+    [[nodiscard]] auto sessions() noexcept -> sessions::SessionStore&;
+    [[nodiscard]] auto sessions() const noexcept -> const sessions::SessionStore&;
+    [[nodiscard]] auto active_session_summary() const noexcept -> std::optional<SessionCommandSummary>;
+    auto resume_session(std::string_view id) -> Result<SessionCommandSummary>;
+
     auto build_run_request(std::string_view prompt, int max_turns) -> Result<RunRequest>;
     auto run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> Result<RunResult>;
 
 private:
     std::filesystem::path cwd_;
+    std::string model_;
     PermissionMode permission_mode_ = PermissionMode::Default;
     SkillRegistryLoadResult loaded_skills_;
     memory::MemoryStore memory_store_;
+    sessions::SessionStore sessions_;
     CommandRegistry commands_;
     std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime_;
     ToolRegistry tools_;
     PermissionChecker permissions_;
     std::unique_ptr<Provider> provider_;
     Engine engine_;
+    std::optional<sessions::SessionSnapshot> active_session_;
 };
 
 auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_ptr<RuntimeBundle>>;
