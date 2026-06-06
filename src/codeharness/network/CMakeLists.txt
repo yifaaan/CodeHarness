@@ -11,6 +11,7 @@ target_link_libraries(codeharness_network_objects
         Boost::url
         OpenSSL::SSL
         OpenSSL::Crypto
+        $<$<PLATFORM_ID:Windows>:Crypt32>
 )
 
 add_library(codeharness_network INTERFACE)

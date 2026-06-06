@@ -10,6 +10,15 @@
 #include <boost/url/parse.hpp>
 #include <boost/url/url_view.hpp>
 
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
+
+#ifdef _WIN32
+#include <wincrypt.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -30,6 +39,67 @@ namespace beast = boost::beast;
 namespace http = beast::http;
 namespace ssl = boost::asio::ssl;
 using Tcp = asio::ip::tcp;
+
+#ifdef _WIN32
+struct CertStoreDeleter
+{
+    void operator()(HCERTSTORE store) const noexcept
+    {
+        if (store != nullptr)
+        {
+            CertCloseStore(store, 0);
+        }
+    }
+};
+
+struct X509Deleter
+{
+    void operator()(X509* certificate) const noexcept
+    {
+        X509_free(certificate);
+    }
+};
+
+using CertStoreHandle = std::unique_ptr<void, CertStoreDeleter>;
+using X509Handle = std::unique_ptr<X509, X509Deleter>;
+
+auto add_windows_system_roots(ssl::context& tls) -> void
+{
+    CertStoreHandle root_store{CertOpenSystemStoreW(0, L"ROOT")};
+    if (!root_store)
+    {
+        return;
+    }
+
+    auto* const openssl_store = SSL_CTX_get_cert_store(tls.native_handle());
+    PCCERT_CONTEXT cert_context = nullptr;
+    while ((cert_context = CertEnumCertificatesInStore(static_cast<HCERTSTORE>(root_store.get()), cert_context)) !=
+           nullptr)
+    {
+        const unsigned char* cert_data = cert_context->pbCertEncoded;
+        X509Handle certificate{d2i_X509(nullptr, &cert_data, static_cast<long>(cert_context->cbCertEncoded))};
+        if (!certificate)
+        {
+            ERR_clear_error();
+            continue;
+        }
+
+        if (X509_STORE_add_cert(openssl_store, certificate.get()) != 1)
+        {
+            const auto error = ERR_peek_last_error();
+            if (ERR_GET_LIB(error) == ERR_LIB_X509 &&
+                ERR_GET_REASON(error) == X509_R_CERT_ALREADY_IN_HASH_TABLE)
+            {
+                ERR_clear_error();
+                continue;
+            }
+            ERR_clear_error();
+        }
+    }
+}
+#else
+auto add_windows_system_roots(ssl::context&) -> void {}
+#endif
 
 struct ParsedUrl
 {
@@ -304,6 +374,7 @@ struct HttpClient::Impl
     Impl()
     {
         tls.set_default_verify_paths();
+        add_windows_system_roots(tls);
         tls.set_verify_mode(ssl::verify_peer);
     }
 };
