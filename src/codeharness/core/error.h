@@ -13,6 +13,7 @@ enum class ErrorKind
     Network,
     Provider,
     Tool,
+    Cancelled,
     Internal,
     AlreadyExists, // 资源已存在（例如重复创建团队）
     NotFound,      // 资源不存在（例如查找不存在的团队或成员）
