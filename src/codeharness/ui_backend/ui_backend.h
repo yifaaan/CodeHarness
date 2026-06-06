@@ -41,10 +41,14 @@
 #include "codeharness/runtime/runtime.h"
 
 #include <iosfwd>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <optional>
 #include <queue>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <variant>
 
 namespace codeharness::ui_backend
@@ -148,18 +152,33 @@ public:
 private:
     auto emit(const BackendEvent& event) -> void;
     auto handle_request(const FrontendRequest& request) -> bool;
-    auto handle_submit_line(std::string_view line) -> void;
+    auto handle_submit_line(std::string line) -> void;
+    auto run_submit_line(std::string line) -> void;
     auto handle_select_command(const FrontendRequest& request) -> void;
     auto handle_apply_select_command(const FrontendRequest& request) -> void;
+    auto handle_permission_response(const FrontendRequest& request) -> void;
+    auto handle_interrupt() -> void;
     auto emit_engine_event(const EngineEvent& event) -> void;
     auto request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>;
     auto next_frontend_request() -> Result<std::optional<FrontendRequest>>;
+    auto has_active_run() const -> bool;
+    auto reap_finished_run() -> void;
+    auto wait_for_active_run() -> void;
 
     runtime::RuntimeBundle& runtime_;
     std::istream& input_;
     std::ostream& output_;
     int max_turns_ = 10;
     std::queue<FrontendRequest> queued_requests_;
+    mutable std::mutex state_mutex_;
+    std::mutex output_mutex_;
+    std::condition_variable permission_cv_;
+    std::optional<PermissionPrompt> pending_permission_;
+    std::optional<PermissionResponse> pending_permission_response_;
+    std::unique_ptr<CancellationSource> active_cancellation_;
+    std::thread active_worker_;
+    bool active_run_ = false;
+    bool active_run_finished_ = false;
 };
 
 } // namespace codeharness::ui_backend

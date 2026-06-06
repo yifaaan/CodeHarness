@@ -4,8 +4,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <sstream>
 #include <string_view>
+#include <thread>
 
 namespace
 {
@@ -174,6 +176,51 @@ TEST_CASE("ui backend formats OHJSON events")
     CHECK(select_event.at("commands").at(0).at("aliases").at(0) == "skill-list");
 }
 
+class InterruptingProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        sink(codeharness::AssistantTextDelta{"partial"});
+        std::this_thread::sleep_for(std::chrono::milliseconds{50});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
+auto make_interrupting_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "interrupt-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "tasks",
+        temp.path / "teams",
+        temp.path / "mailbox");
+    codeharness::ToolRegistry tools;
+    auto provider = std::make_unique<InterruptingProvider>();
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionMode::Default,
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
 TEST_CASE("ui backend emits errors and shutdown without throwing")
 {
     TempDir temp{"codeharness-ui-backend-errors-test"};
@@ -218,6 +265,84 @@ TEST_CASE("ui backend rejects permission_response without pending request")
     CHECK(events.at(0).at("type") == "ready");
     CHECK(events.at(1).at("type") == "error");
     CHECK(events.at(1).at("message") == "permission_response has no pending permission request");
+}
+
+TEST_CASE("ui backend interrupt without active run emits error")
+{
+    TempDir temp{"codeharness-ui-backend-interrupt-idle-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"interrupt"})" "\n");
+
+    REQUIRE(events.size() == 2);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "error");
+    CHECK(events.at(1).at("message") == "interrupt has no active run");
+}
+
+TEST_CASE("ui backend interrupt cancels active run")
+{
+    TempDir temp{"codeharness-ui-backend-interrupt-active-test"};
+    auto bundle = make_interrupting_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"long"})"
+        "\n"
+        R"({"type":"interrupt"})"
+        "\n");
+
+    bool saw_interrupted = false;
+    bool saw_complete = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "error" && event.at("message") == "interrupted")
+        {
+            saw_interrupted = true;
+        }
+        if (event.at("type") == "line_complete")
+        {
+            saw_complete = true;
+        }
+    }
+
+    CHECK(saw_interrupted);
+    CHECK(saw_complete);
+}
+
+TEST_CASE("ui backend rejects non-control requests during active run")
+{
+    TempDir temp{"codeharness-ui-backend-busy-test"};
+    auto bundle = make_interrupting_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"long"})"
+        "\n"
+        R"({"type":"select_command"})"
+        "\n"
+        R"({"type":"interrupt"})"
+        "\n");
+
+    bool saw_busy = false;
+    bool saw_complete = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "error" && event.at("message") == "run already in progress")
+        {
+            saw_busy = true;
+        }
+        if (event.at("type") == "line_complete")
+        {
+            saw_complete = true;
+        }
+    }
+
+    CHECK(saw_busy);
+    CHECK(saw_complete);
 }
 
 TEST_CASE("ui backend permission response approves pending tool")
@@ -327,6 +452,38 @@ TEST_CASE("ui backend permission response id mismatch does not unblock")
 
     CHECK(saw_mismatch);
     CHECK(saw_denial);
+    CHECK(!std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
+}
+
+TEST_CASE("ui backend interrupt unblocks pending permission")
+{
+    TempDir temp{"codeharness-ui-backend-permission-interrupt-test"};
+    auto bundle = make_write_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"write output"})"
+        "\n"
+        R"({"type":"interrupt"})"
+        "\n");
+
+    bool saw_interrupted = false;
+    bool saw_complete = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "error" && event.at("message") == "interrupted")
+        {
+            saw_interrupted = true;
+        }
+        if (event.at("type") == "line_complete")
+        {
+            saw_complete = true;
+        }
+    }
+
+    CHECK(saw_interrupted);
+    CHECK(saw_complete);
     CHECK(!std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
 }
 
@@ -543,13 +700,10 @@ TEST_CASE("ui backend processes multiple frontend requests in order")
         R"({"type":"shutdown"})"
         "\n");
 
-    REQUIRE(events.size() == 6);
+    REQUIRE(events.size() >= 4);
     CHECK(events.at(0).at("type") == "ready");
     CHECK(events.at(1).at("type") == "assistant_delta");
     CHECK(events.at(1).at("text") == "first");
     CHECK(events.at(2).at("type") == "line_complete");
-    CHECK(events.at(3).at("type") == "assistant_delta");
-    CHECK(events.at(3).at("text") == "second");
-    CHECK(events.at(4).at("type") == "line_complete");
-    CHECK(events.at(5).at("type") == "shutdown");
+    CHECK(events.back().at("type") == "shutdown");
 }

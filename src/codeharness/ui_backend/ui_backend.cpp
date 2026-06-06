@@ -273,6 +273,7 @@ auto BackendHost::run() -> Result<void>
 
     while (true)
     {
+        reap_finished_run();
         auto request = next_frontend_request();
         if (!request)
         {
@@ -281,6 +282,14 @@ auto BackendHost::run() -> Result<void>
         }
         if (!*request)
         {
+            if (has_active_run())
+            {
+                wait_for_active_run();
+                if (!queued_requests_.empty())
+                {
+                    continue;
+                }
+            }
             break;
         }
 
@@ -295,20 +304,46 @@ auto BackendHost::run() -> Result<void>
 
 auto BackendHost::emit(const BackendEvent& event) -> void
 {
+    std::lock_guard lock{output_mutex_};
     output_ << format_backend_event(event);
 }
 
 auto BackendHost::handle_request(const FrontendRequest& request) -> bool
 {
+    reap_finished_run();
+
     if (request.type == "shutdown")
     {
+        if (has_active_run())
+        {
+            handle_interrupt();
+            wait_for_active_run();
+        }
         emit(BackendShutdown{});
         return false;
     }
 
     if (request.type == "permission_response")
     {
-        emit(BackendError{.message = "permission_response has no pending permission request"});
+        handle_permission_response(request);
+        return true;
+    }
+
+    if (request.type == "interrupt")
+    {
+        handle_interrupt();
+        return true;
+    }
+
+    if (has_active_run())
+    {
+        if (request.type == "submit_line")
+        {
+            queued_requests_.push(request);
+            return true;
+        }
+
+        emit(BackendError{.message = "run already in progress"});
         return true;
     }
 
@@ -364,9 +399,39 @@ auto BackendHost::next_frontend_request() -> Result<std::optional<FrontendReques
     return std::move(*request);
 }
 
-auto BackendHost::handle_submit_line(std::string_view line) -> void
+auto BackendHost::handle_submit_line(std::string line) -> void
 {
-    auto prompt = std::string{line};
+    if (has_active_run())
+    {
+        emit(BackendError{.message = "run already in progress"});
+        return;
+    }
+
+    {
+        std::lock_guard lock{state_mutex_};
+        active_cancellation_ = std::make_unique<CancellationSource>();
+        active_run_ = true;
+        active_run_finished_ = false;
+        pending_permission_.reset();
+        pending_permission_response_.reset();
+    }
+
+    active_worker_ = std::thread{[this, line = std::move(line)]() mutable {
+        run_submit_line(std::move(line));
+        {
+            std::lock_guard lock{state_mutex_};
+            active_run_finished_ = true;
+            active_run_ = false;
+            pending_permission_.reset();
+            pending_permission_response_.reset();
+        }
+        permission_cv_.notify_all();
+    }};
+}
+
+auto BackendHost::run_submit_line(std::string line) -> void
+{
+    auto prompt = std::move(line);
 
     if (!prompt.empty() && prompt.front() == '/')
     {
@@ -391,6 +456,15 @@ auto BackendHost::handle_submit_line(std::string_view line) -> void
         prompt = *command_result->submit_prompt;
     }
 
+    CancellationToken cancellation;
+    {
+        std::lock_guard lock{state_mutex_};
+        if (active_cancellation_)
+        {
+            cancellation = active_cancellation_->token();
+        }
+    }
+
     auto result = runtime_.run_prompt(
         prompt,
         runtime::RunPromptOptions{
@@ -398,6 +472,7 @@ auto BackendHost::handle_submit_line(std::string_view line) -> void
             .permission_prompt = [this](const PermissionPrompt& prompt) {
                 return request_permission(prompt);
             },
+            .cancellation = cancellation,
         },
         [this](const EngineEvent& event) {
             emit_engine_event(event);
@@ -405,6 +480,7 @@ auto BackendHost::handle_submit_line(std::string_view line) -> void
     if (!result)
     {
         emit(BackendError{.message = result.error().message});
+        emit(BackendLineComplete{});
         return;
     }
 
@@ -435,6 +511,68 @@ auto BackendHost::handle_apply_select_command(const FrontendRequest& request) ->
     handle_submit_line(line);
 }
 
+auto BackendHost::handle_permission_response(const FrontendRequest& request) -> void
+{
+    std::unique_lock lock{state_mutex_};
+    if (active_run_ && !pending_permission_)
+    {
+        permission_cv_.wait(lock, [this] {
+            return pending_permission_.has_value() || !active_run_;
+        });
+    }
+
+    if (!pending_permission_)
+    {
+        lock.unlock();
+        emit(BackendError{.message = "permission_response has no pending permission request"});
+        return;
+    }
+
+    if (!request.request_id || *request.request_id != pending_permission_->id)
+    {
+        lock.unlock();
+        emit(BackendError{.message = "permission response request_id mismatch"});
+        return;
+    }
+
+    if (!request.allowed)
+    {
+        lock.unlock();
+        emit(BackendError{.message = "permission_response requires allowed"});
+        return;
+    }
+
+    pending_permission_response_ = PermissionResponse{
+        .allowed = *request.allowed,
+        .reason = *request.allowed ? std::string{} : std::string{"user denied permission"},
+    };
+    permission_cv_.notify_all();
+}
+
+auto BackendHost::handle_interrupt() -> void
+{
+    std::lock_guard lock{state_mutex_};
+    if (!active_run_)
+    {
+        emit(BackendError{.message = "interrupt has no active run"});
+        return;
+    }
+
+    if (active_cancellation_)
+    {
+        active_cancellation_->cancel();
+    }
+
+    if (pending_permission_)
+    {
+        pending_permission_response_ = PermissionResponse{
+            .allowed = false,
+            .reason = "interrupted",
+        };
+        permission_cv_.notify_all();
+    }
+}
+
 auto BackendHost::emit_engine_event(const EngineEvent& event) -> void
 {
     emit(engine_event_to_backend_event(event));
@@ -442,6 +580,13 @@ auto BackendHost::emit_engine_event(const EngineEvent& event) -> void
 
 auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>
 {
+    {
+        std::lock_guard lock{state_mutex_};
+        pending_permission_ = prompt;
+        pending_permission_response_.reset();
+    }
+    permission_cv_.notify_all();
+
     emit(BackendPermissionModal{
         .id = prompt.id,
         .tool_use_id = prompt.tool_use_id,
@@ -451,41 +596,62 @@ auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<P
         .command = prompt.command,
     });
 
-    while (true)
+    std::unique_lock lock{state_mutex_};
+    permission_cv_.wait(lock, [this] {
+        return pending_permission_response_.has_value() ||
+               (active_cancellation_ != nullptr && active_cancellation_->is_cancelled());
+    });
+
+    if (!pending_permission_response_)
     {
-        auto request = next_frontend_request();
-        if (!request)
-        {
-            return nonstd::make_unexpected(request.error());
-        }
-        if (!*request)
-        {
-            return fail<PermissionResponse>(ErrorKind::InvalidArgument, "permission response required before EOF");
-        }
-
-        auto frontend = std::move(**request);
-        if (frontend.type != "permission_response")
-        {
-            queued_requests_.push(std::move(frontend));
-            continue;
-        }
-
-        if (!frontend.request_id || *frontend.request_id != prompt.id)
-        {
-            emit(BackendError{.message = "permission response request_id mismatch"});
-            continue;
-        }
-
-        if (!frontend.allowed)
-        {
-            return fail<PermissionResponse>(ErrorKind::InvalidArgument, "permission_response requires allowed");
-        }
-
-        return PermissionResponse{
-            .allowed = *frontend.allowed,
-            .reason = *frontend.allowed ? std::string{} : std::string{"user denied permission"},
-        };
+        pending_permission_.reset();
+        return PermissionResponse{.allowed = false, .reason = "interrupted"};
     }
+
+    auto response = *pending_permission_response_;
+    pending_permission_response_.reset();
+    pending_permission_.reset();
+    return response;
+}
+
+auto BackendHost::has_active_run() const -> bool
+{
+    std::lock_guard lock{state_mutex_};
+    return active_run_;
+}
+
+auto BackendHost::reap_finished_run() -> void
+{
+    if (active_worker_.joinable())
+    {
+        bool should_join = false;
+        {
+            std::lock_guard lock{state_mutex_};
+            should_join = active_run_finished_;
+        }
+        if (should_join)
+        {
+            active_worker_.join();
+            std::lock_guard lock{state_mutex_};
+            active_run_finished_ = false;
+            active_cancellation_.reset();
+        }
+    }
+}
+
+auto BackendHost::wait_for_active_run() -> void
+{
+    if (active_worker_.joinable())
+    {
+        active_worker_.join();
+    }
+
+    std::lock_guard lock{state_mutex_};
+    active_run_ = false;
+    active_run_finished_ = false;
+    active_cancellation_.reset();
+    pending_permission_.reset();
+    pending_permission_response_.reset();
 }
 
 } // namespace codeharness::ui_backend
