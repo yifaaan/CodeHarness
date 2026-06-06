@@ -2,7 +2,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <optional>
 #include <string>
+#include <string_view>
 
 namespace codeharness
 {
@@ -69,6 +71,27 @@ auto key_for_item(const nlohmann::json& event, const nlohmann::json& item = nloh
     return key;
 }
 
+auto try_parse_json(std::string_view payload) -> std::optional<nlohmann::json>
+{
+    try
+    {
+        return nlohmann::json::parse(payload);
+    }
+    catch (const nlohmann::json::exception&)
+    {
+        return std::nullopt;
+    }
+}
+
+auto without_trailing_cr(std::string_view line) -> std::string_view
+{
+    if (!line.empty() && line.back() == '\r')
+    {
+        line.remove_suffix(1);
+    }
+    return line;
+}
+
 } // namespace
 
 auto OpenAIStreamParser::feed(std::string_view chunk) -> ParsedEvent
@@ -94,9 +117,39 @@ auto OpenAIStreamParser::feed(std::string_view chunk) -> ParsedEvent
         }
         catch (const nlohmann::json::exception& error)
         {
-            result.error = std::string{"OpenAI stream JSON parse error: "} + error.what();
-            result.done = true;
-            return result;
+            bool recovered = false;
+            std::size_t start = 0;
+            while (start <= event.data.size())
+            {
+                const auto end = event.data.find('\n', start);
+                auto line = without_trailing_cr(
+                    end == std::string::npos ? std::string_view{event.data}.substr(start)
+                                             : std::string_view{event.data}.substr(start, end - start));
+                if (!line.empty())
+                {
+                    if (auto json = try_parse_json(line))
+                    {
+                        handle_json_event(*json, result);
+                        recovered = true;
+                        if (result.done)
+                        {
+                            return result;
+                        }
+                    }
+                }
+                if (end == std::string::npos)
+                {
+                    break;
+                }
+                start = end + 1;
+            }
+
+            if (!recovered)
+            {
+                result.error = std::string{"OpenAI stream JSON parse error: "} + error.what();
+                result.done = true;
+                return result;
+            }
         }
     }
 

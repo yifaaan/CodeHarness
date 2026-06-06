@@ -244,6 +244,20 @@ TEST_CASE("provider openai responses stream parser handles text tool calls compl
     CHECK(error.error.find("Invalid API key") != std::string::npos);
 }
 
+TEST_CASE("provider openai stream parser recovers failed event after malformed data line")
+{
+    codeharness::OpenAIStreamParser parser;
+
+    auto parsed = parser.feed(
+        "data: {\"type\":\"response.output_ite\n"
+        "event: response.failed\n"
+        R"(data: {"type":"response.failed","response":{"error":{"message":"Upstream request failed"}}})"
+        "\n\n");
+
+    CHECK(parsed.done);
+    CHECK(parsed.error == "Upstream request failed");
+}
+
 TEST_CASE("provider anthropic serialization maps messages tools and system prompt")
 {
     std::vector<codeharness::Message> messages;
