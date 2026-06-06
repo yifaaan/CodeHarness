@@ -1,10 +1,9 @@
 #include "codeharness/provider/openai_stream_parser.h"
+#include "codeharness/provider/provider_json_helpers.h"
 
 #include <nlohmann/json.hpp>
 
-#include <optional>
 #include <string>
-#include <string_view>
 
 namespace codeharness
 {
@@ -12,30 +11,16 @@ namespace codeharness
 namespace
 {
 
-auto json_string(const nlohmann::json& input, std::string_view key) -> std::string
-{
-    const auto found = input.find(key);
-    if (found == input.end() || found->is_null())
-    {
-        return {};
-    }
-    if (!found->is_string())
-    {
-        return {};
-    }
-    return found->get<std::string>();
-}
-
 auto event_type(const nlohmann::json& input) -> std::string
 {
-    return json_string(input, "type");
+    return json_string_value(input, "type");
 }
 
 auto error_message_from(const nlohmann::json& input) -> std::string
 {
     if (const auto found = input.find("error"); found != input.end() && found->is_object())
     {
-        auto message = json_string(*found, "message");
+        auto message = json_string_value(*found, "message");
         if (!message.empty())
         {
             return message;
@@ -46,7 +31,7 @@ auto error_message_from(const nlohmann::json& input) -> std::string
     {
         if (const auto error = found->find("error"); error != found->end() && error->is_object())
         {
-            auto message = json_string(*error, "message");
+            auto message = json_string_value(*error, "message");
             if (!message.empty())
             {
                 return message;
@@ -59,28 +44,16 @@ auto error_message_from(const nlohmann::json& input) -> std::string
 
 auto key_for_item(const nlohmann::json& event, const nlohmann::json& item = nlohmann::json::object()) -> std::string
 {
-    auto key = json_string(event, "item_id");
+    auto key = json_string_value(event, "item_id");
     if (key.empty())
     {
-        key = json_string(item, "id");
+        key = json_string_value(item, "id");
     }
     if (key.empty())
     {
-        key = json_string(item, "call_id");
+        key = json_string_value(item, "call_id");
     }
     return key;
-}
-
-auto try_parse_json(std::string_view payload) -> std::optional<nlohmann::json>
-{
-    try
-    {
-        return nlohmann::json::parse(payload);
-    }
-    catch (const nlohmann::json::exception&)
-    {
-        return std::nullopt;
-    }
 }
 
 auto without_trailing_cr(std::string_view line) -> std::string_view
@@ -170,7 +143,7 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
 
     if (type == "response.output_text.delta")
     {
-        auto delta = json_string(event, "delta");
+        auto delta = json_string_value(event, "delta");
         if (!delta.empty())
         {
             result.events.push_back(AssistantTextDelta{std::move(delta)});
@@ -181,7 +154,7 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
     if (type == "response.output_item.added" || type == "response.output_item.done")
     {
         const auto item = event.value("item", nlohmann::json::object());
-        if (json_string(item, "type") != "function_call")
+        if (json_string_value(item, "type") != "function_call")
         {
             return;
         }
@@ -193,7 +166,7 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
         }
 
         auto& tool = pending_tool_calls_[key];
-        if (auto id = json_string(item, "call_id"); !id.empty())
+        if (auto id = json_string_value(item, "call_id"); !id.empty())
         {
             tool.id = std::move(id);
         }
@@ -201,11 +174,11 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
         {
             tool.id = key;
         }
-        if (auto name = json_string(item, "name"); !name.empty())
+        if (auto name = json_string_value(item, "name"); !name.empty())
         {
             tool.name = std::move(name);
         }
-        if (auto arguments = json_string(item, "arguments"); !arguments.empty() && !tool.streamed_arguments)
+        if (auto arguments = json_string_value(item, "arguments"); !arguments.empty() && !tool.streamed_arguments)
         {
             tool.arguments = std::move(arguments);
         }
@@ -233,7 +206,7 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
         }
         emit_tool_start(key, result);
 
-        auto delta = json_string(event, "delta");
+        auto delta = json_string_value(event, "delta");
         if (!delta.empty())
         {
             tool.streamed_arguments = true;
@@ -251,7 +224,7 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
         }
 
         auto& tool = pending_tool_calls_[key];
-        if (auto arguments = json_string(event, "arguments"); !arguments.empty() && !tool.streamed_arguments)
+        if (auto arguments = json_string_value(event, "arguments"); !arguments.empty() && !tool.streamed_arguments)
         {
             tool.arguments = std::move(arguments);
         }

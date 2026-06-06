@@ -1,24 +1,13 @@
 #include "codeharness/provider/anthropic_stream_parser.h"
+#include "codeharness/provider/provider_json_helpers.h"
 
 #include <nlohmann/json.hpp>
-
-#include <string>
 
 namespace codeharness
 {
 
 namespace
 {
-
-auto json_string(const nlohmann::json& input, std::string_view key) -> std::string
-{
-    const auto found = input.find(key);
-    if (found == input.end() || found->is_null() || !found->is_string())
-    {
-        return {};
-    }
-    return found->get<std::string>();
-}
 
 auto json_int(const nlohmann::json& input, std::string_view key, int fallback = 0) -> int
 {
@@ -34,7 +23,7 @@ auto error_message_from(const nlohmann::json& input) -> std::string
 {
     if (const auto error = input.find("error"); error != input.end() && error->is_object())
     {
-        auto message = json_string(*error, "message");
+        auto message = json_string_value(*error, "message");
         if (!message.empty())
         {
             return message;
@@ -83,7 +72,7 @@ auto AnthropicStreamParser::feed(std::string_view chunk) -> ParsedEvent
 
 auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, ParsedEvent& result) -> void
 {
-    const auto type = json_string(event, "type");
+    const auto type = json_string_value(event, "type");
 
     if (type == "error")
     {
@@ -101,14 +90,14 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
     {
         const auto index = json_int(event, "index");
         const auto content_block = event.value("content_block", nlohmann::json::object());
-        if (json_string(content_block, "type") != "tool_use")
+        if (json_string_value(content_block, "type") != "tool_use")
         {
             return;
         }
 
         auto& tool = tool_blocks_[index];
-        tool.id = json_string(content_block, "id");
-        tool.name = json_string(content_block, "name");
+        tool.id = json_string_value(content_block, "id");
+        tool.name = json_string_value(content_block, "name");
         if (tool.id.empty())
         {
             tool.id = std::to_string(index);
@@ -121,11 +110,11 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
     {
         const auto index = json_int(event, "index");
         const auto delta = event.value("delta", nlohmann::json::object());
-        const auto delta_type = json_string(delta, "type");
+        const auto delta_type = json_string_value(delta, "type");
 
         if (delta_type == "text_delta")
         {
-            auto text = json_string(delta, "text");
+            auto text = json_string_value(delta, "text");
             if (!text.empty())
             {
                 result.events.push_back(AssistantTextDelta{std::move(text)});
@@ -142,7 +131,7 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
             }
             emit_tool_start(index, result);
 
-            auto partial = json_string(delta, "partial_json");
+            auto partial = json_string_value(delta, "partial_json");
             if (!partial.empty())
             {
                 result.events.push_back(ToolUseInputDelta{.id = tool.id, .input_json_delta = std::move(partial)});

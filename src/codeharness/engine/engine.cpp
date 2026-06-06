@@ -74,6 +74,18 @@ auto interrupted_message() -> Result<Message>
     return fail<Message>(ErrorKind::Cancelled, "interrupted");
 }
 
+// Returns true when the cancellation token is signalled.  When it is, emits
+// an EngineError so the observer sees the interruption immediately.
+auto is_cancelled(const CancellationToken& cancellation, const EngineEventSink& sink) -> bool
+{
+    if (cancellation.is_cancelled())
+    {
+        emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 Engine::Engine(
@@ -117,11 +129,7 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 
     for (int turn = 0; turn < request.options.max_turns; turn++)
     {
-        if (request.cancellation.is_cancelled())
-        {
-            emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
-            return interrupted_result();
-        }
+        if (is_cancelled(request.cancellation, sink)) return interrupted_result();
 
         auto assistant_message = stream_provider_turn(result.messages, sink, request.cancellation);
         if (!assistant_message)
@@ -143,20 +151,12 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 
         for (auto& tool_use : tool_uses)
         {
-            if (request.cancellation.is_cancelled())
-            {
-                emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
-                return interrupted_result();
-            }
+            if (is_cancelled(request.cancellation, sink)) return interrupted_result();
 
             const auto& permission_prompt = request.permission_prompt ? request.permission_prompt : permission_prompt_;
             auto tool_result = execute_tool_use(tool_use, permission_prompt);
 
-            if (request.cancellation.is_cancelled())
-            {
-                emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
-                return interrupted_result();
-            }
+            if (is_cancelled(request.cancellation, sink)) return interrupted_result();
 
             // Emit tool result as an event for streaming scenarios.
             emit_engine_event(
@@ -181,11 +181,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages,
                                   const CancellationToken& cancellation) const
     -> Result<Message>
 {
-    if (cancellation.is_cancelled())
-    {
-        emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
-        return interrupted_message();
-    }
+    if (is_cancelled(cancellation, sink)) return interrupted_message();
 
     ProviderEventCollector collector;
     collector.message().role = Role::Assistant;
