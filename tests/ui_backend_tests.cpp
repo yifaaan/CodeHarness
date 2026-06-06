@@ -155,6 +155,23 @@ TEST_CASE("ui backend formats OHJSON events")
     CHECK(modal_event.at("modal").at("kind") == "permission");
     CHECK(modal_event.at("modal").at("request_id") == "perm-tool-use-1");
     CHECK(modal_event.at("modal").at("tool_name") == "write_file");
+
+    const auto select = codeharness::ui_backend::format_backend_event(
+        codeharness::ui_backend::BackendSelectRequest{
+            .commands =
+                {
+                    codeharness::ui_backend::BackendCommandEntry{
+                        .name = "skills",
+                        .description = "List loaded skills.",
+                        .aliases = {"skill-list"},
+                        .invocation = "message_only",
+                    },
+                },
+        });
+    const auto select_event = nlohmann::json::parse(select.substr(kBackendPrefix.size()));
+    CHECK(select_event.at("type") == "select_request");
+    CHECK(select_event.at("commands").at(0).at("name") == "skills");
+    CHECK(select_event.at("commands").at(0).at("aliases").at(0) == "skill-list");
 }
 
 TEST_CASE("ui backend emits errors and shutdown without throwing")
@@ -341,6 +358,67 @@ TEST_CASE("ui backend message-only slash command emits output and completes")
     CHECK(events.at(1).at("type") == "assistant_delta");
     CHECK(events.at(1).at("text").get<std::string>().find("Available skills:") != std::string::npos);
     CHECK(events.at(2).at("type") == "line_complete");
+}
+
+TEST_CASE("ui backend select_command emits available commands")
+{
+    TempDir temp{"codeharness-ui-backend-select-command-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"select_command","query":"skill"})" "\n");
+
+    REQUIRE(events.size() == 2);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "select_request");
+
+    bool saw_skills = false;
+    for (const auto& command : events.at(1).at("commands"))
+    {
+        if (command.at("name") == "skills")
+        {
+            saw_skills = true;
+            CHECK(command.at("description").get<std::string>().find("skills") != std::string::npos);
+            CHECK(command.at("invocation") == "message_only");
+        }
+    }
+    CHECK(saw_skills);
+}
+
+TEST_CASE("ui backend apply_select_command executes selected slash command")
+{
+    TempDir temp{"codeharness-ui-backend-apply-select-command-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"apply_select_command","command":"skills"})" "\n");
+
+    REQUIRE(events.size() == 3);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "assistant_delta");
+    CHECK(events.at(1).at("text").get<std::string>().find("Available skills:") != std::string::npos);
+    CHECK(events.at(2).at("type") == "line_complete");
+}
+
+TEST_CASE("ui backend apply_select_command rejects missing or unknown command")
+{
+    TempDir temp{"codeharness-ui-backend-apply-select-command-error-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"apply_select_command"})"
+        "\n"
+        R"({"type":"apply_select_command","command":"missing"})"
+        "\n");
+
+    REQUIRE(events.size() == 3);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "error");
+    CHECK(events.at(1).at("message") == "apply_select_command requires command");
+    CHECK(events.at(2).at("type") == "error");
+    CHECK(events.at(2).at("message") == "unknown command: /missing");
 }
 
 TEST_CASE("ui backend sessions command lists saved sessions")

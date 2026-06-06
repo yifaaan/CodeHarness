@@ -49,6 +49,13 @@ struct CommandResult
 
 // 命令回调:
 //   - 入参:args 是去掉 "/name" 前缀的剩余部分(由 lookup 解析)
+enum class CommandInvocationKind
+{
+    Unknown,
+    MessageOnly,
+    SubmitsPrompt,
+};
+
 using CommandHandler = std::function<Result<CommandResult>(std::string_view args)>;
 
 // slash command
@@ -58,6 +65,7 @@ struct SlashCommand
     std::string description;          // 命令用途说明
     CommandHandler handler;           // 命令体
     std::vector<std::string> aliases; // 备用名,同样可触发该命令
+    CommandInvocationKind invocation = CommandInvocationKind::Unknown;
 };
 
 struct CommandLookup

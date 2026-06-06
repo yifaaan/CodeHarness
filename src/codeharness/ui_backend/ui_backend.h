@@ -56,6 +56,9 @@ struct FrontendRequest
     std::optional<std::string> line;
     std::optional<std::string> request_id;
     std::optional<bool> allowed;
+    std::optional<std::string> command;
+    std::optional<std::string> args;
+    std::optional<std::string> query;
 };
 
 struct BackendReady
@@ -95,6 +98,19 @@ struct BackendPermissionModal
     std::optional<std::string> command;
 };
 
+struct BackendCommandEntry
+{
+    std::string name;
+    std::string description;
+    std::vector<std::string> aliases;
+    std::string invocation;
+};
+
+struct BackendSelectRequest
+{
+    std::vector<BackendCommandEntry> commands;
+};
+
 struct BackendLineComplete
 {
 };
@@ -114,6 +130,7 @@ using BackendEvent = std::variant<BackendReady,
                                   BackendToolCompleted,
                                   BackendToolResult,
                                   BackendPermissionModal,
+                                  BackendSelectRequest,
                                   BackendLineComplete,
                                   BackendError,
                                   BackendShutdown>;
@@ -132,6 +149,8 @@ private:
     auto emit(const BackendEvent& event) -> void;
     auto handle_request(const FrontendRequest& request) -> bool;
     auto handle_submit_line(std::string_view line) -> void;
+    auto handle_select_command(const FrontendRequest& request) -> void;
+    auto handle_apply_select_command(const FrontendRequest& request) -> void;
     auto emit_engine_event(const EngineEvent& event) -> void;
     auto request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>;
     auto next_frontend_request() -> Result<std::optional<FrontendRequest>>;

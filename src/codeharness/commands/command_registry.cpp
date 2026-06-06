@@ -153,6 +153,7 @@ auto make_skill_slash_command(SkillDefinition skill) -> SlashCommand
                 .submit_model = skill.model,
             };
         },
+        .invocation = CommandInvocationKind::SubmitsPrompt,
     };
 }
 
@@ -328,6 +329,7 @@ auto register_memory_command(CommandRegistry& registry, memory::MemoryStore* mem
             .handler = [memory_store](std::string_view args) -> Result<CommandResult> {
                 return execute_memory_command(*memory_store, args);
             },
+            .invocation = CommandInvocationKind::MessageOnly,
         });
 }
 
@@ -411,6 +413,7 @@ auto register_sessions_command(CommandRegistry& registry, sessions::SessionStore
             .handler = [session_store](std::string_view args) -> Result<CommandResult> {
                 return execute_sessions_command(*session_store, args);
             },
+            .invocation = CommandInvocationKind::MessageOnly,
         });
 }
 
@@ -455,6 +458,7 @@ auto register_resume_command(CommandRegistry& registry,
             .handler = [resume_session = std::move(resume_session)](std::string_view args) -> Result<CommandResult> {
                 return execute_resume_command(resume_session, args);
             },
+            .invocation = CommandInvocationKind::MessageOnly,
         });
 }
 
@@ -506,6 +510,7 @@ auto register_plugin_command(CommandRegistry& registry, std::span<const LoadedPl
             .handler = [plugin_list = std::move(plugin_list)](std::string_view args) -> Result<CommandResult> {
                 return execute_plugin_command(plugin_list, args);
             },
+            .invocation = CommandInvocationKind::MessageOnly,
         });
 }
 
@@ -537,6 +542,8 @@ auto make_plugin_slash_command(PluginCommandDefinition command) -> SlashCommand
                 .submit_model = command.model,
             };
         },
+        .invocation = command.disable_model_invocation ? CommandInvocationKind::MessageOnly
+                                                       : CommandInvocationKind::SubmitsPrompt,
     };
 }
 
@@ -631,6 +638,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
             .handler = [&skills](std::string_view) -> Result<CommandResult> {
                 return CommandResult{.message = format_skills_list(skills)};
             },
+            .invocation = CommandInvocationKind::MessageOnly,
         });
     register_memory_command(registry, options.memory_store);
     register_sessions_command(registry, options.session_store);

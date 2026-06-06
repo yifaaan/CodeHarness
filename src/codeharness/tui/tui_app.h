@@ -15,6 +15,7 @@ enum class TuiAction
 {
     None,
     SubmitPrompt,
+    InsertCommand,
     ApprovePermission,
     DenyPermission,
     Quit,
@@ -27,6 +28,21 @@ struct TranscriptItem
     bool is_error = false;
 };
 
+struct CommandPaletteEntry
+{
+    std::string name;
+    std::string description;
+    std::vector<std::string> aliases;
+};
+
+struct CommandPaletteState
+{
+    std::vector<CommandPaletteEntry> commands;
+    std::vector<std::size_t> matches;
+    std::string query;
+    std::size_t cursor = 0;
+};
+
 struct TuiState
 {
     std::vector<TranscriptItem> transcript;
@@ -34,6 +50,7 @@ struct TuiState
     bool busy = false;
     bool should_quit = false;
     std::optional<PermissionPrompt> pending_permission;
+    std::optional<CommandPaletteState> command_palette;
 };
 
 class TuiAppModel
@@ -43,8 +60,18 @@ public:
     [[nodiscard]] auto render_text(int width = 80) const -> std::string;
 
     auto set_composer(std::string value) -> void;
+    auto open_command_palette(std::vector<CommandPaletteEntry> commands) -> void;
+    auto close_command_palette() -> void;
+    auto update_command_palette_from_composer() -> void;
+    auto command_palette_input(char character) -> void;
+    auto command_palette_backspace() -> void;
+    auto command_palette_up() -> void;
+    auto command_palette_down() -> void;
+    auto selected_command_text() const -> std::optional<std::string>;
     auto handle_submit() -> TuiAction;
     auto handle_quit() -> TuiAction;
+    auto handle_command_select() -> TuiAction;
+    auto handle_command_cancel() -> TuiAction;
     auto handle_permission_approve() -> TuiAction;
     auto handle_permission_deny() -> TuiAction;
 
@@ -55,6 +82,8 @@ public:
     auto clear_permission() -> void;
 
 private:
+    auto refresh_command_palette_matches() -> void;
+
     TuiState state_;
 };
 

@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 #include <nonstd/expected.hpp>
 
+#include <algorithm>
 #include <istream>
 #include <ostream>
 #include <string>
@@ -52,6 +53,75 @@ auto engine_event_to_backend_event(const EngineEvent& event) -> BackendEvent
         event);
 }
 
+auto command_invocation_to_string(CommandInvocationKind invocation) -> std::string
+{
+    switch (invocation)
+    {
+    case CommandInvocationKind::MessageOnly:
+        return "message_only";
+    case CommandInvocationKind::SubmitsPrompt:
+        return "submits_prompt";
+    case CommandInvocationKind::Unknown:
+        return "unknown";
+    }
+
+    return "unknown";
+}
+
+auto command_matches_query(const SlashCommand& command, std::string_view query) -> bool
+{
+    if (query.empty())
+    {
+        return true;
+    }
+
+    if (command.name.find(query) != std::string::npos || command.description.find(query) != std::string::npos)
+    {
+        return true;
+    }
+
+    return std::ranges::any_of(command.aliases, [query](const auto& alias) {
+        return alias.find(query) != std::string::npos;
+    });
+}
+
+auto make_select_request(const CommandRegistry& registry, std::string_view query) -> BackendSelectRequest
+{
+    BackendSelectRequest request;
+    for (const auto& command : registry.list())
+    {
+        if (!command_matches_query(command, query))
+        {
+            continue;
+        }
+
+        request.commands.push_back(
+            BackendCommandEntry{
+                .name = command.name,
+                .description = command.description,
+                .aliases = command.aliases,
+                .invocation = command_invocation_to_string(command.invocation),
+            });
+    }
+
+    return request;
+}
+
+auto format_command_line(std::string_view command, std::string_view args) -> std::string
+{
+    auto line = std::string{command};
+    if (!line.starts_with('/'))
+    {
+        line.insert(line.begin(), '/');
+    }
+    if (!args.empty())
+    {
+        line += ' ';
+        line += args;
+    }
+    return line;
+}
+
 } // namespace
 
 auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
@@ -94,12 +164,30 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
     {
         return nonstd::make_unexpected(allowed.error());
     }
+    auto command = read_optional_json_field<std::string>(input, "command", "frontend request");
+    if (!command)
+    {
+        return nonstd::make_unexpected(command.error());
+    }
+    auto args = read_optional_json_field<std::string>(input, "args", "frontend request");
+    if (!args)
+    {
+        return nonstd::make_unexpected(args.error());
+    }
+    auto query = read_optional_json_field<std::string>(input, "query", "frontend request");
+    if (!query)
+    {
+        return nonstd::make_unexpected(query.error());
+    }
 
     return FrontendRequest{
         .type = std::move(*type),
         .line = std::move(*request_line),
         .request_id = std::move(*request_id),
         .allowed = std::move(*allowed),
+        .command = std::move(*command),
+        .args = std::move(*args),
+        .query = std::move(*query),
     };
 }
 
@@ -146,6 +234,20 @@ auto format_backend_event(const BackendEvent& event) -> std::string
                     payload["command"] = *modal.command;
                 }
                 return prefixed_json_line(nlohmann::json{{"type", "modal_request"}, {"modal", std::move(payload)}});
+            },
+            [](const BackendSelectRequest& select) {
+                nlohmann::json commands = nlohmann::json::array();
+                for (const auto& command : select.commands)
+                {
+                    commands.push_back(
+                        nlohmann::json{
+                            {"name", command.name},
+                            {"description", command.description},
+                            {"aliases", command.aliases},
+                            {"invocation", command.invocation},
+                        });
+                }
+                return prefixed_json_line(nlohmann::json{{"type", "select_request"}, {"commands", std::move(commands)}});
             },
             [](const BackendLineComplete&) {
                 return prefixed_json_line(nlohmann::json{{"type", "line_complete"}});
@@ -207,6 +309,18 @@ auto BackendHost::handle_request(const FrontendRequest& request) -> bool
     if (request.type == "permission_response")
     {
         emit(BackendError{.message = "permission_response has no pending permission request"});
+        return true;
+    }
+
+    if (request.type == "select_command")
+    {
+        handle_select_command(request);
+        return true;
+    }
+
+    if (request.type == "apply_select_command")
+    {
+        handle_apply_select_command(request);
         return true;
     }
 
@@ -295,6 +409,30 @@ auto BackendHost::handle_submit_line(std::string_view line) -> void
     }
 
     emit(BackendLineComplete{});
+}
+
+auto BackendHost::handle_select_command(const FrontendRequest& request) -> void
+{
+    emit(make_select_request(runtime_.commands(), request.query.value_or(std::string{})));
+}
+
+auto BackendHost::handle_apply_select_command(const FrontendRequest& request) -> void
+{
+    if (!request.command || request.command->empty())
+    {
+        emit(BackendError{.message = "apply_select_command requires command"});
+        return;
+    }
+
+    const auto line = format_command_line(*request.command, request.args.value_or(std::string{}));
+    auto lookup = runtime_.commands().lookup(line);
+    if (lookup.command == nullptr)
+    {
+        emit(BackendError{.message = "unknown command: " + line.substr(0, line.find_first_of(" \t\r\n"))});
+        return;
+    }
+
+    handle_submit_line(line);
 }
 
 auto BackendHost::emit_engine_event(const EngineEvent& event) -> void
