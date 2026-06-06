@@ -79,6 +79,16 @@ auto ConfigLoader::load(const CliOptions& cli) -> Result<Settings>
             settings.memory_root = std::move(file_settings.memory_root);
         }
         // Allow file to set memory_root, config_dir, data_dir.
+
+        // Boolean feature flags: always merge from file.
+        settings.allow_project_skills = file_settings.allow_project_skills;
+        settings.allow_project_plugins = file_settings.allow_project_plugins;
+
+        // Permission mode
+        if (file_settings.permission.mode != PermissionMode::Default)
+        {
+            settings.permission.mode = file_settings.permission.mode;
+        }
     }
 
     // Layer 3: environment variables

@@ -18,6 +18,7 @@ target_link_libraries(codeharness_runtime
     PRIVATE
         codeharness_mailbox
         codeharness_prompts
+        codeharness_sessions
         codeharness_tasks
 )
 

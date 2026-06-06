@@ -36,7 +36,9 @@ struct Settings
 {
     // --- Active Profile ---
     std::string active_profile = "default";
-    std::map<std::string, ProviderProfile> profiles;
+    std::map<std::string, ProviderProfile> profiles = {
+        {"default", ProviderProfile{.name = "default", .label = "Default", .provider_type = "echo"}}
+    };
 
     // --- Resolved Provider Fields ---
     // These are populated by ConfigLoader after merging all layers

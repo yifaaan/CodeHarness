@@ -20,6 +20,7 @@ add_executable(codeharness_tests
     prompt_tests.cpp
     provider_tests.cpp
     runtime_tests.cpp
+    session_tests.cpp
     skill_tests.cpp
     task_tests.cpp
     team_lifecycle_tests.cpp

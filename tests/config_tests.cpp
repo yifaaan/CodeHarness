@@ -32,7 +32,7 @@ TEST_CASE("config defaults have a default profile")
     ch_config::Settings s;
     REQUIRE(s.profiles.find("default") != s.profiles.end());
     CHECK(s.profiles["default"].name == "default");
-    CHECK(s.profiles["default"].provider_type == "");
+    CHECK(s.profiles["default"].provider_type == "echo");
 }
 
 // ---- JSON Serialization ----
