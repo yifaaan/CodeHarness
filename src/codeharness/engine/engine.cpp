@@ -64,6 +64,16 @@ auto make_permission_prompt_id(const ToolUseBlock& tool_use) -> std::string
     return "perm-" + tool_use.id;
 }
 
+auto interrupted_result() -> Result<RunResult>
+{
+    return fail<RunResult>(ErrorKind::Cancelled, "interrupted");
+}
+
+auto interrupted_message() -> Result<Message>
+{
+    return fail<Message>(ErrorKind::Cancelled, "interrupted");
+}
+
 } // namespace
 
 Engine::Engine(
@@ -107,7 +117,13 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 
     for (int turn = 0; turn < request.options.max_turns; turn++)
     {
-        auto assistant_message = stream_provider_turn(result.messages, sink);
+        if (request.cancellation.is_cancelled())
+        {
+            emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
+            return interrupted_result();
+        }
+
+        auto assistant_message = stream_provider_turn(result.messages, sink, request.cancellation);
         if (!assistant_message)
         {
             return nonstd::make_unexpected(assistant_message.error());
@@ -127,8 +143,20 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 
         for (auto& tool_use : tool_uses)
         {
+            if (request.cancellation.is_cancelled())
+            {
+                emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
+                return interrupted_result();
+            }
+
             const auto& permission_prompt = request.permission_prompt ? request.permission_prompt : permission_prompt_;
             auto tool_result = execute_tool_use(tool_use, permission_prompt);
+
+            if (request.cancellation.is_cancelled())
+            {
+                emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
+                return interrupted_result();
+            }
 
             // Emit tool result as an event for streaming scenarios.
             emit_engine_event(
@@ -148,23 +176,48 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
     return fail<RunResult>(ErrorKind::Provider, "max turns exceeded");
 }
 
-auto Engine::stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink) const
+auto Engine::stream_provider_turn(std::span<const Message> messages,
+                                  const EngineEventSink& sink,
+                                  const CancellationToken& cancellation) const
     -> Result<Message>
 {
+    if (cancellation.is_cancelled())
+    {
+        emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
+        return interrupted_message();
+    }
+
     ProviderEventCollector collector;
     collector.message().role = Role::Assistant;
+    bool interrupted = false;
 
     auto streamed = provider_.stream(messages, [&](const ProviderEvent& event) {
+        if (cancellation.is_cancelled())
+        {
+            interrupted = true;
+            return;
+        }
+
         collector.on_event(event);
         if (auto engine_event = translate_to_engine_event(event))
         {
             emit_engine_event(sink, *engine_event);
+        }
+
+        if (cancellation.is_cancelled())
+        {
+            interrupted = true;
         }
     });
 
     if (!streamed)
     {
         return nonstd::make_unexpected(streamed.error());
+    }
+    if (interrupted || cancellation.is_cancelled())
+    {
+        emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
+        return interrupted_message();
     }
 
     return collector.finalize();

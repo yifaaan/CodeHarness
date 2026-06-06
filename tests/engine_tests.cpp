@@ -17,6 +17,44 @@ public:
     }
 };
 
+class CountingProvider final : public codeharness::Provider
+{
+public:
+    int calls = 0;
+
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        ++calls;
+        sink(codeharness::AssistantTextDelta{"should not run"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
+class ToolThenTextProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        sink(codeharness::AssistantTextDelta{"partial"});
+        sink(
+            codeharness::ToolUseStarted{
+                .id = "tool-use-1",
+                .name = "read_file",
+            });
+        sink(
+            codeharness::ToolUseInputDelta{
+                .id = "tool-use-1",
+                .input_json_delta = R"({"path":"hello.txt"})",
+            });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
 } // namespace
 
 TEST_CASE("engine runs one provider turn")
@@ -233,4 +271,52 @@ TEST_CASE("engine streaming emits assistant text delta")
     REQUIRE(result.has_value());
     CHECK(streamed_text == "hello");
     CHECK(result->output_text == "hello");
+}
+
+TEST_CASE("engine cancellation before provider turn skips provider")
+{
+    CountingProvider provider;
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
+    codeharness::CancellationSource cancellation;
+    cancellation.cancel();
+
+    codeharness::RunRequest request;
+    request.prompt = "hello";
+    request.cancellation = cancellation.token();
+    request.options.max_turns = 1;
+
+    auto result = engine.run(request);
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::Cancelled);
+    CHECK(result.error().message == "interrupted");
+    CHECK(provider.calls == 0);
+}
+
+TEST_CASE("engine cancellation after provider delta stops before tool execution")
+{
+    ToolThenTextProvider provider;
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::ReadFileTool>());
+    codeharness::Engine engine{provider, tools};
+    codeharness::CancellationSource cancellation;
+
+    codeharness::RunRequest request;
+    request.prompt = "read";
+    request.cancellation = cancellation.token();
+    request.options.max_turns = 2;
+
+    bool saw_delta = false;
+    auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
+        if (std::holds_alternative<codeharness::EngineAssistantTextDelta>(event))
+        {
+            saw_delta = true;
+            cancellation.cancel();
+        }
+    });
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::Cancelled);
+    CHECK(saw_delta);
 }

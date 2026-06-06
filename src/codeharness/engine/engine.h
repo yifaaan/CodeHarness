@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/core/message.h"
+#include "codeharness/core/cancellation.h"
 #include "codeharness/core/result.h"
 #include "codeharness/hooks/hook_executor.h"
 #include "codeharness/permissions/permission.h"
@@ -47,6 +48,7 @@ struct RunRequest
     std::optional<std::string> system_prompt;
     std::optional<std::vector<Message>> initial_messages;
     PermissionPromptHandler permission_prompt;
+    CancellationToken cancellation;
     EngineOptions options;
 };
 
@@ -109,7 +111,9 @@ private:
         -> ToolResultBlock;
 
     // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
-    auto stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink) const -> Result<Message>;
+    auto stream_provider_turn(std::span<const Message> messages,
+                              const EngineEventSink& sink,
+                              const CancellationToken& cancellation) const -> Result<Message>;
 
     Provider& provider_;
     ToolRegistry& tools_;
