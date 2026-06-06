@@ -139,6 +139,11 @@ TEST_CASE("provider HTTP helpers join endpoints and preserve API error messages"
     CHECK(codeharness::provider_endpoint_url("https://api.example.test/v1", "responses", "") == "https://api.example.test/v1/responses");
     CHECK(codeharness::provider_endpoint_url("https://api.example.test/v1/messages", "messages", "") == "https://api.example.test/v1/messages");
 
+    // When base_url has no path and default_url has a prefix like "/v1",
+    // the prefix should be auto-inserted so bare host URLs still work.
+    CHECK(codeharness::provider_endpoint_url("https://custom.host", "responses", "https://api.openai.com/v1/responses") == "https://custom.host/v1/responses");
+    CHECK(codeharness::provider_endpoint_url("https://custom.host", "messages", "https://api.anthropic.com/v1/messages") == "https://custom.host/v1/messages");
+
     codeharness::network::HttpResponse response;
     response.status_code = 401;
     response.body = R"({"error":{"message":"bad key"}})";
