@@ -71,6 +71,7 @@ struct RunPromptOptions
 {
     int max_turns = 10;
     PermissionPromptHandler permission_prompt;
+    CancellationToken cancellation;
 };
 
 class RuntimeBundle

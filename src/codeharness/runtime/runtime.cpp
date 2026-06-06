@@ -381,6 +381,7 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
         return nonstd::make_unexpected(request.error());
     }
     request->permission_prompt = options.permission_prompt;
+    request->cancellation = options.cancellation;
 
     ScopedCurrentPath current_path{cwd_};
     if (current_path.error())

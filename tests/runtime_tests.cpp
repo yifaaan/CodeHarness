@@ -144,6 +144,32 @@ TEST_CASE("runtime run_prompt forwards prompt through engine and streams assista
     CHECK(result->messages.front().role == codeharness::Role::System);
 }
 
+TEST_CASE("runtime interrupted run does not save a session")
+{
+    TempDir temp{"codeharness-runtime-interrupt-no-save-test"};
+
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    codeharness::CancellationSource cancellation;
+    cancellation.cancel();
+
+    auto result = (*bundle)->run_prompt(
+        "do not save",
+        codeharness::runtime::RunPromptOptions{
+            .max_turns = 3,
+            .cancellation = cancellation.token(),
+        },
+        {});
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().kind == codeharness::ErrorKind::Cancelled);
+
+    auto sessions = (*bundle)->sessions().list(10);
+    REQUIRE(sessions.has_value());
+    CHECK(sessions->empty());
+}
+
 TEST_CASE("runtime resumes a saved session by id and exposes summary")
 {
     TempDir temp{"codeharness-runtime-resume-test"};
