@@ -71,6 +71,68 @@ TEST_CASE("engine blocks write_file in default mode without permission prompt")
     CHECK(result->output_text.find("permission confirmation required") != std::string::npos);
 }
 
+TEST_CASE("engine executes default-mode mutating tool when permission prompt approves")
+{
+    TempDir temp{"codeharness-engine-permission-approve-test"};
+
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    WriteFileRequestProvider provider;
+    codeharness::Engine engine{provider, tools, &checker};
+
+    auto previous_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(temp.path);
+
+    int prompt_count = 0;
+    codeharness::RunRequest request;
+    request.prompt = "write output.txt";
+    request.permission_prompt = [&](const codeharness::PermissionPrompt& prompt) -> codeharness::Result<codeharness::PermissionResponse> {
+        prompt_count++;
+        CHECK(prompt.tool_name == "write_file");
+        CHECK(prompt.path.has_value());
+        return codeharness::PermissionResponse{.allowed = true};
+    };
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+    std::filesystem::current_path(previous_cwd);
+
+    REQUIRE(result.has_value());
+    CHECK(prompt_count == 1);
+    CHECK(result->output_text.find("Created") != std::string::npos);
+    CHECK(std::filesystem::exists(temp.path / "output.txt"));
+}
+
+TEST_CASE("engine returns tool error when permission prompt denies")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    WriteFileRequestProvider provider;
+    codeharness::Engine engine{provider, tools, &checker};
+
+    codeharness::RunRequest request;
+    request.prompt = "write output.txt";
+    request.permission_prompt = [](const codeharness::PermissionPrompt&) -> codeharness::Result<codeharness::PermissionResponse> {
+        return codeharness::PermissionResponse{.allowed = false, .reason = "test denied"};
+    };
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("permission denied: test denied") != std::string::npos);
+}
+
 TEST_CASE("engine allows write_file in full_auto mode")
 {
     TempDir temp{"codeharness-engine-fullauto-test"};

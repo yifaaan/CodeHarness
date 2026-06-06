@@ -59,11 +59,24 @@ auto make_error_tool_result(std::string id, std::string content) -> ToolResultBl
     };
 }
 
+auto make_permission_prompt_id(const ToolUseBlock& tool_use) -> std::string
+{
+    return "perm-" + tool_use.id;
+}
+
 } // namespace
 
 Engine::Engine(
-    Provider& provider, ToolRegistry& tools, const PermissionChecker* permissions, const HookExecutor* hooks) :
-    provider_(provider), tools_(tools), permissions_(permissions), hooks_(hooks)
+    Provider& provider,
+    ToolRegistry& tools,
+    const PermissionChecker* permissions,
+    const HookExecutor* hooks,
+    PermissionPromptHandler permission_prompt) :
+    provider_(provider),
+    tools_(tools),
+    permissions_(permissions),
+    hooks_(hooks),
+    permission_prompt_(std::move(permission_prompt))
 {
 }
 
@@ -114,7 +127,8 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 
         for (auto& tool_use : tool_uses)
         {
-            auto tool_result = execute_tool_use(tool_use);
+            const auto& permission_prompt = request.permission_prompt ? request.permission_prompt : permission_prompt_;
+            auto tool_result = execute_tool_use(tool_use, permission_prompt);
 
             // Emit tool result as an event for streaming scenarios.
             emit_engine_event(
@@ -156,7 +170,8 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
     return collector.finalize();
 }
 
-auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
+auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
+    -> ToolResultBlock
 {
     auto tool = tools_.find(tool_use.name);
     if (tool == nullptr)
@@ -192,9 +207,32 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock
         // TODO: 需要确认但当前没有 UI → 当成拒绝。
         if (decision.action == PermissionAction::Ask)
         {
-            spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
-            return make_error_tool_result(
-                tool_use.id, "permission confirmation required but no prompt is configured: " + decision.reason);
+            if (!permission_prompt)
+            {
+                spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
+                return make_error_tool_result(
+                    tool_use.id, "permission confirmation required but no prompt is configured: " + decision.reason);
+            }
+
+            auto response = permission_prompt(PermissionPrompt{
+                .id = make_permission_prompt_id(tool_use),
+                .tool_use_id = tool_use.id,
+                .tool_name = tool_use.name,
+                .reason = decision.reason,
+                .path = target.path,
+                .command = target.command,
+            });
+            if (!response)
+            {
+                return make_error_tool_result(tool_use.id, "permission prompt failed: " + response.error().message);
+            }
+
+            if (!response->allowed)
+            {
+                auto reason = response->reason.empty() ? std::string{"user denied permission"} : response->reason;
+                spdlog::warn("tool {} denied by user: {}", tool_use.name, reason);
+                return make_error_tool_result(tool_use.id, "permission denied: " + reason);
+            }
         }
     }
 

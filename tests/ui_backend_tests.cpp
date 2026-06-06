@@ -26,6 +26,39 @@ auto make_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharne
         });
 }
 
+auto make_write_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "write-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "tasks",
+        temp.path / "teams",
+        temp.path / "mailbox");
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+    auto provider = std::make_unique<WriteFileRequestProvider>();
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionMode::Default,
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
 auto parse_backend_output(std::string_view output) -> std::vector<nlohmann::json>
 {
     std::vector<nlohmann::json> events;
@@ -69,6 +102,15 @@ TEST_CASE("ui backend parses frontend requests")
     REQUIRE(shutdown.has_value());
     CHECK(shutdown->type == "shutdown");
     CHECK(!shutdown->line.has_value());
+
+    auto permission = codeharness::ui_backend::parse_frontend_request(
+        R"({"type":"permission_response","request_id":"perm-1","allowed":true})");
+    REQUIRE(permission.has_value());
+    CHECK(permission->type == "permission_response");
+    REQUIRE(permission->request_id.has_value());
+    CHECK(*permission->request_id == "perm-1");
+    REQUIRE(permission->allowed.has_value());
+    CHECK(*permission->allowed);
 }
 
 TEST_CASE("ui backend rejects malformed frontend requests")
@@ -99,6 +141,20 @@ TEST_CASE("ui backend formats OHJSON events")
     const auto event = nlohmann::json::parse(formatted.substr(kBackendPrefix.size()));
     CHECK(event.at("type") == "assistant_delta");
     CHECK(event.at("text") == "hello");
+
+    const auto modal = codeharness::ui_backend::format_backend_event(
+        codeharness::ui_backend::BackendPermissionModal{
+            .id = "perm-tool-use-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "default mode requires confirmation for mutating tools",
+            .path = "output.txt",
+        });
+    const auto modal_event = nlohmann::json::parse(modal.substr(kBackendPrefix.size()));
+    CHECK(modal_event.at("type") == "modal_request");
+    CHECK(modal_event.at("modal").at("kind") == "permission");
+    CHECK(modal_event.at("modal").at("request_id") == "perm-tool-use-1");
+    CHECK(modal_event.at("modal").at("tool_name") == "write_file");
 }
 
 TEST_CASE("ui backend emits errors and shutdown without throwing")
@@ -128,6 +184,133 @@ TEST_CASE("ui backend emits errors and shutdown without throwing")
     CHECK(events.at(3).at("type") == "error");
     CHECK(events.at(3).at("message") == "submit_line requires non-empty line");
     CHECK(events.at(4).at("type") == "shutdown");
+}
+
+TEST_CASE("ui backend rejects permission_response without pending request")
+{
+    TempDir temp{"codeharness-ui-backend-permission-no-pending-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"permission_response","request_id":"perm-1","allowed":true})"
+        "\n");
+
+    REQUIRE(events.size() == 2);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "error");
+    CHECK(events.at(1).at("message") == "permission_response has no pending permission request");
+}
+
+TEST_CASE("ui backend permission response approves pending tool")
+{
+    TempDir temp{"codeharness-ui-backend-permission-approve-test"};
+    auto bundle = make_write_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"write output"})"
+        "\n"
+        R"({"type":"permission_response","request_id":"perm-tool-use-1","allowed":true})"
+        "\n");
+
+    REQUIRE(events.size() >= 5);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "tool_started");
+
+    bool saw_modal = false;
+    bool saw_success = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "modal_request" &&
+            event.at("modal").at("request_id") == "perm-tool-use-1")
+        {
+            saw_modal = true;
+        }
+        if (event.at("type") == "tool_result" &&
+            event.at("content").get<std::string>().find("Created") != std::string::npos)
+        {
+            saw_success = true;
+        }
+    }
+    CHECK(saw_modal);
+    CHECK(saw_success);
+    CHECK(std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
+}
+
+TEST_CASE("ui backend permission response denies pending tool")
+{
+    TempDir temp{"codeharness-ui-backend-permission-deny-test"};
+    auto bundle = make_write_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"write output"})"
+        "\n"
+        R"({"type":"permission_response","request_id":"perm-tool-use-1","allowed":false})"
+        "\n");
+
+    REQUIRE(events.size() >= 5);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "tool_started");
+
+    bool saw_modal = false;
+    bool saw_denial = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "modal_request")
+        {
+            saw_modal = true;
+        }
+        if (event.at("type") == "tool_result" &&
+            event.at("content").get<std::string>().find("permission denied: user denied permission") !=
+                std::string::npos)
+        {
+            saw_denial = true;
+            CHECK(event.at("is_error") == true);
+        }
+    }
+    CHECK(saw_modal);
+    CHECK(saw_denial);
+    CHECK(!std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
+}
+
+TEST_CASE("ui backend permission response id mismatch does not unblock")
+{
+    TempDir temp{"codeharness-ui-backend-permission-mismatch-test"};
+    auto bundle = make_write_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"write output"})"
+        "\n"
+        R"({"type":"permission_response","request_id":"wrong","allowed":true})"
+        "\n"
+        R"({"type":"permission_response","request_id":"perm-tool-use-1","allowed":false})"
+        "\n");
+
+    bool saw_mismatch = false;
+    bool saw_denial = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "error" && event.at("message") == "permission response request_id mismatch")
+        {
+            saw_mismatch = true;
+        }
+        if (event.at("type") == "tool_result" &&
+            event.at("content").get<std::string>().find("permission denied") != std::string::npos)
+        {
+            saw_denial = true;
+        }
+    }
+
+    CHECK(saw_mismatch);
+    CHECK(saw_denial);
+    CHECK(!std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
 }
 
 TEST_CASE("ui backend submit_line streams assistant delta and line complete")

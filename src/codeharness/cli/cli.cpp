@@ -27,6 +27,7 @@
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/runtime/runtime.h"
+#include "codeharness/tui/tui_app.h"
 #include "codeharness/ui_backend/ui_backend.h"
 #include "codeharness/version.h"
 
@@ -98,12 +99,6 @@ auto run_cli(int argc, char** argv) -> Result<int>
         }
     }
 
-    if (!backend_only && prompt.empty())
-    {
-        std::cout << app.help() << '\n';
-        return 0;
-    }
-
     // Load configuration via ConfigLoader (defaults → settings.json → env → CLI).
     config::ConfigLoader loader;
     auto settings = loader.load(config::CliOptions{
@@ -149,6 +144,11 @@ auto run_cli(int argc, char** argv) -> Result<int>
         }
 
         return 0;
+    }
+
+    if (prompt.empty())
+    {
+        return tui::run_tui(**runtime_bundle, settings->max_turns);
     }
 
     if (!prompt.empty() && prompt.front() == '/')

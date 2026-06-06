@@ -48,6 +48,7 @@ add_subdirectory(coordinator)
 add_subdirectory(engine)
 add_subdirectory(runtime)
 add_subdirectory(ui_backend)
+add_subdirectory(tui)
 add_subdirectory(cli)
 
 add_library(codeharness_core INTERFACE)
@@ -72,6 +73,7 @@ target_link_libraries(codeharness_core
         codeharness_sessions
         codeharness_tasks
         codeharness_tools
+        codeharness_tui
         codeharness_ui_backend
 )
 

@@ -26,6 +26,7 @@ add_executable(codeharness_tests
     team_lifecycle_tests.cpp
     test_support.cpp
     tool_tests.cpp
+    tui_tests.cpp
     ui_backend_tests.cpp
     version_tests.cpp
 )

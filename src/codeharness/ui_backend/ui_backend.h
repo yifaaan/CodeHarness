@@ -42,6 +42,7 @@
 
 #include <iosfwd>
 #include <optional>
+#include <queue>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -53,6 +54,8 @@ struct FrontendRequest
 {
     std::string type;
     std::optional<std::string> line;
+    std::optional<std::string> request_id;
+    std::optional<bool> allowed;
 };
 
 struct BackendReady
@@ -82,6 +85,16 @@ struct BackendToolResult
     bool is_error = false;
 };
 
+struct BackendPermissionModal
+{
+    std::string id;
+    std::string tool_use_id;
+    std::string tool_name;
+    std::string reason;
+    std::optional<std::string> path;
+    std::optional<std::string> command;
+};
+
 struct BackendLineComplete
 {
 };
@@ -100,6 +113,7 @@ using BackendEvent = std::variant<BackendReady,
                                   BackendToolStarted,
                                   BackendToolCompleted,
                                   BackendToolResult,
+                                  BackendPermissionModal,
                                   BackendLineComplete,
                                   BackendError,
                                   BackendShutdown>;
@@ -119,11 +133,14 @@ private:
     auto handle_request(const FrontendRequest& request) -> bool;
     auto handle_submit_line(std::string_view line) -> void;
     auto emit_engine_event(const EngineEvent& event) -> void;
+    auto request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>;
+    auto next_frontend_request() -> Result<std::optional<FrontendRequest>>;
 
     runtime::RuntimeBundle& runtime_;
     std::istream& input_;
     std::ostream& output_;
     int max_turns_ = 10;
+    std::queue<FrontendRequest> queued_requests_;
 };
 
 } // namespace codeharness::ui_backend

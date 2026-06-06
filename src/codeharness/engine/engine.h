@@ -7,6 +7,7 @@
 #include "codeharness/provider/provider.h"
 #include "codeharness/tools/tool_registry.h"
 
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <span>
@@ -22,11 +23,30 @@ struct EngineOptions
     int max_turns = 10;
 };
 
+struct PermissionPrompt
+{
+    std::string id;
+    std::string tool_use_id;
+    std::string tool_name;
+    std::string reason;
+    std::optional<std::filesystem::path> path;
+    std::optional<std::string> command;
+};
+
+struct PermissionResponse
+{
+    bool allowed = false;
+    std::string reason;
+};
+
+using PermissionPromptHandler = std::function<Result<PermissionResponse>(const PermissionPrompt&)>;
+
 struct RunRequest
 {
     std::string prompt;
     std::optional<std::string> system_prompt;
     std::optional<std::vector<Message>> initial_messages;
+    PermissionPromptHandler permission_prompt;
     EngineOptions options;
 };
 
@@ -78,13 +98,15 @@ public:
         Provider& provider,
         ToolRegistry& tools,
         const PermissionChecker* permissions = nullptr,
-        const HookExecutor* hooks = nullptr);
+        const HookExecutor* hooks = nullptr,
+        PermissionPromptHandler permission_prompt = {});
 
     auto run(const RunRequest& request) -> Result<RunResult>;
     auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> Result<RunResult>;
 
 private:
-    auto execute_tool_use(const ToolUseBlock& tool_use) -> ToolResultBlock;
+    auto execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
+        -> ToolResultBlock;
 
     // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
     auto stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink) const -> Result<Message>;
@@ -93,6 +115,7 @@ private:
     ToolRegistry& tools_;
     const PermissionChecker* permissions_ = nullptr;
     const HookExecutor* hooks_ = nullptr;
+    PermissionPromptHandler permission_prompt_;
 };
 
 } // namespace codeharness

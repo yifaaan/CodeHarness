@@ -47,6 +47,7 @@ find_package(spdlog CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(libgit2 CONFIG REQUIRED)
 find_package(llhttp CONFIG REQUIRED)
+find_package(ftxui CONFIG REQUIRED)
 
 add_library(codeharness_options INTERFACE)
 target_include_directories(codeharness_options INTERFACE "${PROJECT_SOURCE_DIR}/src")

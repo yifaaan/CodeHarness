@@ -20,6 +20,7 @@
     "yaml-cpp",
     "libgit2",
     "llhttp",
-    "doctest"
+    "doctest",
+    "ftxui"
   ]
 }

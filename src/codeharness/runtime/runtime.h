@@ -67,6 +67,12 @@ struct RuntimeBundleOptions
     ProviderConfig provider_config;
 };
 
+struct RunPromptOptions
+{
+    int max_turns = 10;
+    PermissionPromptHandler permission_prompt;
+};
+
 class RuntimeBundle
 {
 public:
@@ -104,6 +110,8 @@ public:
 
     auto build_run_request(std::string_view prompt, int max_turns) -> Result<RunRequest>;
     auto run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> Result<RunResult>;
+    auto run_prompt(std::string_view prompt, const RunPromptOptions& options, const EngineEventSink& sink)
+        -> Result<RunResult>;
 
 private:
     std::filesystem::path cwd_;

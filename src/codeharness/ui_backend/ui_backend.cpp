@@ -84,10 +84,22 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
     {
         return nonstd::make_unexpected(request_line.error());
     }
+    auto request_id = read_optional_json_field<std::string>(input, "request_id", "frontend request");
+    if (!request_id)
+    {
+        return nonstd::make_unexpected(request_id.error());
+    }
+    auto allowed = read_optional_json_field<bool>(input, "allowed", "frontend request");
+    if (!allowed)
+    {
+        return nonstd::make_unexpected(allowed.error());
+    }
 
     return FrontendRequest{
         .type = std::move(*type),
         .line = std::move(*request_line),
+        .request_id = std::move(*request_id),
+        .allowed = std::move(*allowed),
     };
 }
 
@@ -117,6 +129,24 @@ auto format_backend_event(const BackendEvent& event) -> std::string
                         {"is_error", result.is_error},
                     });
             },
+            [](const BackendPermissionModal& modal) {
+                nlohmann::json payload{
+                    {"kind", "permission"},
+                    {"request_id", modal.id},
+                    {"tool_use_id", modal.tool_use_id},
+                    {"tool_name", modal.tool_name},
+                    {"reason", modal.reason},
+                };
+                if (modal.path)
+                {
+                    payload["path"] = *modal.path;
+                }
+                if (modal.command)
+                {
+                    payload["command"] = *modal.command;
+                }
+                return prefixed_json_line(nlohmann::json{{"type", "modal_request"}, {"modal", std::move(payload)}});
+            },
             [](const BackendLineComplete&) {
                 return prefixed_json_line(nlohmann::json{{"type", "line_complete"}});
             },
@@ -139,17 +169,20 @@ auto BackendHost::run() -> Result<void>
 {
     emit(BackendReady{});
 
-    std::string line;
-    while (std::getline(input_, line))
+    while (true)
     {
-        auto request = parse_frontend_request(line);
+        auto request = next_frontend_request();
         if (!request)
         {
             emit(BackendError{.message = request.error().message});
             continue;
         }
+        if (!*request)
+        {
+            break;
+        }
 
-        if (!handle_request(*request))
+        if (!handle_request(**request))
         {
             break;
         }
@@ -171,6 +204,12 @@ auto BackendHost::handle_request(const FrontendRequest& request) -> bool
         return false;
     }
 
+    if (request.type == "permission_response")
+    {
+        emit(BackendError{.message = "permission_response has no pending permission request"});
+        return true;
+    }
+
     if (request.type != "submit_line")
     {
         emit(BackendError{.message = "unsupported frontend request type: " + request.type});
@@ -185,6 +224,30 @@ auto BackendHost::handle_request(const FrontendRequest& request) -> bool
 
     handle_submit_line(*request.line);
     return true;
+}
+
+auto BackendHost::next_frontend_request() -> Result<std::optional<FrontendRequest>>
+{
+    if (!queued_requests_.empty())
+    {
+        auto request = std::move(queued_requests_.front());
+        queued_requests_.pop();
+        return request;
+    }
+
+    std::string line;
+    if (!std::getline(input_, line))
+    {
+        return std::optional<FrontendRequest>{};
+    }
+
+    auto request = parse_frontend_request(line);
+    if (!request)
+    {
+        return nonstd::make_unexpected(request.error());
+    }
+
+    return std::move(*request);
 }
 
 auto BackendHost::handle_submit_line(std::string_view line) -> void
@@ -214,9 +277,17 @@ auto BackendHost::handle_submit_line(std::string_view line) -> void
         prompt = *command_result->submit_prompt;
     }
 
-    auto result = runtime_.run_prompt(prompt, max_turns_, [this](const EngineEvent& event) {
-        emit_engine_event(event);
-    });
+    auto result = runtime_.run_prompt(
+        prompt,
+        runtime::RunPromptOptions{
+            .max_turns = max_turns_,
+            .permission_prompt = [this](const PermissionPrompt& prompt) {
+                return request_permission(prompt);
+            },
+        },
+        [this](const EngineEvent& event) {
+            emit_engine_event(event);
+        });
     if (!result)
     {
         emit(BackendError{.message = result.error().message});
@@ -229,6 +300,54 @@ auto BackendHost::handle_submit_line(std::string_view line) -> void
 auto BackendHost::emit_engine_event(const EngineEvent& event) -> void
 {
     emit(engine_event_to_backend_event(event));
+}
+
+auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>
+{
+    emit(BackendPermissionModal{
+        .id = prompt.id,
+        .tool_use_id = prompt.tool_use_id,
+        .tool_name = prompt.tool_name,
+        .reason = prompt.reason,
+        .path = prompt.path ? std::make_optional(prompt.path->string()) : std::nullopt,
+        .command = prompt.command,
+    });
+
+    while (true)
+    {
+        auto request = next_frontend_request();
+        if (!request)
+        {
+            return nonstd::make_unexpected(request.error());
+        }
+        if (!*request)
+        {
+            return fail<PermissionResponse>(ErrorKind::InvalidArgument, "permission response required before EOF");
+        }
+
+        auto frontend = std::move(**request);
+        if (frontend.type != "permission_response")
+        {
+            queued_requests_.push(std::move(frontend));
+            continue;
+        }
+
+        if (!frontend.request_id || *frontend.request_id != prompt.id)
+        {
+            emit(BackendError{.message = "permission response request_id mismatch"});
+            continue;
+        }
+
+        if (!frontend.allowed)
+        {
+            return fail<PermissionResponse>(ErrorKind::InvalidArgument, "permission_response requires allowed");
+        }
+
+        return PermissionResponse{
+            .allowed = *frontend.allowed,
+            .reason = *frontend.allowed ? std::string{} : std::string{"user denied permission"},
+        };
+    }
 }
 
 } // namespace codeharness::ui_backend

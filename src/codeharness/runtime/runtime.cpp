@@ -53,6 +53,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <system_error>
 #include <utility>
 
 namespace codeharness::runtime
@@ -167,6 +168,48 @@ auto unix_timestamp_now() -> double
                std::chrono::system_clock::now().time_since_epoch())
         .count();
 }
+
+class ScopedCurrentPath
+{
+public:
+    explicit ScopedCurrentPath(const std::filesystem::path& path)
+    {
+        std::error_code error;
+        previous_ = std::filesystem::current_path(error);
+        if (error)
+        {
+            failed_ = make_error(ErrorKind::Io, "failed to read current directory: " + error.message());
+            return;
+        }
+
+        std::filesystem::current_path(path, error);
+        if (error)
+        {
+            failed_ = make_error(ErrorKind::Io, "failed to change cwd: " + error.message());
+        }
+    }
+
+    ~ScopedCurrentPath()
+    {
+        if (!previous_.empty())
+        {
+            std::error_code ignored;
+            std::filesystem::current_path(previous_, ignored);
+        }
+    }
+
+    ScopedCurrentPath(const ScopedCurrentPath&) = delete;
+    auto operator=(const ScopedCurrentPath&) -> ScopedCurrentPath& = delete;
+
+    [[nodiscard]] auto error() const -> const std::optional<CodeHarnessError>&
+    {
+        return failed_;
+    }
+
+private:
+    std::filesystem::path previous_;
+    std::optional<CodeHarnessError> failed_;
+};
 
 } // namespace
 
@@ -326,10 +369,23 @@ auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) ->
 
 auto RuntimeBundle::run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> Result<RunResult>
 {
-    auto request = build_run_request(prompt, max_turns);
+    return run_prompt(prompt, RunPromptOptions{.max_turns = max_turns}, sink);
+}
+
+auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& options, const EngineEventSink& sink)
+    -> Result<RunResult>
+{
+    auto request = build_run_request(prompt, options.max_turns);
     if (!request)
     {
         return nonstd::make_unexpected(request.error());
+    }
+    request->permission_prompt = options.permission_prompt;
+
+    ScopedCurrentPath current_path{cwd_};
+    if (current_path.error())
+    {
+        return nonstd::make_unexpected(*current_path.error());
     }
 
     auto result = engine_.run_streaming(*request, sink);

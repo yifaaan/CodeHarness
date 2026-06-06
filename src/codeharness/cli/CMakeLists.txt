@@ -9,6 +9,7 @@ target_link_libraries(codeharness_cli
         codeharness_commands
         codeharness_config
         codeharness_runtime
+        codeharness_tui
         codeharness_ui_backend
 )
 
