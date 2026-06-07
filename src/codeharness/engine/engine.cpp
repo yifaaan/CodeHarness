@@ -3,8 +3,10 @@
 #include <nonstd/expected.hpp>
 
 #include <filesystem>
+#include <exception>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -57,6 +59,12 @@ auto make_error_tool_result(std::string id, std::string content) -> ToolResultBl
         .content = std::move(content),
         .is_error = true,
     };
+}
+
+auto make_unexpected_exception_tool_result(const ToolUseBlock& tool_use, std::string_view message) -> ToolResultBlock
+{
+    return make_error_tool_result(
+        tool_use.id, "tool execution failed with an unexpected exception: " + std::string{message});
 }
 
 auto make_permission_prompt_id(const ToolUseBlock& tool_use) -> std::string
@@ -222,124 +230,137 @@ auto Engine::stream_provider_turn(std::span<const Message> messages,
 auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
     -> ToolResultBlock
 {
-    auto tool = tools_.find(tool_use.name);
-    if (tool == nullptr)
+    try
     {
-        return make_error_tool_result(tool_use.id, "tool not found: " + tool_use.name);
-    }
-
-    ToolRequest request{
-        .id = tool_use.id,
-        .name = tool_use.name,
-        .input_json = tool_use.input_json,
-    };
-
-    // 预解析 input_json：permission_target 与 execute 共用 parsed_input，避免重复 parse。
-    if (auto parsed = parse_tool_request_input(request, tool_use.name); !parsed)
-    {
-        return make_error_tool_result(tool_use.id, std::string{parsed.error().message});
-    }
-
-    // 权限检查
-    if (permissions_ != nullptr)
-    {
-        const auto target = tool->permission_target(request);
-        auto decision = permissions_->evaluate(tool_use.name, tool->is_read_only(), target.path, target.command);
-
-        // 拒绝
-        if (decision.action == PermissionAction::Deny)
+        auto tool = tools_.find(tool_use.name);
+        if (tool == nullptr)
         {
-            spdlog::warn("tool {} denied: {}", tool_use.name, decision.reason);
-            return make_error_tool_result(tool_use.id, "permission denied: " + decision.reason);
+            return make_error_tool_result(tool_use.id, "tool not found: " + tool_use.name);
         }
 
-        // TODO: 需要确认但当前没有 UI → 当成拒绝。
-        if (decision.action == PermissionAction::Ask)
+        ToolRequest request{
+            .id = tool_use.id,
+            .name = tool_use.name,
+            .input_json = tool_use.input_json,
+        };
+
+        // 预解析 input_json：permission_target 与 execute 共用 parsed_input，避免重复 parse。
+        if (auto parsed = parse_tool_request_input(request, tool_use.name); !parsed)
         {
-            if (!permission_prompt)
+            return make_error_tool_result(tool_use.id, std::string{parsed.error().message});
+        }
+
+        // 权限检查
+        if (permissions_ != nullptr)
+        {
+            const auto target = tool->permission_target(request);
+            auto decision = permissions_->evaluate(tool_use.name, tool->is_read_only(), target.path, target.command);
+
+            // 拒绝
+            if (decision.action == PermissionAction::Deny)
             {
-                spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
-                return make_error_tool_result(
-                    tool_use.id, "permission confirmation required but no prompt is configured: " + decision.reason);
+                spdlog::warn("tool {} denied: {}", tool_use.name, decision.reason);
+                return make_error_tool_result(tool_use.id, "permission denied: " + decision.reason);
             }
 
-            auto response = permission_prompt(PermissionPrompt{
-                .id = make_permission_prompt_id(tool_use),
-                .tool_use_id = tool_use.id,
-                .tool_name = tool_use.name,
-                .reason = decision.reason,
-                .path = target.path,
-                .command = target.command,
-            });
-            if (!response)
+            // TODO: 需要确认但当前没有 UI → 当成拒绝。
+            if (decision.action == PermissionAction::Ask)
             {
-                return make_error_tool_result(tool_use.id, "permission prompt failed: " + response.error().message);
-            }
+                if (!permission_prompt)
+                {
+                    spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
+                    return make_error_tool_result(
+                        tool_use.id, "permission confirmation required but no prompt is configured: " + decision.reason);
+                }
 
-            if (!response->allowed)
+                auto response = permission_prompt(PermissionPrompt{
+                    .id = make_permission_prompt_id(tool_use),
+                    .tool_use_id = tool_use.id,
+                    .tool_name = tool_use.name,
+                    .reason = decision.reason,
+                    .path = target.path,
+                    .command = target.command,
+                });
+                if (!response)
+                {
+                    return make_error_tool_result(tool_use.id, "permission prompt failed: " + response.error().message);
+                }
+
+                if (!response->allowed)
+                {
+                    auto reason = response->reason.empty() ? std::string{"user denied permission"} : response->reason;
+                    spdlog::warn("tool {} denied by user: {}", tool_use.name, reason);
+                    return make_error_tool_result(tool_use.id, "permission denied: " + reason);
+                }
+            }
+        }
+
+        if (hooks_ != nullptr)
+        {
+            const auto pre_tool_result = hooks_->execute(
+                HookEvent::PreToolUse,
+                nlohmann::json{
+                    {"tool_use_id", tool_use.id},
+                    {"tool_name", tool_use.name},
+                    {"input", request.parsed_input},
+                });
+            if (pre_tool_result.blocked)
             {
-                auto reason = response->reason.empty() ? std::string{"user denied permission"} : response->reason;
-                spdlog::warn("tool {} denied by user: {}", tool_use.name, reason);
-                return make_error_tool_result(tool_use.id, "permission denied: " + reason);
+                spdlog::warn("tool {} blocked by pre-tool hook: {}", tool_use.name, pre_tool_result.reason);
+                return make_error_tool_result(tool_use.id, "hook blocked tool execution: " + pre_tool_result.reason);
             }
         }
-    }
 
-    if (hooks_ != nullptr)
-    {
-        const auto pre_tool_result = hooks_->execute(
-            HookEvent::PreToolUse,
-            nlohmann::json{
-                {"tool_use_id", tool_use.id},
-                {"tool_name", tool_use.name},
-                {"input", request.parsed_input},
-            });
-        if (pre_tool_result.blocked)
+        // 执行工具
+        ToolContext context;
+        context.cwd = std::filesystem::current_path();
+
+        spdlog::info("tool {} starting (id={})", tool_use.name, tool_use.id);
+        auto response = tool->execute(request, context);
+        if (!response)
         {
-            spdlog::warn("tool {} blocked by pre-tool hook: {}", tool_use.name, pre_tool_result.reason);
-            return make_error_tool_result(tool_use.id, "hook blocked tool execution: " + pre_tool_result.reason);
+            spdlog::warn("tool {} failed: {}", tool_use.name, response.error().message);
+            return make_error_tool_result(tool_use.id, std::string{response.error().message});
         }
-    }
+        spdlog::info("tool {} done (is_error={})", tool_use.name, response->is_error);
 
-    // 执行工具
-    ToolContext context;
-    context.cwd = std::filesystem::current_path();
-
-    spdlog::info("tool {} starting (id={})", tool_use.name, tool_use.id);
-    auto response = tool->execute(request, context);
-    if (!response)
-    {
-        spdlog::warn("tool {} failed: {}", tool_use.name, response.error().message);
-        return make_error_tool_result(tool_use.id, std::string{response.error().message});
-    }
-    spdlog::info("tool {} done (is_error={})", tool_use.name, response->is_error);
-
-    if (hooks_ != nullptr)
-    {
-        const auto post_tool_result = hooks_->execute(
-            HookEvent::PostToolUse,
-            nlohmann::json{
-                {"tool_use_id", tool_use.id},
-                {"tool_name", tool_use.name},
-                {"input", request.parsed_input},
-                {"result",
-                 {
-                     {"content", response->content},
-                     {"is_error", response->is_error},
-                 }},
-            });
-        if (post_tool_result.blocked)
+        if (hooks_ != nullptr)
         {
-            spdlog::warn("post-tool hook blocked tool result for {}: {}", tool_use.name, post_tool_result.reason);
-            return make_error_tool_result(tool_use.id, "hook blocked tool result: " + post_tool_result.reason);
+            const auto post_tool_result = hooks_->execute(
+                HookEvent::PostToolUse,
+                nlohmann::json{
+                    {"tool_use_id", tool_use.id},
+                    {"tool_name", tool_use.name},
+                    {"input", request.parsed_input},
+                    {"result",
+                     {
+                         {"content", response->content},
+                         {"is_error", response->is_error},
+                     }},
+                });
+            if (post_tool_result.blocked)
+            {
+                spdlog::warn("post-tool hook blocked tool result for {}: {}", tool_use.name, post_tool_result.reason);
+                return make_error_tool_result(tool_use.id, "hook blocked tool result: " + post_tool_result.reason);
+            }
         }
-    }
 
-    return ToolResultBlock{
-        .tool_use_id = response->tool_use_id,
-        .content = response->content,
-        .is_error = response->is_error,
-    };
+        return ToolResultBlock{
+            .tool_use_id = response->tool_use_id,
+            .content = response->content,
+            .is_error = response->is_error,
+        };
+    }
+    catch (const std::exception& error)
+    {
+        spdlog::warn("tool {} raised an unexpected exception: {}", tool_use.name, error.what());
+        return make_unexpected_exception_tool_result(tool_use, error.what());
+    }
+    catch (...)
+    {
+        spdlog::warn("tool {} raised an unknown exception", tool_use.name);
+        return make_unexpected_exception_tool_result(tool_use, "unknown exception");
+    }
 }
 
 } // namespace codeharness

@@ -1,5 +1,10 @@
 #include "codeharness/tui/tui_app.h"
+#include "codeharness/tui/tui_composer.h"
+#include "codeharness/tui/tui_markdown.h"
+#include "codeharness/tui/tui_render.h"
 #include "test_support.h"
+
+#include <ftxui/component/event.hpp>
 
 TEST_CASE("tui model renders pending permission modal")
 {
@@ -15,11 +20,21 @@ TEST_CASE("tui model renders pending permission modal")
 
     auto rendered = model.render_text();
 
-    CHECK(rendered.find("Permission required") != std::string::npos);
+    CHECK(rendered.find("Allow write_file?") != std::string::npos);
     CHECK(rendered.find("write_file") != std::string::npos);
     CHECK(rendered.find("output.txt") != std::string::npos);
     CHECK(model.handle_permission_approve() == codeharness::tui::TuiAction::ApprovePermission);
+    CHECK(!model.state().pending_permission.has_value());
+
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-2",
+            .tool_use_id = "tool-use-2",
+            .tool_name = "write_file",
+            .reason = "default mode requires confirmation for mutating tools",
+        });
     CHECK(model.handle_permission_deny() == codeharness::tui::TuiAction::DenyPermission);
+    CHECK(!model.state().pending_permission.has_value());
 }
 
 TEST_CASE("tui model composer submit and quit states")
@@ -77,21 +92,20 @@ TEST_CASE("tui model command palette filters navigates and inserts")
 {
     codeharness::tui::TuiAppModel model;
     model.set_composer("/");
-    model.open_command_palette(
-        {
-            codeharness::tui::CommandPaletteEntry{
-                .name = "resume",
-                .description = "Resume a saved session.",
-            },
-            codeharness::tui::CommandPaletteEntry{
-                .name = "sessions",
-                .description = "List saved sessions.",
-            },
-            codeharness::tui::CommandPaletteEntry{
-                .name = "skills",
-                .description = "List loaded skills.",
-            },
-        });
+    model.open_command_palette({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "resume",
+            .description = "Resume a saved session.",
+        },
+        codeharness::tui::CommandPaletteEntry{
+            .name = "sessions",
+            .description = "List saved sessions.",
+        },
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    });
 
     REQUIRE(model.state().command_palette.has_value());
     CHECK(model.state().command_palette->matches.size() == 3);
@@ -115,13 +129,12 @@ TEST_CASE("tui model command palette escape clears query then closes")
 {
     codeharness::tui::TuiAppModel model;
     model.set_composer("/");
-    model.open_command_palette(
-        {
-            codeharness::tui::CommandPaletteEntry{
-                .name = "skills",
-                .description = "List loaded skills.",
-            },
-        });
+    model.open_command_palette({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    });
 
     model.command_palette_input('z');
     REQUIRE(model.state().command_palette.has_value());
@@ -141,13 +154,12 @@ TEST_CASE("tui model command palette is suppressed while busy or permission pend
     codeharness::tui::TuiAppModel model;
 
     model.begin_prompt("hello");
-    model.open_command_palette(
-        {
-            codeharness::tui::CommandPaletteEntry{
-                .name = "skills",
-                .description = "List loaded skills.",
-            },
-        });
+    model.open_command_palette({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    });
     CHECK(!model.state().command_palette.has_value());
     model.complete_prompt();
 
@@ -159,13 +171,12 @@ TEST_CASE("tui model command palette is suppressed while busy or permission pend
             .reason = "default mode requires confirmation for mutating tools",
         });
     model.set_composer("/");
-    model.open_command_palette(
-        {
-            codeharness::tui::CommandPaletteEntry{
-                .name = "skills",
-                .description = "List loaded skills.",
-            },
-        });
+    model.open_command_palette({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    });
     CHECK(!model.state().command_palette.has_value());
 }
 
@@ -174,17 +185,453 @@ TEST_CASE("tui model transcript handles engine events")
     codeharness::tui::TuiAppModel model;
 
     model.begin_prompt("run tool");
+    CHECK(!model.has_streamed_assistant_output());
     model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "hello"});
+    CHECK(model.has_streamed_assistant_output());
     model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = " world"});
     model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
-    model.apply_engine_event(
-        codeharness::EngineToolResult{.id = "tool-use-1", .content = "done", .is_error = false});
+    model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "done", .is_error = false});
     model.complete_prompt();
 
-    REQUIRE(model.state().transcript.size() == 4);
+    REQUIRE(model.state().transcript.size() == 3);
     CHECK(model.state().transcript.at(0).kind == "user");
     CHECK(model.state().transcript.at(1).kind == "assistant");
     CHECK(model.state().transcript.at(1).text == "hello world");
     CHECK(model.state().transcript.at(2).kind == "tool");
-    CHECK(model.state().transcript.at(3).kind == "tool_result");
+    CHECK(model.state().transcript.at(2).id == "tool-use-1");
+    CHECK(model.state().transcript.at(2).text == "bash completed");
+    CHECK(model.state().transcript.at(2).detail == "done");
+    CHECK(!model.state().transcript.at(2).expanded);
+    CHECK(model.render_text().find("done") == std::string::npos);
+    CHECK(model.toggle_tool_details(2));
+    CHECK(model.state().transcript.at(2).expanded);
+    CHECK(model.render_text().find("Ran bash 1L") != std::string::npos);
+    CHECK(model.render_text().find("done") != std::string::npos);
+
+    model.begin_prompt("next prompt");
+    CHECK(!model.has_streamed_assistant_output());
+}
+
+TEST_CASE("tui model merges finished and error tool events")
+{
+    codeharness::tui::TuiAppModel model;
+
+    model.begin_prompt("run failing tool");
+    model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+    model.apply_engine_event(codeharness::EngineToolFinished{.id = "tool-use-1"});
+    model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "exit 1", .is_error = true});
+
+    REQUIRE(model.state().transcript.size() == 2);
+    CHECK(model.state().transcript.at(1).kind == "tool");
+    CHECK(model.state().transcript.at(1).id == "tool-use-1");
+    CHECK(model.state().transcript.at(1).text == "bash failed");
+    CHECK(model.state().transcript.at(1).detail == "exit 1");
+    CHECK(model.state().transcript.at(1).is_error);
+}
+
+TEST_CASE("tui model records missing tool result as a tool row")
+{
+    codeharness::tui::TuiAppModel model;
+
+    model.begin_prompt("orphan result");
+    model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-2", .content = "failed", .is_error = true});
+
+    REQUIRE(model.state().transcript.size() == 2);
+    CHECK(model.state().transcript.at(1).kind == "tool");
+    CHECK(model.state().transcript.at(1).id == "tool-use-2");
+    CHECK(model.state().transcript.at(1).text == "failed");
+    CHECK(model.state().transcript.at(1).detail == "failed");
+    CHECK(model.state().transcript.at(1).is_error);
+}
+
+TEST_CASE("tui render uses codex style transcript and command palette")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("fix bug");
+    model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "Done."});
+    model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+    model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "ok", .is_error = false});
+    model.complete_prompt();
+
+    const auto rendered = model.render_text();
+    CHECK(rendered.find("> fix bug") != std::string::npos);
+    CHECK(rendered.find("Done.") != std::string::npos);
+    CHECK(rendered.find("• Ran bash 1L") != std::string::npos);
+
+    model.set_composer("/");
+    model.open_command_palette({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    });
+    const auto palette_rendered = model.render_text();
+    CHECK(palette_rendered.find("Select a command  (type to search)") != std::string::npos);
+    CHECK(palette_rendered.find("\xe2\x9d\xaf /skills") != std::string::npos);
+    CHECK(palette_rendered.find("↑↓ navigate · Enter select · Esc cancel") != std::string::npos);
+}
+
+TEST_CASE("tui render auto expands failed tool output")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("run failing tool");
+    model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+    model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "exit 1", .is_error = true});
+
+    CHECK(model.state().transcript.at(1).expanded);
+    CHECK(model.render_text().find("• Ran bash error") != std::string::npos);
+    CHECK(model.render_text().find("exit 1") != std::string::npos);
+}
+
+TEST_CASE("tui model only toggles expandable tool rows")
+{
+    codeharness::tui::TuiAppModel model;
+
+    model.begin_prompt("toggle rows");
+    model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "answer"});
+    model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+
+    CHECK(!model.toggle_tool_details(0));
+    CHECK(!model.toggle_tool_details(1));
+    CHECK(!model.toggle_tool_details(2));
+
+    model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "output", .is_error = false});
+    CHECK(model.toggle_tool_details(2));
+    CHECK(model.state().transcript.at(2).expanded);
+    CHECK(model.toggle_tool_details(2));
+    CHECK(!model.state().transcript.at(2).expanded);
+}
+
+TEST_CASE("tui composer supports multiline editing and history")
+{
+    codeharness::tui::ComposerState composer;
+    composer.insert_character('h');
+    composer.insert_character('i');
+    composer.insert_newline();
+    composer.insert_character('!');
+    CHECK(composer.content() == "hi\n!");
+
+    composer.push_history("first");
+    composer.push_history("second");
+    composer.set_content("draft");
+    composer.history_previous();
+    CHECK(composer.content() == "second");
+    composer.history_previous();
+    CHECK(composer.content() == "first");
+    composer.history_next();
+    CHECK(composer.content() == "second");
+    composer.history_next();
+    CHECK(composer.content() == "draft");
+}
+
+TEST_CASE("tui composer only treats shifted enter sequences as newline")
+{
+    CHECK(!codeharness::tui::is_composer_newline_event(ftxui::Event::Return));
+    CHECK(!codeharness::tui::is_composer_newline_event(ftxui::Event::CtrlJ));
+    CHECK(!codeharness::tui::is_composer_newline_event(ftxui::Event::CtrlM));
+    CHECK(codeharness::tui::is_composer_newline_event(ftxui::Event::Special("\x1b[13;2u")));
+    CHECK(codeharness::tui::is_composer_newline_event(ftxui::Event::Special("\x1b[27;2~")));
+}
+
+TEST_CASE("tui markdown parses headings lists and inline styles")
+{
+    const auto blocks = codeharness::tui::markdown::parse_blocks("# Title\n\n- item\n\n`code` and **bold**");
+    REQUIRE(blocks.size() == 5);
+    CHECK(blocks.at(0).kind == codeharness::tui::markdown::BlockKind::heading1);
+    CHECK(blocks.at(0).text == "Title");
+    CHECK(blocks.at(1).kind == codeharness::tui::markdown::BlockKind::blank);
+    CHECK(blocks.at(2).kind == codeharness::tui::markdown::BlockKind::bullet);
+    CHECK(blocks.at(4).text == "`code` and **bold**");
+
+    const auto plain = codeharness::tui::markdown::render_plain_text("## Section\n\nhello", 80);
+    CHECK(plain.find("Section") != std::string::npos);
+    CHECK(plain.find("hello") != std::string::npos);
+}
+
+TEST_CASE("tui model system messages and plan mode footer")
+{
+    codeharness::tui::TuiAppModel model;
+    model.append_system_message("Entered plan mode.");
+    model.set_permission_mode(codeharness::PermissionMode::Plan);
+
+    const auto rendered = model.render_text();
+    CHECK(rendered.find("[system] Entered plan mode.") != std::string::npos);
+
+    const auto footer = codeharness::tui::render::render_status_footer_line(
+        codeharness::tui::TuiDisplayConfig{.skill_count = 3},
+        model.state());
+    CHECK(footer.find("skills: 3") != std::string::npos);
+    CHECK(footer.find("mode:") == std::string::npos);
+}
+
+// --- New feature tests ---
+
+TEST_CASE("tui select modal opens navigates and selects")
+{
+    codeharness::tui::TuiAppModel model;
+    model.set_composer("");
+
+    model.open_select_modal("Select model", {
+        codeharness::tui::ModelOption{.value = "gpt-4", .label = "GPT-4", .description = "openai"},
+        codeharness::tui::ModelOption{.value = "claude-3", .label = "Claude 3", .description = "anthropic", .is_current = true},
+        codeharness::tui::ModelOption{.value = "echo", .label = "Echo", .description = "echo"},
+    });
+
+    REQUIRE(model.state().select_modal.has_value());
+    CHECK(model.state().select_modal->title == "Select model");
+    CHECK(model.state().select_modal->options.size() == 3);
+    // Cursor should start at the current item (Claude 3, index 1)
+    CHECK(model.state().select_modal->cursor == 1);
+
+    // Navigate up
+    model.select_modal_up();
+    CHECK(model.state().select_modal->cursor == 0);
+
+    // Navigate down
+    model.select_modal_down();
+    CHECK(model.state().select_modal->cursor == 1);
+    model.select_modal_down();
+    CHECK(model.state().select_modal->cursor == 2);
+    // Wrap around
+    model.select_modal_down();
+    CHECK(model.state().select_modal->cursor == 0);
+
+    // Get current selection
+    auto selected = model.select_modal_current();
+    REQUIRE(selected.has_value());
+    CHECK(selected->value == "gpt-4");
+    CHECK(selected->label == "GPT-4");
+
+    // Quick select by digit
+    auto quick = model.select_modal_quick_select(2);
+    REQUIRE(quick.has_value());
+    CHECK(quick->value == "claude-3");
+
+    // Out of range quick select returns nullopt
+    auto invalid = model.select_modal_quick_select(4);
+    CHECK(!invalid.has_value());
+
+    // Close
+    model.close_select_modal();
+    CHECK(!model.state().select_modal.has_value());
+}
+
+TEST_CASE("tui select modal is suppressed while busy or permission pending")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("busy");
+
+    model.open_select_modal("Select model", {
+        codeharness::tui::ModelOption{.value = "echo", .label = "Echo"},
+    });
+    CHECK(!model.state().select_modal.has_value());
+
+    model.complete_prompt();
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tu-1",
+            .tool_name = "bash",
+            .reason = "test",
+        });
+
+    model.open_select_modal("Select model", {
+        codeharness::tui::ModelOption{.value = "echo", .label = "Echo"},
+    });
+    CHECK(!model.state().select_modal.has_value());
+}
+
+TEST_CASE("tui question modal accepts input and submits")
+{
+    codeharness::tui::TuiAppModel model;
+    model.show_question("q-1", "What file to edit?", "ask_user", "Need user input");
+
+    REQUIRE(model.state().question_modal.has_value());
+    CHECK(model.state().question_modal->question == "What file to edit?");
+    CHECK(model.state().question_modal->tool_name == "ask_user");
+    CHECK(model.state().question_modal->answer.empty());
+
+    // Type answer
+    model.question_modal_input('h');
+    model.question_modal_input('i');
+    CHECK(model.state().question_modal->answer == "hi");
+
+    // Backspace
+    model.question_modal_backspace();
+    CHECK(model.state().question_modal->answer == "h");
+
+    // Newline adds current answer to extra_lines
+    model.question_modal_input('i');
+    model.question_modal_newline();
+    CHECK(model.state().question_modal->extra_lines.size() == 1);
+    CHECK(model.state().question_modal->extra_lines.at(0) == "hi");
+    CHECK(model.state().question_modal->answer.empty());
+
+    // Submit combines extra_lines + current answer
+    model.question_modal_input('!');
+    auto answer = model.question_modal_submit();
+    CHECK(answer == "hi\n!");
+
+    // Close
+    model.close_question();
+    CHECK(!model.state().question_modal.has_value());
+}
+
+TEST_CASE("tui paste burst detection")
+{
+    codeharness::tui::TuiAppModel model;
+
+    // Single character is not a paste burst
+    model.detect_paste_burst("a");
+    CHECK(!model.state().paste_burst_active);
+
+    // Multi-character input is a paste burst
+    model.detect_paste_burst("hello world");
+    CHECK(model.state().paste_burst_active);
+
+    // Bracketed paste start is detected even in single-char
+    model.detect_paste_burst("\x1b[200~");
+    CHECK(model.state().paste_burst_active);
+}
+
+TEST_CASE("tui paste applies to composer")
+{
+    codeharness::tui::TuiAppModel model;
+    model.set_composer("existing ");
+
+    model.apply_paste_to_composer("pasted text");
+    CHECK(model.state().composer == "existing pasted text");
+}
+
+TEST_CASE("tui paste strips bracketed paste markers")
+{
+    codeharness::tui::TuiAppModel model;
+    model.set_composer("");
+
+    model.apply_paste_to_composer("\x1b[200~content here\x1b[201~");
+    CHECK(model.state().composer == "content here");
+}
+
+TEST_CASE("tui paste is suppressed while busy")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("busy");
+    model.apply_paste_to_composer("should not appear");
+    CHECK(model.state().composer.empty());
+}
+
+TEST_CASE("tui footer shows token usage and mcp connections")
+{
+    codeharness::tui::TuiDisplayConfig config{
+        .model = "gpt-4",
+        .provider_type = "openai",
+        .skill_count = 2,
+        .token_usage = codeharness::tui::TokenUsage{.input_tokens = 1500, .output_tokens = 800},
+        .mcp_info = codeharness::tui::McpConnectionInfo{.connected = 3, .failed = 1},
+    };
+    codeharness::tui::TuiState state;
+
+    const auto footer = codeharness::tui::render::render_status_footer_line(config, state);
+    CHECK(footer.find("model: gpt-4") != std::string::npos);
+    CHECK(footer.find("provider: openai") != std::string::npos);
+    CHECK(footer.find("tokens:") != std::string::npos);
+    CHECK(footer.find("1.5k") != std::string::npos);
+    CHECK(footer.find("800") != std::string::npos);
+    CHECK(footer.find("skills: 2") != std::string::npos);
+    CHECK(footer.find("mcp: 3/1") != std::string::npos);
+    CHECK(footer.find("mode: default") != std::string::npos);
+}
+
+TEST_CASE("tui footer hides token and mcp when zero")
+{
+    codeharness::tui::TuiDisplayConfig config{
+        .model = "echo",
+        .provider_type = "echo",
+    };
+    codeharness::tui::TuiState state;
+
+    const auto footer = codeharness::tui::render::render_status_footer_line(config, state);
+    CHECK(footer.find("tokens:") == std::string::npos);
+    CHECK(footer.find("mcp:") == std::string::npos);
+}
+
+TEST_CASE("tui format token count")
+{
+    CHECK(codeharness::tui::render::format_token_count(0) == "0");
+    CHECK(codeharness::tui::render::format_token_count(500) == "500");
+    CHECK(codeharness::tui::render::format_token_count(1000) == "1.0k");
+    CHECK(codeharness::tui::render::format_token_count(1500) == "1.5k");
+    CHECK(codeharness::tui::render::format_token_count(12345) == "12.3k");
+}
+
+TEST_CASE("tui markdown parses tables")
+{
+    const auto blocks = codeharness::tui::markdown::parse_blocks(
+        "| Name  | Value |\n"
+        "|-------|-------|\n"
+        "| foo   | 1     |\n"
+        "| bar   | 2     |");
+
+    REQUIRE(blocks.size() == 1);
+    CHECK(blocks.at(0).kind == codeharness::tui::markdown::BlockKind::table);
+
+    // Verify plain text rendering includes the table content
+    const auto plain = codeharness::tui::markdown::render_plain_text(
+        "| Name  | Value |\n"
+        "|-------|-------|\n"
+        "| foo   | 1     |\n", 80);
+    CHECK(plain.find("Name") != std::string::npos);
+    CHECK(plain.find("Value") != std::string::npos);
+    CHECK(plain.find("foo") != std::string::npos);
+}
+
+TEST_CASE("tui markdown parse_table helper")
+{
+    auto [table, next_line] = codeharness::tui::markdown::parse_table(
+        "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\n", 0);
+
+    CHECK(table.header.cells.size() == 2);
+    CHECK(table.header.cells.at(0).text == "A");
+    CHECK(table.header.cells.at(1).text == "B");
+    REQUIRE(table.rows.size() == 2);
+    CHECK(table.rows.at(0).cells.at(0).text == "1");
+    CHECK(table.rows.at(1).cells.at(1).text == "4");
+}
+
+TEST_CASE("tui markdown compute_col_widths")
+{
+    codeharness::tui::markdown::TableBlock table;
+    table.header.cells = {
+        codeharness::tui::markdown::TableCell{.text = "Name"},
+        codeharness::tui::markdown::TableCell{.text = "Value"},
+    };
+    table.rows.push_back(codeharness::tui::markdown::TableRow{
+        .cells = {
+            codeharness::tui::markdown::TableCell{.text = "LongerName"},
+            codeharness::tui::markdown::TableCell{.text = "x"},
+        },
+    });
+
+    const auto widths = codeharness::tui::markdown::compute_col_widths(table);
+    REQUIRE(widths.size() == 2);
+    CHECK(widths.at(0) == 10); // "LongerName" is wider
+    CHECK(widths.at(1) == 5);  // "Value" is wider
+}
+
+TEST_CASE("tui markdown parses horizontal rules")
+{
+    const auto blocks = codeharness::tui::markdown::parse_blocks("---\n\n***\n\n___");
+    REQUIRE(blocks.size() == 5);
+    CHECK(blocks.at(0).kind == codeharness::tui::markdown::BlockKind::horizontal_rule);
+    CHECK(blocks.at(2).kind == codeharness::tui::markdown::BlockKind::horizontal_rule);
+    CHECK(blocks.at(4).kind == codeharness::tui::markdown::BlockKind::horizontal_rule);
+}
+
+TEST_CASE("tui markdown code fence with language")
+{
+    const auto blocks = codeharness::tui::markdown::parse_blocks("```cpp\nint x = 0;\n```");
+    REQUIRE(blocks.size() == 1);
+    CHECK(blocks.at(0).kind == codeharness::tui::markdown::BlockKind::code_fence);
+    CHECK(blocks.at(0).language == "cpp");
+    CHECK(blocks.at(0).text == "int x = 0;");
 }

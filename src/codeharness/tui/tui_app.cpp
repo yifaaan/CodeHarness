@@ -2,6 +2,10 @@
 
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/core/overloaded.h"
+#include "codeharness/core/strings.h"
+#include "codeharness/tui/tui_composer.h"
+#include "codeharness/tui/tui_render.h"
+#include "codeharness/tui/tui_theme.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -9,8 +13,11 @@
 #include <nonstd/expected.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <condition_variable>
+#include <exception>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -23,30 +30,6 @@ namespace codeharness::tui
 namespace
 {
 
-auto trim_to_width(std::string text, int width) -> std::string
-{
-    if (width > 0 && static_cast<int>(text.size()) > width)
-    {
-        text.resize(static_cast<std::size_t>(width));
-    }
-    return text;
-}
-
-auto prompt_detail_text(const PermissionPrompt& prompt) -> std::string
-{
-    std::ostringstream output;
-    output << prompt.tool_name << ": " << prompt.reason;
-    if (prompt.command)
-    {
-        output << "\ncommand: " << *prompt.command;
-    }
-    if (prompt.path)
-    {
-        output << "\npath: " << prompt.path->string();
-    }
-    return output.str();
-}
-
 auto command_matches_query(const CommandPaletteEntry& command, std::string_view query) -> bool
 {
     if (query.empty())
@@ -54,9 +37,7 @@ auto command_matches_query(const CommandPaletteEntry& command, std::string_view 
         return true;
     }
 
-    const auto contains = [query](const std::string& value) {
-        return value.find(query) != std::string::npos;
-    };
+    const auto contains = [query](const std::string& value) { return value.find(query) != std::string::npos; };
     if (contains(command.name) || contains(command.description))
     {
         return true;
@@ -70,11 +51,12 @@ auto command_entries_from_registry(const CommandRegistry& registry) -> std::vect
     std::vector<CommandPaletteEntry> entries;
     for (const auto& command : registry.list())
     {
-        entries.push_back(CommandPaletteEntry{
-            .name = command.name,
-            .description = command.description,
-            .aliases = command.aliases,
-        });
+        entries.push_back(
+            CommandPaletteEntry{
+                .name = command.name,
+                .description = command.description,
+                .aliases = command.aliases,
+            });
     }
     return entries;
 }
@@ -86,8 +68,107 @@ auto is_slash_command_prefix(std::string_view input) -> bool
 
 auto last_transcript_is_error(const TuiState& state, std::string_view text) -> bool
 {
-    return !state.transcript.empty() && state.transcript.back().kind == "error" &&
-           state.transcript.back().text == text;
+    return !state.transcript.empty() && state.transcript.back().kind == "error" && state.transcript.back().text == text;
+}
+
+auto find_tool_item(TuiState& state, std::string_view id) -> TranscriptItem*
+{
+    const auto item = std::ranges::find_if(state.transcript, [id](const TranscriptItem& transcript_item) { return transcript_item.kind == "tool" && transcript_item.id == id; });
+    if (item == state.transcript.end())
+    {
+        return nullptr;
+    }
+    return &*item;
+}
+
+auto update_tool_text(TranscriptItem& item, ToolStatus status, std::string_view detail = {}) -> void
+{
+    item.tool_status = status;
+    item.detail = std::string{detail};
+    if (item.label.empty())
+    {
+        return;
+    }
+    if (status == ToolStatus::running)
+    {
+        item.text = item.label + " running";
+    }
+    else if (status == ToolStatus::failed)
+    {
+        item.text = item.label + " failed";
+    }
+    else
+    {
+        item.text = item.label + " completed";
+    }
+}
+
+auto is_permission_approve_key(const ftxui::Event& event) -> bool
+{
+    return event == ftxui::Event::Character("a") || event == ftxui::Event::Character("A")
+        || event == ftxui::Event::Character("y") || event == ftxui::Event::Character("Y");
+}
+
+auto is_permission_deny_key(const ftxui::Event& event) -> bool
+{
+    return event == ftxui::Event::Character("d") || event == ftxui::Event::Character("D")
+        || event == ftxui::Event::Character("n") || event == ftxui::Event::Character("N")
+        || event == ftxui::Event::Escape;
+}
+
+auto is_submit_key(const ftxui::Event& event) -> bool
+{
+    return event == ftxui::Event::Return || event == ftxui::Event::CtrlM;
+}
+
+auto resolve_submit_prompt(runtime::RuntimeBundle& runtime, TuiAppModel& model, std::string prompt) -> std::optional<std::string>
+{
+    if (prompt.empty() || prompt.front() != '/')
+    {
+        return prompt;
+    }
+
+    const auto trimmed = std::string{trim(prompt)};
+    if (trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter")
+    {
+        runtime.set_permission_mode(PermissionMode::Plan);
+        model.set_permission_mode(PermissionMode::Plan);
+        model.append_system_message("Entered plan mode. Read-only tools only.");
+        return std::nullopt;
+    }
+    if (trimmed == "/act" || trimmed == "/plan off" || trimmed == "/plan exit")
+    {
+        runtime.set_permission_mode(PermissionMode::Default);
+        model.set_permission_mode(PermissionMode::Default);
+        model.append_system_message("Default mode. Mutating tools allowed with confirmation.");
+        return std::nullopt;
+    }
+    if (trimmed == "/mode" || trimmed == "/permissions")
+    {
+        const auto mode = runtime.permission_mode();
+        const auto label = mode == PermissionMode::Plan ? "plan"
+                         : mode == PermissionMode::FullAuto ? "full_auto"
+                         : "default";
+        model.append_system_message("Current permission mode: " + std::string{label});
+        return std::nullopt;
+    }
+
+    auto command_result = execute_slash_command(runtime.commands(), prompt);
+    if (!command_result)
+    {
+        model.append_system_message(command_result.error().message);
+        return std::nullopt;
+    }
+
+    if (command_result->message)
+    {
+        model.append_system_message(*command_result->message);
+    }
+    if (command_result->submit_prompt)
+    {
+        return *command_result->submit_prompt;
+    }
+    return std::nullopt;
 }
 
 } // namespace
@@ -100,42 +181,39 @@ auto TuiAppModel::state() const noexcept -> const TuiState&
 auto TuiAppModel::render_text(int width) const -> std::string
 {
     std::ostringstream output;
-    output << "CodeHarness\n";
-    for (const auto& item : state_.transcript)
+    if (state_.transcript.empty())
     {
-        output << item.kind << ": " << trim_to_width(item.text, width) << '\n';
+        for (const auto& line : render::render_welcome_lines({}))
+        {
+            output << line << '\n';
+        }
     }
+    else
+    {
+        for (const auto& line : render::render_transcript_lines(state_.transcript, width))
+        {
+            output << line << '\n';
+        }
+    }
+
     if (state_.pending_permission)
     {
-        output << "Permission required\n";
-        output << prompt_detail_text(*state_.pending_permission) << '\n';
-        output << "A approve - D deny\n";
+        for (const auto& line : render::render_permission_lines(*state_.pending_permission, width))
+        {
+            output << line << '\n';
+        }
     }
     if (state_.command_palette)
     {
-        output << "Select a command";
-        if (state_.command_palette->query.empty())
+        for (const auto& line : render::render_command_palette_lines(*state_.command_palette, width))
         {
-            output << "  (type to search)";
-        }
-        output << "\nUp/Down navigate - Enter select - Esc cancel\n";
-        if (!state_.command_palette->query.empty())
-        {
-            output << "Search: " << state_.command_palette->query << '\n';
-        }
-        for (std::size_t index = 0; index < state_.command_palette->matches.size(); ++index)
-        {
-            const auto command_index = state_.command_palette->matches.at(index);
-            const auto& command = state_.command_palette->commands.at(command_index);
-            output << (index == state_.command_palette->cursor ? "> " : "  ");
-            output << "/" << command.name << "  " << command.description << '\n';
-        }
-        if (state_.command_palette->matches.empty())
-        {
-            output << "No matches\n";
+            output << line << '\n';
         }
     }
-    output << (state_.busy ? "Running" : "Ready") << "\n> " << state_.composer;
+
+    output << render::render_status_footer_line({}, state_) << '\n';
+    output << (state_.busy ? "Working" : "Ready") << '\n';
+    output << "> " << state_.composer;
     return output.str();
 }
 
@@ -315,6 +393,7 @@ auto TuiAppModel::handle_permission_approve() -> TuiAction
     {
         return TuiAction::None;
     }
+    state_.pending_permission.reset();
     return TuiAction::ApprovePermission;
 }
 
@@ -324,7 +403,25 @@ auto TuiAppModel::handle_permission_deny() -> TuiAction
     {
         return TuiAction::None;
     }
+    state_.pending_permission.reset();
     return TuiAction::DenyPermission;
+}
+
+auto TuiAppModel::toggle_tool_details(std::size_t transcript_index) -> bool
+{
+    if (transcript_index >= state_.transcript.size())
+    {
+        return false;
+    }
+
+    auto& item = state_.transcript.at(transcript_index);
+    if (item.kind != "tool" || item.detail.empty())
+    {
+        return false;
+    }
+
+    item.expanded = !item.expanded;
+    return true;
 }
 
 auto TuiAppModel::begin_prompt(std::string prompt) -> void
@@ -333,6 +430,7 @@ auto TuiAppModel::begin_prompt(std::string prompt) -> void
     state_.composer.clear();
     state_.command_palette.reset();
     state_.interrupt_requested = false;
+    streamed_assistant_output_ = false;
     state_.busy = true;
 }
 
@@ -347,6 +445,7 @@ auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
     std::visit(
         Overloaded{
             [this](const EngineAssistantTextDelta& delta) {
+                streamed_assistant_output_ = true;
                 if (!state_.transcript.empty() && state_.transcript.back().kind == "assistant")
                 {
                     state_.transcript.back().text += delta.text;
@@ -355,14 +454,47 @@ auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
                 state_.transcript.push_back(TranscriptItem{.kind = "assistant", .text = delta.text});
             },
             [this](const EngineToolStarted& started) {
-                state_.transcript.push_back(TranscriptItem{.kind = "tool", .text = "started " + started.name});
+                state_.transcript.push_back(
+                    TranscriptItem{
+                        .kind = "tool",
+                        .text = started.name + " running",
+                        .id = started.id,
+                        .label = started.name,
+                        .tool_status = ToolStatus::running,
+                    });
             },
             [this](const EngineToolFinished& finished) {
-                state_.transcript.push_back(TranscriptItem{.kind = "tool", .text = "completed " + finished.id});
+                if (auto* item = find_tool_item(state_, finished.id))
+                {
+                    update_tool_text(*item, ToolStatus::completed);
+                    return;
+                }
+                state_.transcript.push_back(
+                    TranscriptItem{
+                        .kind = "tool",
+                        .text = "completed " + finished.id,
+                        .id = finished.id,
+                        .tool_status = ToolStatus::completed,
+                    });
             },
             [this](const EngineToolResult& result) {
+                if (auto* item = find_tool_item(state_, result.id))
+                {
+                    item->is_error = result.is_error;
+                    item->expanded = result.is_error;
+                    update_tool_text(*item, result.is_error ? ToolStatus::failed : ToolStatus::completed, result.content);
+                    return;
+                }
                 state_.transcript.push_back(
-                    TranscriptItem{.kind = "tool_result", .text = result.content, .is_error = result.is_error});
+                    TranscriptItem{
+                        .kind = "tool",
+                        .text = result.is_error ? "failed" : "completed",
+                        .detail = result.content,
+                        .id = result.id,
+                        .tool_status = result.is_error ? ToolStatus::failed : ToolStatus::completed,
+                        .is_error = result.is_error,
+                        .expanded = result.is_error,
+                    });
             },
             [this](const EngineError& error) {
                 if (last_transcript_is_error(state_, error.message))
@@ -375,6 +507,11 @@ auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
         event);
 }
 
+auto TuiAppModel::has_streamed_assistant_output() const noexcept -> bool
+{
+    return streamed_assistant_output_;
+}
+
 auto TuiAppModel::show_permission(const PermissionPrompt& prompt) -> void
 {
     state_.command_palette.reset();
@@ -384,6 +521,197 @@ auto TuiAppModel::show_permission(const PermissionPrompt& prompt) -> void
 auto TuiAppModel::clear_permission() -> void
 {
     state_.pending_permission.reset();
+}
+
+auto TuiAppModel::append_system_message(std::string text) -> void
+{
+    if (text.empty())
+    {
+        return;
+    }
+    state_.transcript.push_back(TranscriptItem{.kind = "system", .text = std::move(text)});
+}
+
+// --- Select modal (/model picker) ---
+
+auto TuiAppModel::open_select_modal(std::string title, std::vector<ModelOption> options) -> void
+{
+    if (state_.busy || state_.pending_permission)
+    {
+        return;
+    }
+
+    std::size_t initial_cursor = 0;
+    for (std::size_t index = 0; index < options.size(); ++index)
+    {
+        if (options.at(index).is_current)
+        {
+            initial_cursor = index;
+            break;
+        }
+    }
+
+    state_.select_modal = SelectModalState{
+        .title = std::move(title),
+        .options = std::move(options),
+        .cursor = initial_cursor,
+    };
+    state_.command_palette.reset();
+    state_.question_modal.reset();
+}
+
+auto TuiAppModel::close_select_modal() -> void
+{
+    state_.select_modal.reset();
+}
+
+auto TuiAppModel::select_modal_up() -> void
+{
+    if (!state_.select_modal || state_.select_modal->options.empty())
+    {
+        return;
+    }
+    auto& cursor = state_.select_modal->cursor;
+    cursor = cursor == 0 ? state_.select_modal->options.size() - 1 : cursor - 1;
+}
+
+auto TuiAppModel::select_modal_down() -> void
+{
+    if (!state_.select_modal || state_.select_modal->options.empty())
+    {
+        return;
+    }
+    auto& cursor = state_.select_modal->cursor;
+    cursor = (cursor + 1) % state_.select_modal->options.size();
+}
+
+auto TuiAppModel::select_modal_current() const -> std::optional<ModelOption>
+{
+    if (!state_.select_modal || state_.select_modal->options.empty())
+    {
+        return std::nullopt;
+    }
+    return state_.select_modal->options.at(state_.select_modal->cursor);
+}
+
+auto TuiAppModel::select_modal_quick_select(int digit) -> std::optional<ModelOption>
+{
+    if (!state_.select_modal)
+    {
+        return std::nullopt;
+    }
+
+    // 1-based digit → 0-based index
+    const auto index = static_cast<std::size_t>(digit - 1);
+    if (index >= state_.select_modal->options.size())
+    {
+        return std::nullopt;
+    }
+    return state_.select_modal->options.at(index);
+}
+
+// --- Question modal (AskUser) ---
+
+auto TuiAppModel::show_question(std::string request_id, std::string question, std::string tool_name, std::string reason)
+    -> void
+{
+    state_.question_modal = QuestionModalState{
+        .request_id = std::move(request_id),
+        .question = std::move(question),
+        .tool_name = std::move(tool_name),
+        .reason = std::move(reason),
+    };
+    state_.command_palette.reset();
+    state_.select_modal.reset();
+}
+
+auto TuiAppModel::close_question() -> void
+{
+    state_.question_modal.reset();
+}
+
+auto TuiAppModel::question_modal_input(char character) -> void
+{
+    if (!state_.question_modal)
+    {
+        return;
+    }
+    state_.question_modal->answer.push_back(character);
+}
+
+auto TuiAppModel::question_modal_backspace() -> void
+{
+    if (!state_.question_modal || state_.question_modal->answer.empty())
+    {
+        return;
+    }
+    state_.question_modal->answer.pop_back();
+}
+
+auto TuiAppModel::question_modal_newline() -> void
+{
+    if (!state_.question_modal)
+    {
+        return;
+    }
+    state_.question_modal->extra_lines.push_back(state_.question_modal->answer);
+    state_.question_modal->answer.clear();
+}
+
+auto TuiAppModel::question_modal_submit() -> std::string
+{
+    if (!state_.question_modal)
+    {
+        return {};
+    }
+
+    auto all_lines = state_.question_modal->extra_lines;
+    all_lines.push_back(state_.question_modal->answer);
+    std::string result;
+    for (std::size_t index = 0; index < all_lines.size(); ++index)
+    {
+        result += all_lines.at(index);
+        if (index + 1 < all_lines.size())
+        {
+            result.push_back('\n');
+        }
+    }
+    return result;
+}
+
+// --- Paste burst detection ---
+
+auto TuiAppModel::detect_paste_burst(const std::string& input) -> void
+{
+    // A paste burst is any multi-character input that arrives as a single event,
+    // or input containing bracketed paste escape sequences.
+    const auto has_bracketed_paste = input.find("\x1b[200~") != std::string::npos ||
+                                     input.find("\x1b[201~") != std::string::npos;
+    state_.paste_burst_active = input.size() > 1 || has_bracketed_paste;
+}
+
+auto TuiAppModel::apply_paste_to_composer(const std::string& paste_text) -> void
+{
+    if (state_.busy || state_.pending_permission || state_.select_modal || state_.question_modal)
+    {
+        return;
+    }
+
+    // Strip bracketed paste markers if present
+    auto text = paste_text;
+    auto strip_marker = [](std::string& s, std::string_view marker) {
+        auto pos = s.find(marker);
+        while (pos != std::string::npos)
+        {
+            s.erase(pos, marker.size());
+            pos = s.find(marker, pos);
+        }
+    };
+    strip_marker(text, "\x1b[200~");
+    strip_marker(text, "\x1b[201~");
+
+    state_.composer += text;
+    update_command_palette_from_composer();
 }
 
 auto TuiAppModel::refresh_command_palette_matches() -> void
@@ -409,78 +737,160 @@ auto TuiAppModel::refresh_command_palette_matches() -> void
     }
 }
 
-auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
+auto run_tui(runtime::RuntimeBundle& runtime,
+             int max_turns,
+             TuiDisplayConfig display_config,
+             ModelListProvider model_list_provider,
+             ModelSelectCallback model_select_callback) -> Result<int>
 {
     using namespace ftxui;
 
-    auto screen = ScreenInteractive::TerminalOutput();
+    auto screen = ScreenInteractive::Fullscreen();
     TuiAppModel model;
-    std::string input;
     auto command_entries = command_entries_from_registry(runtime.commands());
 
     std::mutex mutex;
     std::condition_variable permission_cv;
     std::optional<PermissionResponse> permission_response;
     std::unique_ptr<CancellationSource> cancellation_source;
+    std::thread worker;
+    bool worker_finished = false;
+    auto screen_alive = std::make_shared<std::atomic<bool>>(true);
+    bool follow_transcript = true;
+    int spinner_frame = 0;
+    int last_transcript_count = 0;
 
-    auto run_prompt = [&](std::string prompt) {
-        model.begin_prompt(prompt);
-        cancellation_source = std::make_unique<CancellationSource>();
-        auto cancellation = cancellation_source->token();
-        std::thread worker{[&, prompt = std::move(prompt), cancellation] {
-            auto result = runtime.run_prompt(
-                prompt,
-                runtime::RunPromptOptions{
-                    .max_turns = max_turns,
-                    .permission_prompt =
-                        [&](const PermissionPrompt& permission_prompt) -> Result<PermissionResponse> {
-                        {
-                            std::lock_guard lock{mutex};
-                            permission_response.reset();
-                            model.show_permission(permission_prompt);
-                        }
-                        screen.PostEvent(Event::Custom);
-
-                        std::unique_lock lock{mutex};
-                        permission_cv.wait(lock, [&] {
-                            return permission_response.has_value() || model.state().interrupt_requested;
-                        });
-                        auto response = permission_response.value_or(
-                            PermissionResponse{.allowed = false, .reason = "interrupted"});
-                        permission_response.reset();
-                        model.clear_permission();
-                        screen.PostEvent(Event::Custom);
-                        return response;
-                    },
-                    .cancellation = cancellation,
-                },
-                [&](const EngineEvent& event) {
-                    std::lock_guard lock{mutex};
-                    model.apply_engine_event(event);
-                    screen.PostEvent(Event::Custom);
-                });
-
-            {
-                std::lock_guard lock{mutex};
-                if (!result)
-                {
-                    model.apply_engine_event(EngineError{.message = result.error().message});
-                }
-                else if (!result->output_text.empty())
-                {
-                    model.apply_engine_event(EngineAssistantTextDelta{.text = result->output_text});
-                }
-                model.complete_prompt();
-                model.set_permission_mode(runtime.permission_mode());
-                cancellation_source.reset();
-            }
-            screen.PostEvent(Event::Custom);
-        }};
-        worker.detach();
+    auto reap_worker = [&] {
+        bool should_join = false;
+        {
+            std::lock_guard lock{mutex};
+            should_join = worker_finished;
+        }
+        if (should_join && worker.joinable())
+        {
+            worker.join();
+            std::lock_guard lock{mutex};
+            worker_finished = false;
+        }
     };
 
-    auto input_component = Input(&input, "Ask CodeHarness");
-    auto component = CatchEvent(input_component, [&](Event event) {
+    auto run_prompt = [&](std::string prompt) {
+        reap_worker();
+        model.begin_prompt(prompt);
+        follow_transcript = true;
+        cancellation_source = std::make_unique<CancellationSource>();
+        auto cancellation = cancellation_source->token();
+
+        worker = std::thread{[&, prompt = std::move(prompt), cancellation, screen_alive] {
+            const auto post_refresh = [&] {
+                if (screen_alive->load(std::memory_order_acquire))
+                {
+                    screen.PostEvent(Event::Custom);
+                }
+            };
+            const auto complete_with_error = [&](std::string message) {
+                {
+                    std::lock_guard lock{mutex};
+                    model.apply_engine_event(EngineError{.message = std::move(message)});
+                    model.clear_permission();
+                    model.complete_prompt();
+                    model.set_permission_mode(runtime.permission_mode());
+                    permission_response.reset();
+                    cancellation_source.reset();
+                    worker_finished = true;
+                }
+                post_refresh();
+            };
+
+            try
+            {
+                auto result = runtime.run_prompt(
+                    prompt,
+                    runtime::RunPromptOptions{
+                        .max_turns = max_turns,
+                        .permission_prompt = [&, screen_alive](const PermissionPrompt& permission_prompt) -> Result<PermissionResponse> {
+                            {
+                                std::lock_guard lock{mutex};
+                                permission_response.reset();
+                                model.show_permission(permission_prompt);
+                            }
+                            if (screen_alive->load(std::memory_order_acquire))
+                            {
+                                screen.PostEvent(Event::Custom);
+                            }
+
+                            std::unique_lock lock{mutex};
+                            permission_cv.wait(lock, [&] { return permission_response.has_value() || model.state().interrupt_requested; });
+                            auto response = permission_response.value_or(PermissionResponse{.allowed = false, .reason = "interrupted"});
+                            permission_response.reset();
+                            model.clear_permission();
+                            if (screen_alive->load(std::memory_order_acquire))
+                            {
+                                screen.PostEvent(Event::Custom);
+                            }
+                            return response;
+                        },
+                        .cancellation = cancellation,
+                    },
+                    [&, screen_alive](const EngineEvent& event) {
+                        std::lock_guard lock{mutex};
+                        model.apply_engine_event(event);
+                        if (screen_alive->load(std::memory_order_acquire))
+                        {
+                            screen.PostEvent(Event::Custom);
+                        }
+                    });
+
+                {
+                    std::lock_guard lock{mutex};
+                    if (!result)
+                    {
+                        model.apply_engine_event(EngineError{.message = result.error().message});
+                    }
+                    else if (!result->output_text.empty() && !model.has_streamed_assistant_output())
+                    {
+                        model.apply_engine_event(EngineAssistantTextDelta{.text = result->output_text});
+                    }
+                    model.clear_permission();
+                    model.complete_prompt();
+                    model.set_permission_mode(runtime.permission_mode());
+                    cancellation_source.reset();
+                    worker_finished = true;
+                }
+                post_refresh();
+            }
+            catch (const std::exception& error)
+            {
+                complete_with_error(std::string{"unexpected runtime error: "} + error.what());
+            }
+            catch (...)
+            {
+                complete_with_error("unexpected runtime error");
+            }
+        }};
+    };
+
+    ComposerState composer_state;
+    auto composer_component = make_multiline_composer(composer_state);
+    auto component = CatchEvent(composer_component, [&](Event event) {
+        reap_worker();
+
+        // --- Paste burst detection ---
+        // ftxui delivers pasted text as a single event with multiple characters.
+        // Detect multi-char non-control input and inject it directly into the composer.
+        if (event.is_character())
+        {
+            const auto& input = event.input();
+            model.detect_paste_burst(input);
+            if (model.state().paste_burst_active && input.size() > 1)
+            {
+                std::lock_guard lock{mutex};
+                model.apply_paste_to_composer(input);
+                composer_state.set_content(model.state().composer);
+                return true;
+            }
+        }
+
         {
             std::lock_guard lock{mutex};
             if (model.state().pending_permission)
@@ -496,16 +906,125 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                     permission_cv.notify_one();
                     return true;
                 }
-                if (event == Event::Character("a") || event == Event::Character("A"))
+                if (is_permission_approve_key(event))
                 {
-                    permission_response = PermissionResponse{.allowed = true};
-                    permission_cv.notify_one();
+                    if (model.handle_permission_approve() == TuiAction::ApprovePermission)
+                    {
+                        permission_response = PermissionResponse{.allowed = true};
+                        permission_cv.notify_one();
+                    }
                     return true;
                 }
-                if (event == Event::Character("d") || event == Event::Character("D") || event == Event::Escape)
+                if (is_permission_deny_key(event))
                 {
-                    permission_response = PermissionResponse{.allowed = false, .reason = "user denied permission"};
-                    permission_cv.notify_one();
+                    if (model.handle_permission_deny() == TuiAction::DenyPermission)
+                    {
+                        permission_response = PermissionResponse{.allowed = false, .reason = "user denied permission"};
+                        permission_cv.notify_one();
+                    }
+                    return true;
+                }
+                return true;
+            }
+        }
+
+        // --- Select modal (/model) ---
+        {
+            std::lock_guard lock{mutex};
+            if (model.state().select_modal)
+            {
+                if (event == Event::ArrowUp)
+                {
+                    model.select_modal_up();
+                    return true;
+                }
+                if (event == Event::ArrowDown)
+                {
+                    model.select_modal_down();
+                    return true;
+                }
+                if (is_submit_key(event))
+                {
+                    auto selected = model.select_modal_current();
+                    model.close_select_modal();
+                    if (selected && model_select_callback)
+                    {
+                        model_select_callback(*selected);
+                        display_config.model = selected->value;
+                        model.append_system_message("Switched model to " + selected->label);
+                    }
+                    return true;
+                }
+                if (event == Event::Escape)
+                {
+                    model.close_select_modal();
+                    return true;
+                }
+                // Number keys 1-9 for quick selection
+                if (event.is_character())
+                {
+                    const auto& input = event.input();
+                    if (input.size() == 1)
+                    {
+                        const auto digit = input.front();
+                        if (digit >= '1' && digit <= '9')
+                        {
+                            auto selected = model.select_modal_quick_select(digit - '0');
+                            if (selected)
+                            {
+                                model.close_select_modal();
+                                if (model_select_callback)
+                                {
+                                    model_select_callback(*selected);
+                                    display_config.model = selected->value;
+                                    model.append_system_message("Switched model to " + selected->label);
+                                }
+                            }
+                            return true;
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+
+        // --- Question modal (AskUser) ---
+        {
+            std::lock_guard lock{mutex};
+            if (model.state().question_modal)
+            {
+                if (is_submit_key(event))
+                {
+                    // Shift+Enter = newline in question modal
+                    if (is_composer_newline_event(event))
+                    {
+                        model.question_modal_newline();
+                        return true;
+                    }
+                    auto answer = model.question_modal_submit();
+                    model.close_question();
+                    model.append_system_message("Answer submitted.");
+                    // In a real integration, answer would go back via a callback.
+                    // For now, record it in the transcript.
+                    return true;
+                }
+                if (event == Event::Backspace)
+                {
+                    model.question_modal_backspace();
+                    return true;
+                }
+                if (is_composer_newline_event(event))
+                {
+                    model.question_modal_newline();
+                    return true;
+                }
+                if (event.is_character())
+                {
+                    const auto& input = event.input();
+                    if (input.size() == 1 && std::isprint(static_cast<unsigned char>(input.front())) != 0)
+                    {
+                        model.question_modal_input(input.front());
+                    }
                     return true;
                 }
                 return true;
@@ -522,6 +1041,7 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                     cancellation_source->cancel();
                 }
                 model.handle_interrupt();
+                permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
                 permission_cv.notify_all();
                 return true;
             }
@@ -529,6 +1049,19 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
             {
                 screen.ExitLoopClosure()();
             }
+            return true;
+        }
+
+        if (event == Event::Escape && model.state().busy)
+        {
+            std::lock_guard lock{mutex};
+            if (cancellation_source)
+            {
+                cancellation_source->cancel();
+            }
+            model.handle_interrupt();
+            permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
+            permission_cv.notify_all();
             return true;
         }
 
@@ -549,19 +1082,19 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                 if (event == Event::Escape)
                 {
                     model.handle_command_cancel();
-                    input = model.state().composer;
+                    composer_state.set_content(model.state().composer);
                     return true;
                 }
                 if (event == Event::Backspace)
                 {
                     model.command_palette_backspace();
-                    input = model.state().composer;
+                    composer_state.set_content(model.state().composer);
                     return true;
                 }
-                if (event == Event::Return)
+                if (is_submit_key(event))
                 {
                     model.handle_command_select();
-                    input = model.state().composer;
+                    composer_state.set_content(model.state().composer);
                     return true;
                 }
                 if (event.is_character())
@@ -570,36 +1103,86 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
                     if (characters.size() == 1 && std::isprint(static_cast<unsigned char>(characters.front())) != 0)
                     {
                         model.command_palette_input(characters.front());
-                        input = model.state().composer;
+                        composer_state.set_content(model.state().composer);
                         return true;
                     }
                 }
             }
         }
 
-        if (event == Event::Return)
+        if (is_composer_newline_event(event))
         {
+            composer_state.insert_newline();
+            return true;
+        }
+
+        if (is_submit_key(event))
+        {
+            std::string prompt;
             {
                 std::lock_guard lock{mutex};
-                model.set_composer(input);
+                model.set_composer(composer_state.content());
+
+                // Intercept /model to open the select modal
+                auto trimmed = std::string{trim(model.state().composer)};
+                if (trimmed == "/model" && model_list_provider)
+                {
+                    auto options = model_list_provider();
+                    if (!options.empty())
+                    {
+                        model.open_select_modal("Select model", std::move(options));
+                    }
+                    else
+                    {
+                        model.append_system_message("No models available.");
+                    }
+                    composer_state.clear();
+                    model.set_composer("");
+                    return true;
+                }
+
                 if (model.handle_submit() != TuiAction::SubmitPrompt)
                 {
                     return true;
                 }
+                prompt = composer_state.content();
             }
-            auto prompt = input;
-            input.clear();
-            run_prompt(std::move(prompt));
+
+            composer_state.push_history(prompt);
+            composer_state.clear();
+            {
+                std::lock_guard lock{mutex};
+                model.set_composer("");
+            }
+
+            if (auto engine_prompt = resolve_submit_prompt(runtime, model, std::move(prompt)))
+            {
+                run_prompt(std::move(*engine_prompt));
+            }
             return true;
         }
 
-        if (event == Event::Character("/") && input.empty())
+        if (event == Event::Character("/") && composer_state.content().empty())
         {
             std::lock_guard lock{mutex};
-            input = "/";
-            model.set_composer(input);
+            composer_state.set_content("/");
+            model.set_composer("/");
             model.open_command_palette(command_entries);
             return true;
+        }
+
+        if (event.is_mouse())
+        {
+            const auto& mouse = event.mouse();
+            if (mouse.button == Mouse::WheelUp)
+            {
+                follow_transcript = false;
+                return true;
+            }
+            if (mouse.button == Mouse::WheelDown)
+            {
+                return true;
+            }
         }
 
         return false;
@@ -608,83 +1191,101 @@ auto run_tui(runtime::RuntimeBundle& runtime, int max_turns) -> Result<int>
     auto renderer = Renderer(component, [&] {
         std::lock_guard lock{mutex};
 
-        Elements rows;
-        rows.push_back(text("CodeHarness") | bold);
-        rows.push_back(separator());
-        for (const auto& item : model.state().transcript)
+        if (model.state().busy)
         {
-            auto row = text(item.kind + ": " + item.text);
-            rows.push_back(item.is_error ? row | color(Color::Red) : row);
+            spinner_frame = (spinner_frame + 1) % 10;
         }
-        rows.push_back(filler());
+
+        const auto terminal_width = std::max(screen.dimx(), 40);
+        Elements rows;
+
+        if (model.state().transcript.empty())
+        {
+            rows.push_back(render::welcome_banner_element(display_config));
+        }
+        else
+        {
+            Elements transcript_rows;
+            for (const auto& item : model.state().transcript)
+            {
+                transcript_rows.push_back(render::transcript_item_element(item, terminal_width));
+            }
+
+            auto transcript_box = vbox(std::move(transcript_rows)) | flex;
+            if (follow_transcript)
+            {
+                transcript_box = transcript_box | focusPositionRelative(0.f, 1.f);
+            }
+            rows.push_back(transcript_box | yframe | vscroll_indicator);
+        }
 
         if (model.state().pending_permission)
         {
-            const auto& prompt = *model.state().pending_permission;
-            rows.push_back(separator());
-            rows.push_back(text("Permission required") | bold | color(Color::Yellow));
-            rows.push_back(text(prompt.tool_name + ": " + prompt.reason));
-            if (prompt.command)
-            {
-                rows.push_back(text("command: " + *prompt.command));
-            }
-            if (prompt.path)
-            {
-                rows.push_back(text("path: " + prompt.path->string()));
-            }
-            rows.push_back(text("A approve - D deny") | dim);
+            rows.push_back(text(" "));
+            rows.push_back(render::permission_modal_element(*model.state().pending_permission, terminal_width));
+        }
+        else if (model.state().select_modal)
+        {
+            rows.push_back(text(" "));
+            rows.push_back(render::select_modal_element(*model.state().select_modal, terminal_width));
+        }
+        else if (model.state().question_modal)
+        {
+            rows.push_back(text(" "));
+            rows.push_back(render::question_modal_element(*model.state().question_modal, terminal_width));
         }
         else if (model.state().command_palette)
         {
-            const auto& palette = *model.state().command_palette;
-            rows.push_back(separator());
-            rows.push_back(text(palette.query.empty() ? "Select a command  (type to search)" : "Select a command") |
-                           bold);
-            rows.push_back(text(palette.query.empty() ? "Up/Down navigate - Enter select - Esc cancel"
-                                                      : "Up/Down navigate - Enter select - Esc cancel - Backspace clear") |
-                           dim);
-            if (!palette.query.empty())
-            {
-                rows.push_back(text("Search: " + palette.query));
-            }
-            if (palette.matches.empty())
-            {
-                rows.push_back(text("No matches") | dim);
-            }
-            for (std::size_t row = 0; row < palette.matches.size() && row < 8; ++row)
-            {
-                const auto command_index = palette.matches.at(row);
-                const auto& command = palette.commands.at(command_index);
-                auto line = std::string{row == palette.cursor ? "> /" : "  /"} + command.name + "  " +
-                            command.description;
-                auto rendered = text(line);
-                rows.push_back(row == palette.cursor ? rendered | bold | color(Color::Cyan) : rendered);
-            }
-            if (palette.matches.size() > 8)
-            {
-                rows.push_back(text("v " + std::to_string(palette.matches.size() - 8) + " more") | dim);
-            }
+            rows.push_back(text(" "));
+            rows.push_back(render::command_palette_element(*model.state().command_palette, terminal_width));
         }
 
-        rows.push_back(separator());
+        rows.push_back(text(" "));
+        rows.push_back(text(render::horizontal_rule(terminal_width)) | dim);
+        rows.push_back(render::status_footer_element(display_config, model.state()));
+
+        if (!model.state().pending_permission && !model.state().select_modal && !model.state().question_modal)
         {
-            auto mode_label = [&]() -> std::string {
-                switch (model.state().permission_mode) {
-                    case PermissionMode::Plan: return "Plan";
-                    case PermissionMode::FullAuto: return "FullAuto";
-                    default: return "Default";
-                }
-            }();
+            const auto status_text = model.state().busy ? render::busy_spinner_frame(spinner_frame) + " Working"
+                                                        : "Ready";
             rows.push_back(hbox({
-                text((model.state().busy ? "Running" : "Ready") + std::string{" [" + mode_label + "]"}) | bold,
-                separator(),
-                input_component->Render(),
+                text(status_text) | (model.state().busy ? color(TuiTheme::warning()) : color(TuiTheme::success())),
+                text(" "),
+                composer_component->Render() | borderRounded | size(HEIGHT, GREATER_THAN, 3) | flex,
             }));
+            rows.push_back(text(render::render_composer_hint(model.state().busy, composer_state.history_index())) | dim);
         }
-        return vbox(std::move(rows)) | border;
+
+        if (static_cast<int>(model.state().transcript.size()) != last_transcript_count)
+        {
+            follow_transcript = true;
+            last_transcript_count = static_cast<int>(model.state().transcript.size());
+        }
+
+        return vbox(std::move(rows)) | flex;
     });
 
     screen.Loop(renderer);
+
+    screen_alive->store(false, std::memory_order_release);
+
+    {
+        std::lock_guard lock{mutex};
+        if (cancellation_source)
+        {
+            cancellation_source->cancel();
+        }
+        permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
+        model.handle_interrupt();
+    }
+    permission_cv.notify_all();
+
+    if (worker.joinable())
+    {
+        worker.join();
+    }
+
+    std::cout << '\n';
     return 0;
 }
 

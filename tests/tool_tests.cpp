@@ -381,7 +381,6 @@ TEST_CASE("edit_file rejects paths outside cwd")
     CHECK(result.error().kind == codeharness::ErrorKind::InvalidArgument);
 }
 
-
 TEST_CASE("workspace path rejects escaping through nested relative path")
 {
     codeharness::WriteFileTool tool;
@@ -426,6 +425,30 @@ TEST_CASE("tools expose permission targets for engine checks")
     REQUIRE(bash_target.command.has_value());
     CHECK(*bash_target.command == "printf 'rm -rf /'");
     CHECK(!bash_target.path.has_value());
+}
+
+TEST_CASE("bash truncates large output without failing")
+{
+    codeharness::BashTool tool;
+
+    codeharness::ToolRequest request;
+    request.id = "large-bash-output";
+    request.name = "bash";
+#if defined(_WIN32)
+    set_request_input(request, R"({"command":"for /L %i in (1,1,2000) do @echo 0123456789abcdef0123456789abcdef","timeout_seconds":5})");
+#else
+    set_request_input(request, R"({"command":"yes 0123456789abcdef0123456789abcdef | head -n 2000","timeout_seconds":5})");
+#endif
+
+    codeharness::ToolContext context;
+    context.cwd = std::filesystem::current_path();
+
+    auto result = tool.execute(request, context);
+
+    REQUIRE(result.has_value());
+    CHECK(result->is_error == false);
+    CHECK(result->content.find("...[output truncated, too long]...") != std::string::npos);
+    CHECK(result->content.size() < 13000);
 }
 
 TEST_CASE("read-only metadata works through base tool interface")

@@ -152,7 +152,31 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     if (prompt.empty())
     {
-        return tui::run_tui(**runtime_bundle, settings->max_turns);
+        // Build model list from config profiles
+        auto model_list = [&settings]() -> std::vector<tui::ModelOption> {
+            std::vector<tui::ModelOption> options;
+            for (const auto& [name, profile] : settings->profiles)
+            {
+                options.push_back(tui::ModelOption{
+                    .value = profile.model.empty() ? profile.name : profile.model,
+                    .label = profile.label.empty() ? profile.name : profile.label,
+                    .description = profile.provider_type,
+                    .is_current = profile.model == settings->model || name == settings->active_profile,
+                });
+            }
+            return options;
+        };
+
+        return tui::run_tui(
+            **runtime_bundle,
+            settings->max_turns,
+            tui::TuiDisplayConfig{
+                .model = settings->model,
+                .provider_type = settings->provider_type,
+                .version = std::string{VERSION},
+                .skill_count = static_cast<int>((*runtime_bundle)->skills().list().size()),
+            },
+            tui::ModelListProvider{model_list});
     }
 
     if (!prompt.empty() && prompt.front() == '/')

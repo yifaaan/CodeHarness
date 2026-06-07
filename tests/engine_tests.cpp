@@ -1,5 +1,7 @@
 #include "test_support.h"
 
+#include <stdexcept>
+
 namespace
 {
 
@@ -179,6 +181,67 @@ public:
     }
 };
 
+class ThrowingToolRequestProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        for (auto& message : messages)
+        {
+            if (message.role != codeharness::Role::Tool)
+            {
+                continue;
+            }
+
+            for (auto& block : message.content)
+            {
+                if (auto result = std::get_if<codeharness::ToolResultBlock>(&block))
+                {
+                    sink(codeharness::AssistantTextDelta{result->content});
+                    sink(codeharness::MessageFinished{});
+                    return {};
+                }
+            }
+        }
+
+        sink(
+            codeharness::ToolUseStarted{
+                .id = "tool-use-throw",
+                .name = "throw_tool",
+            });
+        sink(
+            codeharness::ToolUseInputDelta{
+                .id = "tool-use-throw",
+                .input_json_delta = R"({})",
+            });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-throw"});
+        sink(codeharness::MessageFinished{});
+
+        return {};
+    }
+};
+
+class ThrowingTool final : public codeharness::Tool
+{
+public:
+    auto name() const -> std::string override
+    {
+        return "throw_tool";
+    }
+
+    auto description() const -> std::string override
+    {
+        return "Throws from execute.";
+    }
+
+    auto execute(const codeharness::ToolRequest&, const codeharness::ToolContext&) const
+        -> codeharness::Result<codeharness::ToolResponse> override
+    {
+        throw std::runtime_error{"boom"};
+    }
+};
+
 } // namespace
 
 TEST_CASE("engine executes requested tool and returns final provider text")
@@ -246,6 +309,31 @@ TEST_CASE("engine reports unknown tool as a tool error")
     CHECK(tool_result->tool_use_id == "tool-use-1");
     CHECK(tool_result->is_error);
     CHECK(tool_result->content == "tool not found: read_file");
+    CHECK(result->output_text == tool_result->content);
+}
+
+TEST_CASE("engine reports throwing tool as a tool error")
+{
+    ThrowingToolRequestProvider provider;
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<ThrowingTool>());
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "run throwing tool";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->messages.size() == 4);
+    CHECK(result->messages[2].role == codeharness::Role::Tool);
+
+    auto tool_result = std::get_if<codeharness::ToolResultBlock>(&result->messages[2].content.front());
+    REQUIRE(tool_result != nullptr);
+    CHECK(tool_result->tool_use_id == "tool-use-throw");
+    CHECK(tool_result->is_error);
+    CHECK(tool_result->content.find("unexpected exception: boom") != std::string::npos);
     CHECK(result->output_text == tool_result->content);
 }
 

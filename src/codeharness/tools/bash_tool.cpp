@@ -6,9 +6,12 @@
 #include <reproc++/reproc.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #include "codeharness/core/assign.h"
@@ -30,6 +33,15 @@ struct BashInput
 // JSON 解析
 // LLM 以 JSON 格式调用工具，例如：
 //   {"command": "git log --oneline -3", "timeout_seconds": 30}
+struct BashProcessResult
+{
+    int exit_status = 0;
+    bool timed_out = false;
+};
+
+constexpr std::size_t max_output_length = 12000;
+constexpr std::string_view output_truncated_marker = "\n...[output truncated, too long]...";
+
 auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
 {
     BashInput parsed;
@@ -39,10 +51,7 @@ auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
         return nonstd::make_unexpected(r.error());
     }
 
-    if (auto r = assign(
-            parsed.timeout_seconds,
-            read_json_field<int, JsonFieldMode::optional_with_default>(input, "timeout_seconds", "bash", 600));
-        !r)
+    if (auto r = assign(parsed.timeout_seconds, read_json_field<int, JsonFieldMode::optional_with_default>(input, "timeout_seconds", "bash", 600)); !r)
     {
         return nonstd::make_unexpected(r.error());
     }
@@ -59,29 +68,95 @@ auto parse_bash_input(const nlohmann::json& input) -> Result<BashInput>
     return parsed;
 }
 
-auto drain_output(reproc::process& process, std::string& output) -> void
+auto append_output(std::string& output, const std::uint8_t* data, std::size_t size, bool& truncated) -> void
+{
+    if (truncated || size == 0)
+    {
+        return;
+    }
+
+    const auto remaining = max_output_length > output.size() ? max_output_length - output.size() : std::size_t{0};
+    if (size > remaining)
+    {
+        output.append(reinterpret_cast<const char*>(data), remaining);
+        truncated = true;
+        return;
+    }
+
+    output.append(reinterpret_cast<const char*>(data), size);
+}
+
+auto append_truncation_marker(std::string& output, bool truncated) -> void
+{
+    if (truncated)
+    {
+        output += output_truncated_marker;
+    }
+}
+
+auto drain_available_output(reproc::process& process, std::string& output, bool& truncated) -> void
 {
     std::array<std::uint8_t, 4096> buf;
     while (true)
     {
         auto [bytes_read, error] = process.read(reproc::stream::out, buf.data(), buf.size());
-        if (bytes_read > 0)
-        {
-            output.append(reinterpret_cast<const char *>(buf.data()), bytes_read);
-        }
 
         if (!error && bytes_read > 0)
         {
+            if (bytes_read > buf.size())
+            {
+                spdlog::warn("bash read reported {} bytes for a {} byte buffer", bytes_read, buf.size());
+                truncated = true;
+                break;
+            }
+
+            append_output(output, buf.data(), bytes_read, truncated);
             continue;
         }
 
-        if (error && error != std::errc::resource_unavailable_try_again && error != std::errc::operation_would_block &&
-            error != std::errc::broken_pipe)
+        if (error && error != std::errc::resource_unavailable_try_again && error != std::errc::operation_would_block && error != std::errc::broken_pipe)
         {
             spdlog::warn("failed to read bash output: {}", error.message());
         }
 
         break;
+    }
+}
+
+auto wait_for_process(reproc::process& process, std::string& output, bool& truncated, int timeout_seconds) -> Result<BashProcessResult>
+{
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{timeout_seconds};
+    while (true)
+    {
+        drain_available_output(process, output, truncated);
+
+        auto [exit_status, wait_error] = process.wait(reproc::milliseconds{0});
+        if (!wait_error)
+        {
+            drain_available_output(process, output, truncated);
+            return BashProcessResult{.exit_status = exit_status};
+        }
+
+        if (wait_error != std::errc::timed_out)
+        {
+            return fail<BashProcessResult>(ErrorKind::Io, fmt::format("failed to wait for process: {}", wait_error.message()));
+        }
+
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            drain_available_output(process, output, truncated);
+
+            if (auto error = process.kill())
+            {
+                spdlog::warn("failed to kill timed-out bash process: {}", error.message());
+            }
+            process.wait(reproc::milliseconds{5000});
+
+            drain_available_output(process, output, truncated);
+            return BashProcessResult{.timed_out = true};
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
     }
 }
 
@@ -136,23 +211,13 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         return fail<ToolResponse>(ErrorKind::Io, fmt::format("failed to start process: {}", error.message()));
     }
 
-    const auto timeout = reproc::milliseconds{parsed->timeout_seconds * 1000};
-    auto [exit_status, wait_error] = process.wait(timeout);
-
     std::string output;
+    bool output_truncated = false;
 
-    if (wait_error == std::errc::timed_out)
+    auto exit_status = wait_for_process(process, output, output_truncated, parsed->timeout_seconds);
+    if (exit_status && exit_status->timed_out)
     {
-        drain_output(process, output);
-
-        if (auto error = process.kill())
-        {
-            spdlog::warn("failed to kill timed-out bash process: {}", error.message());
-        }
-        process.wait(reproc::milliseconds{5000});
-
-        drain_output(process, output);
-
+        append_truncation_marker(output, output_truncated);
         if (!output.empty() && output.back() != '\n')
         {
             output += '\n';
@@ -168,26 +233,19 @@ auto BashTool::execute(const ToolRequest& request, const ToolContext& context) c
         };
     }
 
-    if (wait_error)
+    if (!exit_status)
     {
-        return fail<ToolResponse>(ErrorKind::Io, fmt::format("failed to wait for process: {}", wait_error.message()));
+        return fail<ToolResponse>(exit_status.error().kind, exit_status.error().message);
     }
 
-    drain_output(process, output);
+    append_truncation_marker(output, output_truncated);
 
-    constexpr std::size_t max_length = 12000;
-    if (output.size() > max_length)
-    {
-        output.resize(max_length);
-        output += "\n...[output truncated, too long]...";
-    }
-
-    bool is_error = (exit_status != 0);
+    bool is_error = (exit_status->exit_status != 0);
 
     std::string result;
     if (is_error)
     {
-        result = fmt::format("Exit code: {}\n\n{}", exit_status, output);
+        result = fmt::format("Exit code: {}\n\n{}", exit_status->exit_status, output);
     }
     else
     {

@@ -151,6 +151,54 @@ TEST_CASE("provider HTTP helpers join endpoints and preserve API error messages"
     CHECK(codeharness::provider_http_error_message("OpenAI", response) == "OpenAI API returned status 401: bad key");
 }
 
+TEST_CASE("provider HTTP retry helper distinguishes retryable and non-retryable status codes")
+{
+    CHECK_FALSE(codeharness::should_retry_http_status(200));
+    CHECK_FALSE(codeharness::should_retry_http_status(400));
+    CHECK_FALSE(codeharness::should_retry_http_status(401));
+    CHECK_FALSE(codeharness::should_retry_http_status(403));
+    CHECK_FALSE(codeharness::should_retry_http_status(404));
+    CHECK_FALSE(codeharness::should_retry_http_status(422));
+
+    CHECK(codeharness::should_retry_http_status(429));
+    CHECK(codeharness::should_retry_http_status(500));
+    CHECK(codeharness::should_retry_http_status(502));
+    CHECK(codeharness::should_retry_http_status(503));
+    CHECK(codeharness::should_retry_http_status(504));
+
+    // 1xx, 2xx, 3xx are never retryable as errors
+    CHECK_FALSE(codeharness::should_retry_http_status(100));
+    CHECK_FALSE(codeharness::should_retry_http_status(301));
+    CHECK_FALSE(codeharness::should_retry_http_status(307));
+}
+
+TEST_CASE("provider HTTP retry delay increases exponentially with jitter")
+{
+    using namespace std::chrono_literals;
+
+    auto d1 = codeharness::provider_retry_delay(0, 1s, 30s);
+    CHECK(d1 >= 750ms);
+    CHECK(d1 <= 1250ms);
+
+    auto d2 = codeharness::provider_retry_delay(1, 1s, 30s);
+    CHECK(d2 >= 1500ms);
+    CHECK(d2 <= 2500ms);
+
+    auto d3 = codeharness::provider_retry_delay(2, 1s, 30s);
+    CHECK(d3 >= 3000ms);
+    CHECK(d3 <= 5000ms);
+}
+
+TEST_CASE("provider HTTP retry delay is capped at max_delay")
+{
+    using namespace std::chrono_literals;
+
+    // attempt 5 with base 1s → 32s before cap → capped at 10s
+    auto d = codeharness::provider_retry_delay(5, 1s, 10s);
+    CHECK(d <= 10s);
+    CHECK(d >= 7500ms);
+}
+
 TEST_CASE("provider openai responses serialization maps messages and tools")
 {
     std::vector<codeharness::Message> messages;
