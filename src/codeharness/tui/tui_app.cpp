@@ -776,10 +776,14 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
     auto run_prompt = [&](std::string prompt) {
         reap_worker();
-        model.begin_prompt(prompt);
-        follow_transcript = true;
-        cancellation_source = std::make_unique<CancellationSource>();
-        auto cancellation = cancellation_source->token();
+        CancellationToken cancellation;
+        {
+            std::lock_guard lock{mutex};
+            model.begin_prompt(prompt);
+            follow_transcript = true;
+            cancellation_source = std::make_unique<CancellationSource>();
+            cancellation = cancellation_source->token();
+        }
 
         worker = std::thread{[&, prompt = std::move(prompt), cancellation, screen_alive] {
             const auto post_refresh = [&] {
@@ -819,22 +823,28 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                                 screen.PostEvent(Event::Custom);
                             }
 
-                            std::unique_lock lock{mutex};
-                            permission_cv.wait(lock, [&] { return permission_response.has_value() || model.state().interrupt_requested; });
-                            auto response = permission_response.value_or(PermissionResponse{.allowed = false, .reason = "interrupted"});
-                            permission_response.reset();
-                            model.clear_permission();
-                            if (screen_alive->load(std::memory_order_acquire))
                             {
-                                screen.PostEvent(Event::Custom);
+                                std::unique_lock lock{mutex};
+                                permission_cv.wait(lock, [&] { return permission_response.has_value() || model.state().interrupt_requested; });
+                                auto response = permission_response.value_or(PermissionResponse{.allowed = false, .reason = "interrupted"});
+                                permission_response.reset();
+                                model.clear_permission();
+                                lock.unlock();
+
+                                if (screen_alive->load(std::memory_order_acquire))
+                                {
+                                    screen.PostEvent(Event::Custom);
+                                }
+                                return response;
                             }
-                            return response;
                         },
                         .cancellation = cancellation,
                     },
                     [&, screen_alive](const EngineEvent& event) {
-                        std::lock_guard lock{mutex};
-                        model.apply_engine_event(event);
+                        {
+                            std::lock_guard lock{mutex};
+                            model.apply_engine_event(event);
+                        }
                         if (screen_alive->load(std::memory_order_acquire))
                         {
                             screen.PostEvent(Event::Custom);
@@ -881,10 +891,10 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         if (event.is_character())
         {
             const auto& input = event.input();
-            model.detect_paste_burst(input);
-            if (model.state().paste_burst_active && input.size() > 1)
+            if (input.size() > 1)
             {
                 std::lock_guard lock{mutex};
+                model.detect_paste_burst(input);
                 model.apply_paste_to_composer(input);
                 composer_state.set_content(model.state().composer);
                 return true;
@@ -892,37 +902,46 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         }
 
         {
-            std::lock_guard lock{mutex};
-            if (model.state().pending_permission)
+            bool handled_permission = false;
+            bool notify_permission = false;
             {
-                if (event == Event::CtrlC)
+                std::lock_guard lock{mutex};
+                if (model.state().pending_permission)
                 {
-                    if (cancellation_source)
+                    handled_permission = true;
+                    if (event == Event::CtrlC)
                     {
-                        cancellation_source->cancel();
+                        if (cancellation_source)
+                        {
+                            cancellation_source->cancel();
+                        }
+                        model.handle_interrupt();
+                        permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
+                        notify_permission = true;
                     }
-                    model.handle_interrupt();
-                    permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
+                    else if (is_permission_approve_key(event))
+                    {
+                        if (model.handle_permission_approve() == TuiAction::ApprovePermission)
+                        {
+                            permission_response = PermissionResponse{.allowed = true};
+                            notify_permission = true;
+                        }
+                    }
+                    else if (is_permission_deny_key(event))
+                    {
+                        if (model.handle_permission_deny() == TuiAction::DenyPermission)
+                        {
+                            permission_response = PermissionResponse{.allowed = false, .reason = "user denied permission"};
+                            notify_permission = true;
+                        }
+                    }
+                }
+            }
+            if (handled_permission)
+            {
+                if (notify_permission)
+                {
                     permission_cv.notify_one();
-                    return true;
-                }
-                if (is_permission_approve_key(event))
-                {
-                    if (model.handle_permission_approve() == TuiAction::ApprovePermission)
-                    {
-                        permission_response = PermissionResponse{.allowed = true};
-                        permission_cv.notify_one();
-                    }
-                    return true;
-                }
-                if (is_permission_deny_key(event))
-                {
-                    if (model.handle_permission_deny() == TuiAction::DenyPermission)
-                    {
-                        permission_response = PermissionResponse{.allowed = false, .reason = "user denied permission"};
-                        permission_cv.notify_one();
-                    }
-                    return true;
                 }
                 return true;
             }
