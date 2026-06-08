@@ -20,6 +20,8 @@
 #include <system_error>
 #include <utility>
 
+#include "codeharness/config/paths.h"
+#include "codeharness/core/git.h"
 #include "codeharness/core/paths.h"
 #include "codeharness/core/strings.h"
 #include "codeharness/core/time.h"
@@ -52,22 +54,6 @@ constexpr std::string_view kFrontmatterFields[] = {
     "tags",
 };
 
-struct GitRuntime
-{
-    GitRuntime()
-    {
-        git_libgit2_init();
-    }
-
-    ~GitRuntime()
-    {
-        git_libgit2_shutdown();
-    }
-
-    GitRuntime(const GitRuntime&) = delete;
-    auto operator=(const GitRuntime&) -> GitRuntime& = delete;
-};
-
 struct SplitMemoryFile
 {
     YAML::Node frontmatter;
@@ -89,61 +75,6 @@ auto resolve_directory(const std::filesystem::path& path) -> Result<std::filesys
     }
 
     return resolved;
-}
-
-auto git_blob_hash_hex(std::string_view text) -> Result<std::string>
-{
-    GitRuntime runtime;
-
-    git_oid oid{};
-    if (git_odb_hash(&oid, text.data(), text.size(), GIT_OBJECT_BLOB) != 0)
-    {
-        return fail<std::string>(ErrorKind::Internal, "failed to hash memory content");
-    }
-
-    std::array<char, GIT_OID_SHA1_HEXSIZE + 1> buffer{};
-    git_oid_tostr(buffer.data(), buffer.size(), &oid);
-    return std::string{buffer.data()};
-}
-
-auto lower_ascii(char character) -> char
-{
-    return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-}
-
-auto slugify(std::string_view text) -> std::string
-{
-    std::string slug;
-    bool previous_separator = true;
-
-    for (const auto character : text)
-    {
-        const auto byte = static_cast<unsigned char>(character);
-        if (std::isalnum(byte) != 0)
-        {
-            slug.push_back(lower_ascii(character));
-            previous_separator = false;
-            continue;
-        }
-
-        if (!previous_separator)
-        {
-            slug.push_back('_');
-            previous_separator = true;
-        }
-    }
-
-    while (!slug.empty() && slug.back() == '_')
-    {
-        slug.pop_back();
-    }
-
-    if (slug.empty())
-    {
-        return "memory";
-    }
-
-    return slug;
 }
 
 auto normalize_for_signature(std::string_view text) -> std::string
@@ -684,18 +615,6 @@ auto next_memory_path(const std::filesystem::path& root, std::string_view slug) 
     }
 }
 
-auto ensure_memory_root(const std::filesystem::path& root) -> Result<void>
-{
-    std::error_code error;
-    std::filesystem::create_directories(root, error);
-    if (error)
-    {
-        return fail<void>(ErrorKind::Io, "failed to create memory directory: " + error.message());
-    }
-
-    return {};
-}
-
 auto clean_tags(const std::vector<std::string>& tags) -> std::vector<std::string>
 {
     std::vector<std::string> cleaned;
@@ -877,13 +796,7 @@ auto contains_token(std::string_view text, const std::string& token) -> bool
 
 auto default_memory_root() -> Result<std::filesystem::path>
 {
-    const auto data_dir = default_codeharness_data_dir();
-    if (!data_dir)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
-    }
-
-    return *data_dir / "memory";
+    return codeharness::config::data_dir() / "memory";
 }
 
 auto project_memory_dir(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
@@ -969,7 +882,7 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
 
     body.push_back('\n');
 
-    auto mkdir = ensure_memory_root(root_);
+    auto mkdir = ensure_directory(root_, "memory directory");
     if (!mkdir)
     {
         return nonstd::make_unexpected(mkdir.error());

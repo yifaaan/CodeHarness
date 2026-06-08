@@ -1,5 +1,7 @@
 #include "codeharness/network/sse_parser.h"
 
+#include "codeharness/core/strings.h"
+
 #include <string>
 
 namespace codeharness::network
@@ -7,14 +9,6 @@ namespace codeharness::network
 
 namespace
 {
-
-auto trim_trailing_cr(std::string& line) -> void
-{
-    if (!line.empty() && line.back() == '\r')
-    {
-        line.pop_back();
-    }
-}
 
 auto field_value(std::string_view line, std::size_t colon) -> std::string_view
 {
@@ -44,7 +38,7 @@ auto SseParser::feed(std::string_view chunk) -> std::vector<SseEvent>
 
         std::string line{buffer_, 0, eol};
         buffer_.erase(0, eol + 1);
-        trim_trailing_cr(line);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
 
         if (line.empty())
         {

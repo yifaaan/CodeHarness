@@ -38,16 +38,6 @@ auto timeout_ms_since(std::chrono::steady_clock::time_point deadline) -> reproc:
     return std::chrono::duration_cast<reproc::milliseconds>(deadline - now);
 }
 
-auto trim_trailing_cr(std::string line) -> std::string
-{
-    if (!line.empty() && line.back() == '\r')
-    {
-        line.pop_back();
-    }
-
-    return line;
-}
-
 auto stop_actions(int timeout_ms) -> reproc::stop_actions
 {
     const auto timeout = reproc::milliseconds{timeout_ms};
@@ -308,7 +298,8 @@ auto McpStdioTransport::next_stdout_line() -> std::optional<std::string>
 
     auto line = stdout_buffer_.substr(0, newline);
     stdout_buffer_.erase(0, newline + 1);
-    return trim_trailing_cr(std::move(line));
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    return line;
 }
 
 auto McpStdioTransport::log_stderr_lines() -> void
@@ -323,7 +314,7 @@ auto McpStdioTransport::log_stderr_lines() -> void
 
         auto line = stderr_buffer_.substr(0, newline);
         stderr_buffer_.erase(0, newline + 1);
-        line = trim_trailing_cr(std::move(line));
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         if (!line.empty())
         {
             spdlog::debug("MCP stdio server {} stderr: {}", config_.name, line);

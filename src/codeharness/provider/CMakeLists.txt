@@ -1,7 +1,6 @@
 codeharness_add_static_module(codeharness_provider
     echo_provider.cpp
     provider.cpp
-    provider_config.cpp
     provider_http.cpp
     provider_tool_schema.cpp
     anthropic_serialize.cpp

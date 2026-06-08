@@ -243,16 +243,7 @@ auto create_default_runtime(const std::filesystem::path& cwd,
     }
 
     auto team_root = mailbox::default_teams_root();
-    if (!team_root)
-    {
-        return fail<std::unique_ptr<CoordinatorRuntime>>(ErrorKind::Config, "home directory is not available");
-    }
-
     auto mailbox_root = mailbox::default_mailbox_root();
-    if (!mailbox_root)
-    {
-        return fail<std::unique_ptr<CoordinatorRuntime>>(ErrorKind::Config, "home directory is not available");
-    }
 
     auto definitions = load_agent_definition_registry(cwd, std::move(options));
     if (!definitions)
@@ -262,8 +253,8 @@ auto create_default_runtime(const std::filesystem::path& cwd,
 
     return std::make_unique<CoordinatorRuntime>(
         std::move(*task_root),
-        std::move(*team_root),
-        std::move(*mailbox_root),
+        std::move(team_root),
+        std::move(mailbox_root),
         std::move(*definitions));
 }
 

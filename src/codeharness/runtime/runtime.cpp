@@ -422,7 +422,7 @@ auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) ->
     }
     prompt_request.relevant_memories = std::move(*relevant_memories);
 
-    auto system_prompt = SystemPromptBuilder{}.build(prompt_request);
+    auto system_prompt = build_system_prompt(prompt_request);
     if (!system_prompt)
     {
         return nonstd::make_unexpected(system_prompt.error());

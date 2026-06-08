@@ -145,7 +145,7 @@ private:
 };
 
 // 返回默认的 Mailbox 根目录路径。
-// 即 default_codeharness_data_dir() / "mailboxes"。
-auto default_mailbox_root() -> std::optional<std::filesystem::path>;
+// 即 config::data_dir() / "mailboxes"。
+auto default_mailbox_root() -> std::filesystem::path;
 
 } // namespace codeharness::mailbox

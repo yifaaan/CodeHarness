@@ -1,11 +1,53 @@
 #pragma once
 
+#include <cctype>
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <utility>
 
 namespace codeharness
 {
+
+inline auto lower_ascii(char character) -> char
+{
+    return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+}
+
+inline auto slugify(std::string_view text) -> std::string
+{
+    std::string slug;
+    bool previous_separator = true;
+
+    for (const auto character : text)
+    {
+        const auto byte = static_cast<unsigned char>(character);
+        if (std::isalnum(byte) != 0)
+        {
+            slug.push_back(lower_ascii(character));
+            previous_separator = false;
+            continue;
+        }
+
+        if (!previous_separator)
+        {
+            slug.push_back('_');
+            previous_separator = true;
+        }
+    }
+
+    while (!slug.empty() && slug.back() == '_')
+    {
+        slug.pop_back();
+    }
+
+    if (slug.empty())
+    {
+        return "memory";
+    }
+
+    return slug;
+}
 
 inline auto trim(std::string_view value) -> std::string_view
 {
@@ -17,6 +59,15 @@ inline auto trim(std::string_view value) -> std::string_view
     }
     const auto last = value.find_last_not_of(whitespace);
     return value.substr(first, last - first + 1);
+}
+
+inline auto strip_trailing_cr(std::string_view value) -> std::string_view
+{
+    if (!value.empty() && value.back() == '\r')
+    {
+        return value.substr(0, value.size() - 1);
+    }
+    return value;
 }
 
 // 从 offset 起读一行，并返回下一行的起始 offset

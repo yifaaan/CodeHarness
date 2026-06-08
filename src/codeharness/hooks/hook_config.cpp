@@ -116,9 +116,6 @@ auto hook_type_from_string(std::string_view value) -> std::optional<HookType>
 {
     if (value == "callback" || value == "Callback") return HookType::Callback;
     if (value == "command" || value == "Command") return HookType::Command;
-    if (value == "http" || value == "Http") return HookType::Http;
-    if (value == "prompt" || value == "Prompt") return HookType::Prompt;
-    if (value == "agent" || value == "Agent") return HookType::Agent;
     return std::nullopt;
 }
 
@@ -128,9 +125,6 @@ auto hook_type_to_string(HookType type) -> std::string_view
     {
     case HookType::Callback: return "callback";
     case HookType::Command: return "command";
-    case HookType::Http: return "http";
-    case HookType::Prompt: return "prompt";
-    case HookType::Agent: return "agent";
     }
 
     return "command";

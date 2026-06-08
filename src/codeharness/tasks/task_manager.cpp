@@ -45,6 +45,8 @@
 #include <nonstd/expected.hpp>
 #include <reproc++/reproc.hpp>
 
+#include "codeharness/config/paths.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -83,7 +85,6 @@ constexpr auto kTaskLogExtension = ".log";
 // 根据任务类型生成 ID 前缀字符：
 //   'b' = local_bash（本地 shell 命令）
 //   'a' = local_agent（本地子 agent 进程）
-//   'r' = remote_agent（预留，未来支持远程 agent）
 // 后续拼接 4 字节随机十六进制，形成唯一 ID（如 "a3f7a1b2"）
 auto task_prefix(TaskType type) -> char
 {
@@ -91,7 +92,6 @@ auto task_prefix(TaskType type) -> char
     {
     case TaskType::LocalBash: return 'b';
     case TaskType::LocalAgent: return 'a';
-    case TaskType::RemoteAgent: return 'r';
     }
 
     return 't';
@@ -247,7 +247,6 @@ auto task_type_name(TaskType type) -> std::string_view
     {
     case TaskType::LocalBash: return "local_bash";
     case TaskType::LocalAgent: return "local_agent";
-    case TaskType::RemoteAgent: return "remote_agent";
     }
 
     return "unknown";
@@ -276,10 +275,6 @@ auto parse_task_type(std::string_view value) -> Result<TaskType>
     if (value == "local_agent")
     {
         return TaskType::LocalAgent;
-    }
-    if (value == "remote_agent")
-    {
-        return TaskType::RemoteAgent;
     }
 
     return fail<TaskType>(ErrorKind::InvalidArgument, "unknown task type: " + std::string{value});
@@ -358,13 +353,7 @@ auto from_json(const nlohmann::json& input, TaskRecord& record) -> void
 
 auto default_task_root() -> Result<std::filesystem::path>
 {
-    const auto data_dir = default_codeharness_data_dir();
-    if (!data_dir)
-    {
-        return fail<std::filesystem::path>(ErrorKind::Config, "home directory is not available");
-    }
-
-    return *data_dir / "tasks";
+    return codeharness::config::data_dir() / "tasks";
 }
 
 // TaskManager::Impl（PIMPL 模式）

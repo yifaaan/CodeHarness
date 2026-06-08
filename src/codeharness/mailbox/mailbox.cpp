@@ -1,5 +1,6 @@
 #include "codeharness/mailbox/mailbox.h"
 
+#include "codeharness/config/paths.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/core/paths.h"
 #include "codeharness/core/time.h"
@@ -104,14 +105,9 @@ auto from_json(const nlohmann::json& input, MailboxMessage& msg) -> void
 // default_mailbox_root —— 默认的 Mailbox 根目录
 //
 // 返回 ~/.codeharness/data/mailboxes
-auto default_mailbox_root() -> std::optional<std::filesystem::path>
+auto default_mailbox_root() -> std::filesystem::path
 {
-    const auto data_dir = default_codeharness_data_dir();
-    if (!data_dir)
-    {
-        return std::nullopt;
-    }
-    return *data_dir / "mailboxes";
+    return codeharness::config::data_dir() / "mailboxes";
 }
 
 namespace

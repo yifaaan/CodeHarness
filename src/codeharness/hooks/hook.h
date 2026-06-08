@@ -31,9 +31,6 @@ enum class HookType
 {
     Callback,
     Command,
-    Http,
-    Prompt,
-    Agent,
 };
 
 struct HookResult

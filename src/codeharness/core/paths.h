@@ -56,17 +56,4 @@ inline auto ensure_directory(const std::filesystem::path& path, std::string_view
     return {};
 }
 
-// Prefer codeharness/config/paths.h for new code.
-[[deprecated("Use codeharness/config/paths.h instead")]]
-inline auto default_codeharness_data_dir() -> std::optional<std::filesystem::path>
-{
-    const auto home = home_directory();
-    if (!home)
-    {
-        return std::nullopt;
-    }
-
-    return *home / ".codeharness" / "data";
-}
-
 } // namespace codeharness

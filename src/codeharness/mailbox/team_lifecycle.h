@@ -137,7 +137,7 @@ private:
 };
 
 // 返回默认的团队根目录路径：~/.codeharness/data/teams
-auto default_teams_root() -> std::optional<std::filesystem::path>;
+auto default_teams_root() -> std::filesystem::path;
 
 // 将名称中的非字母数字字符替换为连字符，并转为小写。
 //   "My Team"        → "my-team"

@@ -11,6 +11,8 @@
 #include <sstream>
 #include <utility>
 
+#include "codeharness/core/strings.h"
+
 namespace codeharness
 {
 
@@ -32,16 +34,6 @@ auto action_name(PermissionAction action) -> std::string_view
     }
 
     return "unknown";
-}
-
-auto to_lower_ascii(std::string text) -> std::string
-{
-    for (char& ch : text)
-    {
-        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    }
-
-    return text;
 }
 
 auto normalize_path_text(const std::filesystem::path& path) -> std::string
@@ -144,7 +136,8 @@ auto command_regex_matches(std::string_view pattern, const std::string& command)
 
 auto is_sensitive_path(const std::filesystem::path& path) -> bool
 {
-    const auto text = to_lower_ascii(normalize_path_text(path));
+    auto text = normalize_path_text(path);
+    for (char& ch : text) ch = lower_ascii(ch);
 
     static constexpr auto sensitive_patterns = std::to_array<std::string_view>({
         ".ssh/", "/.ssh", ".aws/credentials", ".aws/config",
@@ -159,7 +152,8 @@ auto is_sensitive_path(const std::filesystem::path& path) -> bool
 
 auto looks_dangerous_command(const std::string& command) -> bool
 {
-    const auto text = to_lower_ascii(command);
+    auto text = command;
+    for (char& ch : text) ch = lower_ascii(ch);
 
     static constexpr auto dangerous_patterns = std::to_array<std::string_view>({
         "rm -rf /", "del /s /q c:\\", "format c:", "drop database",

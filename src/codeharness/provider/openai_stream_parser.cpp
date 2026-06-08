@@ -1,6 +1,8 @@
 #include "codeharness/provider/openai_stream_parser.h"
 #include "codeharness/provider/provider_json_helpers.h"
 
+#include "codeharness/core/strings.h"
+
 #include <nlohmann/json.hpp>
 
 #include <string>
@@ -74,15 +76,6 @@ auto key_for_item(const nlohmann::json& event, const nlohmann::json& item = nloh
     return key;
 }
 
-auto without_trailing_cr(std::string_view line) -> std::string_view
-{
-    if (!line.empty() && line.back() == '\r')
-    {
-        line.remove_suffix(1);
-    }
-    return line;
-}
-
 } // namespace
 
 auto OpenAIStreamParser::feed(std::string_view chunk) -> ParsedEvent
@@ -113,7 +106,7 @@ auto OpenAIStreamParser::feed(std::string_view chunk) -> ParsedEvent
             while (start <= event.data.size())
             {
                 const auto end = event.data.find('\n', start);
-                auto line = without_trailing_cr(
+                auto line = strip_trailing_cr(
                     end == std::string::npos ? std::string_view{event.data}.substr(start)
                                              : std::string_view{event.data}.substr(start, end - start));
                 if (!line.empty())

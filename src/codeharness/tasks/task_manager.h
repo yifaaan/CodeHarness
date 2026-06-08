@@ -20,7 +20,6 @@ enum class TaskType
 {
     LocalBash,
     LocalAgent,
-    RemoteAgent,
 };
 
 enum class TaskStatus

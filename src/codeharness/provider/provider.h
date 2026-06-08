@@ -64,8 +64,6 @@ public:
     virtual ~Provider() = default;
 
     virtual auto stream(std::span<const Message> messages, const ProviderEventSink& sink) -> Result<void> = 0;
-
-    virtual auto generate(std::span<const Message> messages) -> Result<Message>;
 };
 
 } // namespace codeharness

@@ -113,7 +113,7 @@ TEST_CASE("system prompt builder includes environment skills commands context an
     request.relevant_memories = {codeharness::RelevantMemory{.title = "Build Notes", .content = "Use CMake."}};
     request.permission_mode = codeharness::PermissionMode::Default;
 
-    auto prompt = codeharness::SystemPromptBuilder{}.build(request);
+    auto prompt = codeharness::build_system_prompt(request);
 
     REQUIRE(prompt.has_value());
     CHECK(prompt->find("You are CodeHarness") != std::string::npos);

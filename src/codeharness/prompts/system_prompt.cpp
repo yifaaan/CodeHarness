@@ -14,6 +14,8 @@
 #include <string_view>
 #include <system_error>
 
+#include "codeharness/core/git.h"
+
 namespace codeharness
 {
 
@@ -66,22 +68,6 @@ auto current_date_string() -> std::string
 {
     return date::format("%F", date::floor<date::days>(std::chrono::system_clock::now()));
 }
-
-struct GitRuntime
-{
-    GitRuntime()
-    {
-        git_libgit2_init();
-    }
-
-    ~GitRuntime()
-    {
-        git_libgit2_shutdown();
-    }
-
-    GitRuntime(const GitRuntime&) = delete;
-    auto operator=(const GitRuntime&) -> GitRuntime& = delete;
-};
 
 constexpr auto GitRepositoryDeleter = [](git_repository *repository) noexcept { git_repository_free(repository); };
 
@@ -320,7 +306,7 @@ auto detect_environment(const std::filesystem::path& cwd) -> Result<EnvironmentI
     return environment;
 }
 
-auto SystemPromptBuilder::build(const PromptBuildRequest& request) const -> Result<std::string>
+auto build_system_prompt(const PromptBuildRequest& request) -> Result<std::string>
 {
     auto environment = detect_environment(request.cwd);
     if (!environment)

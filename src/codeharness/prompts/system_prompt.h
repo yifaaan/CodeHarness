@@ -54,10 +54,6 @@ auto detect_environment(const std::filesystem::path& cwd) -> Result<EnvironmentI
 
 // 把 PromptBuildRequest 拼装成一段完整的 system prompt 文本。
 // 内部按"基础人格 → 环境 → 权限 → 能力 → 项目上下文 → 记忆"的固定顺序拼接
-class SystemPromptBuilder
-{
-public:
-    auto build(const PromptBuildRequest& request) const -> Result<std::string>;
-};
+auto build_system_prompt(const PromptBuildRequest& request) -> Result<std::string>;
 
 } // namespace codeharness

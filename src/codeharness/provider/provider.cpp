@@ -6,7 +6,6 @@
 #include <utility>
 
 #include "codeharness/core/error.h"
-#include "codeharness/core/event_collector.h"
 #include "codeharness/core/result.h"
 
 namespace codeharness
@@ -56,21 +55,6 @@ auto from_json(const nlohmann::json& input, ProviderUsage& usage) -> void
         .total_tokens = json_int_value(input, "total_tokens"),
     };
     usage.total_tokens = usage.normalized_total();
-}
-
-auto Provider::generate(std::span<const Message> messages) -> Result<Message>
-{
-    ProviderEventCollector collector;
-    collector.message().role = Role::Assistant;
-
-    auto streamed = stream(messages, [&](const ProviderEvent& event) { collector.on_event(event); });
-
-    if (!streamed)
-    {
-        return nonstd::make_unexpected(streamed.error());
-    }
-
-    return collector.finalize();
 }
 
 } // namespace codeharness

@@ -1,5 +1,6 @@
 #include "codeharness/mailbox/team_lifecycle.h"
 
+#include "codeharness/config/paths.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/core/paths.h"
 #include "codeharness/core/time.h"
@@ -69,14 +70,9 @@ auto from_json(const nlohmann::json& input, TeamFile& file) -> void
     }
 }
 
-auto default_teams_root() -> std::optional<std::filesystem::path>
+auto default_teams_root() -> std::filesystem::path
 {
-    const auto data_dir = default_codeharness_data_dir();
-    if (!data_dir)
-    {
-        return std::nullopt;
-    }
-    return *data_dir / "teams";
+    return codeharness::config::data_dir() / "teams";
 }
 
 

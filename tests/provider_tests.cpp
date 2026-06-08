@@ -7,6 +7,8 @@
 #include "codeharness/provider/provider_http.h"
 #include "codeharness/runtime/runtime.h"
 
+#include "codeharness/core/event_collector.h"
+
 #include "test_support.h"
 
 #include <algorithm>
@@ -65,11 +67,15 @@ TEST_CASE("echo provider returns latest user text")
     messages.push_back(codeharness::make_text_message(codeharness::Role::System, "system rules"));
     messages.push_back(codeharness::make_text_message(codeharness::Role::User, "hello"));
 
-    auto result = provider.generate(std::span<const codeharness::Message>(messages));
+    codeharness::ProviderEventCollector collector;
+    collector.message().role = codeharness::Role::Assistant;
+    auto result = provider.stream(messages, [&](const codeharness::ProviderEvent& event) { collector.on_event(event); });
 
     REQUIRE(result.has_value());
-    CHECK(result->role == codeharness::Role::Assistant);
-    CHECK(codeharness::collect_text(*result) == "hello");
+    auto message = collector.finalize();
+    REQUIRE(message.has_value());
+    CHECK(message->role == codeharness::Role::Assistant);
+    CHECK(codeharness::collect_text(*message) == "hello");
 }
 
 TEST_CASE("echo provider streams text delta")
@@ -135,17 +141,21 @@ public:
 
 } // namespace
 
-TEST_CASE("provider generate rejects tool input before tool start")
+TEST_CASE("provider stream rejects tool input before tool start")
 {
     ToolDeltaBeforeStartProvider provider;
 
     std::vector<codeharness::Message> messages;
     messages.push_back(codeharness::make_text_message(codeharness::Role::User, "hello"));
 
-    auto result = provider.generate(std::span<const codeharness::Message>(messages));
+    codeharness::ProviderEventCollector collector;
+    collector.message().role = codeharness::Role::Assistant;
+    auto result = provider.stream(messages, [&](const codeharness::ProviderEvent& event) { collector.on_event(event); });
 
-    REQUIRE(!result.has_value());
-    CHECK(result.error().kind == codeharness::ErrorKind::Provider);
+    REQUIRE(result.has_value());
+    auto message = collector.finalize();
+    REQUIRE(!message.has_value());
+    CHECK(message.error().kind == codeharness::ErrorKind::Provider);
 }
 
 TEST_CASE("provider http client validates URLs before opening a socket")

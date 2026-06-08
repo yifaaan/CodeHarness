@@ -1,6 +1,9 @@
 #include "codeharness/sessions/session_store.h"
 #include "codeharness/config/paths.h"
 #include "codeharness/core/error.h"
+#include "codeharness/core/git.h"
+#include "codeharness/core/paths.h"
+#include "codeharness/core/strings.h"
 #include "codeharness/tools/text_file.h"
 
 #include <git2.h>
@@ -27,77 +30,6 @@ namespace codeharness::sessions
 
 namespace
 {
-
-// ---------------------------------------------------------------------------
-// Slugify: same algorithm as memory_store.cpp
-// ---------------------------------------------------------------------------
-auto lower_ascii(char c) -> char
-{
-    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
-}
-
-auto slugify(std::string_view text) -> std::string
-{
-    std::string slug;
-    bool previous_separator = true;
-
-    for (const auto character : text)
-    {
-        const auto byte = static_cast<unsigned char>(character);
-        if (std::isalnum(byte) != 0)
-        {
-            slug.push_back(lower_ascii(character));
-            previous_separator = false;
-            continue;
-        }
-
-        if (!previous_separator)
-        {
-            slug.push_back('_');
-            previous_separator = true;
-        }
-    }
-
-    return slug;
-}
-
-// ---------------------------------------------------------------------------
-// GitRuntime RAII helper (mirrors memory_store.cpp)
-// ---------------------------------------------------------------------------
-struct GitRuntime
-{
-    GitRuntime()
-    {
-        git_libgit2_init();
-    }
-
-    ~GitRuntime()
-    {
-        git_libgit2_shutdown();
-    }
-
-    GitRuntime(const GitRuntime&) = delete;
-    auto operator=(const GitRuntime&) -> GitRuntime& = delete;
-};
-
-// ---------------------------------------------------------------------------
-// SHA1 hashing (mirrors memory_store.cpp)
-// ---------------------------------------------------------------------------
-auto git_blob_hash_hex(std::string_view text) -> Result<std::string>
-{
-    GitRuntime runtime;
-
-    git_oid oid{};
-    if (git_odb_hash(&oid, text.data(), text.size(), GIT_OBJECT_BLOB) != 0)
-    {
-        return fail<std::string>(ErrorKind::Internal, "failed to hash content");
-    }
-
-    std::array<char, GIT_OID_SHA1_HEXSIZE + 1> buffer{};
-    git_oid_fmt(buffer.data(), &oid);
-
-    return std::string{buffer.data(), GIT_OID_SHA1_HEXSIZE};
-}
 
 // ---------------------------------------------------------------------------
 // Resolve an absolute canonical path
@@ -472,21 +404,9 @@ auto SessionStore::root() const noexcept -> const std::filesystem::path&
     return root_;
 }
 
-auto SessionStore::ensure_root() -> Result<void>
-{
-    std::error_code error;
-    std::filesystem::create_directories(root_, error);
-    if (error)
-    {
-        return fail<void>(ErrorKind::Io,
-                          "failed to create session directory: " + error.message());
-    }
-    return {};
-}
-
 auto SessionStore::save(const SessionSnapshot& snapshot) -> Result<std::filesystem::path>
 {
-    auto ensured = ensure_root();
+    auto ensured = ensure_directory(root_, "session directory");
     if (!ensured)
     {
         return nonstd::make_unexpected(ensured.error());
@@ -737,7 +657,7 @@ auto SessionStore::load_by_id(const std::string& session_id) -> Result<std::opti
 
 auto SessionStore::export_markdown(const std::vector<Message>& messages) -> Result<std::filesystem::path>
 {
-    auto ensured = ensure_root();
+    auto ensured = ensure_directory(root_, "session directory");
     if (!ensured)
     {
         return nonstd::make_unexpected(ensured.error());

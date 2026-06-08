@@ -55,13 +55,10 @@ auto collect_search_dirs(const std::filesystem::path& cwd) -> Result<std::vector
 
 } // namespace
 
-ProjectContextLoader::ProjectContextLoader(ProjectContextOptions options) : options_(std::move(options))
+auto load_project_context_files(const std::filesystem::path& cwd, ProjectContextOptions options)
+    -> Result<std::vector<ContextFile>>
 {
-}
-
-auto ProjectContextLoader::load(const std::filesystem::path& cwd) const -> Result<std::vector<ContextFile>>
-{
-    if (options_.max_total_chars == 0 || options_.file_names.empty())
+    if (options.max_total_chars == 0 || options.file_names.empty())
     {
         return std::vector<ContextFile>{};
     }
@@ -73,11 +70,11 @@ auto ProjectContextLoader::load(const std::filesystem::path& cwd) const -> Resul
     }
 
     std::vector<ContextFile> files;
-    auto remaining_chars = options_.max_total_chars;
+    auto remaining_chars = options.max_total_chars;
 
     for (const auto& dir : *dirs)
     {
-        for (const auto& file_name : options_.file_names)
+        for (const auto& file_name : options.file_names)
         {
             std::error_code error;
             auto candidate = dir / file_name;
@@ -116,12 +113,6 @@ auto ProjectContextLoader::load(const std::filesystem::path& cwd) const -> Resul
     }
 
     return files;
-}
-
-auto load_project_context_files(const std::filesystem::path& cwd, ProjectContextOptions options)
-    -> Result<std::vector<ContextFile>>
-{
-    return ProjectContextLoader{std::move(options)}.load(cwd);
 }
 
 } // namespace codeharness
