@@ -1,5 +1,6 @@
 #pragma once
 
+#include "codeharness/hooks/hook.h"
 #include "codeharness/mcp/types.h"
 #include "codeharness/permissions/permission.h"
 
@@ -55,6 +56,9 @@ struct Settings
 
     // --- MCP Servers ---
     std::vector<McpServerConfig> mcp_servers;
+
+    // --- Hooks ---
+    std::vector<HookDefinition> hooks;
 
     // --- Feature Flags ---
     bool allow_project_skills = true;

@@ -131,6 +131,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
             .cwd = settings->cwd,
             .memory_root = settings->memory_root,
             .permission = std::move(permission),
+            .hooks = settings->hooks,
             .load_default_user_plugins = true,
             .provider_config = ProviderConfig{
                 .type = settings->provider_type,

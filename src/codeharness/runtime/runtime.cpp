@@ -118,6 +118,31 @@ auto create_tool_registry(const SkillRegistry& skills, coordinator::CoordinatorR
     return tools;
 }
 
+auto create_hook_registry(std::span<const HookDefinition> settings_hooks, std::span<const LoadedPlugin> plugins)
+    -> HookRegistry
+{
+    HookRegistry hooks;
+    for (const auto& hook : settings_hooks)
+    {
+        hooks.add(hook);
+    }
+
+    for (const auto& plugin : plugins)
+    {
+        if (!plugin.enabled)
+        {
+            continue;
+        }
+
+        for (const auto& hook : plugin.hooks)
+        {
+            hooks.add(hook);
+        }
+    }
+
+    return hooks;
+}
+
 auto session_summary_from(const sessions::SessionSnapshot& snapshot) -> SessionCommandSummary
 {
     return SessionCommandSummary{
@@ -217,6 +242,7 @@ private:
 
 RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
                              PermissionSettings permission,
+                             HookRegistry hooks,
                              SkillRegistryLoadResult loaded_skills,
                              memory::MemoryStore memory_store,
                              std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
@@ -239,8 +265,10 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
     coordinator_runtime_(std::move(coordinator_runtime)),
     tools_(std::move(tools)),
     permissions_(std::move(permission)),
+    hooks_(std::move(hooks)),
+    hook_executor_(hooks_),
     provider_(std::move(provider)),
-    engine_(*provider_, tools_, &permissions_)
+    engine_(*provider_, tools_, &permissions_, &hook_executor_)
 {
 }
 
@@ -544,6 +572,7 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
     }
 
     auto tools = create_tool_registry(loaded_skills->registry, **coordinator_runtime);
+    auto hooks = create_hook_registry(options.hooks, loaded_skills->plugins);
     auto provider = create_provider(options.provider_config, tools);
     if (!provider)
     {
@@ -558,6 +587,7 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
 
     return std::make_unique<RuntimeBundle>(std::move(options.cwd),
                                            std::move(options.permission),
+                                           std::move(hooks),
                                            std::move(*loaded_skills),
                                            std::move(*memory_store),
                                            std::move(*coordinator_runtime),

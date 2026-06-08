@@ -31,6 +31,44 @@ auto contains_tool(const codeharness::ToolRegistry& tools, std::string_view name
     return std::ranges::find(names, std::string{name}) != names.end();
 }
 
+auto make_write_bundle(TempDir& temp, codeharness::HookRegistry hooks)
+    -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "write-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "tasks",
+        temp.path / "teams",
+        temp.path / "mailbox");
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+    auto provider = std::make_unique<WriteFileRequestProvider>();
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionSettings{
+            .mode = codeharness::PermissionMode::FullAuto,
+            .allowed_tools = {"write_file"},
+        },
+        std::move(hooks),
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
 } // namespace
 
 TEST_CASE("runtime bundle creates coding agent runtime for a cwd")
@@ -186,6 +224,70 @@ TEST_CASE("runtime run_prompt forwards prompt through engine and streams assista
     CHECK(result->output_text == "hello runtime");
     REQUIRE(result->messages.size() >= 2);
     CHECK(result->messages.front().role == codeharness::Role::System);
+}
+
+TEST_CASE("runtime executes configured command hook through engine wiring")
+{
+    TempDir temp{"codeharness-runtime-hook-exec-test"};
+    const auto marker = (temp.path / "hook-marker.txt").string();
+
+#if defined(_WIN32)
+    const auto argv = nlohmann::json::array(
+        {"powershell.exe", "-NoProfile", "-Command", std::string{"Set-Content -LiteralPath '"} + marker + "' -Value ran"});
+#else
+    const auto argv = nlohmann::json::array({"/bin/sh", "-c", std::string{"printf 'ran\\n' > \""} + marker + "\""});
+#endif
+
+    codeharness::HookRegistry hooks;
+    hooks.add(codeharness::HookDefinition{
+        .event = codeharness::HookEvent::PreToolUse,
+        .type = codeharness::HookType::Command,
+        .matcher = std::string{"write_file"},
+        .block_on_failure = true,
+        .config = nlohmann::json{{"argv", argv}},
+    });
+
+    auto bundle = make_write_bundle(temp, std::move(hooks));
+    REQUIRE(bundle.has_value());
+
+    auto result = (*bundle)->run_prompt("write output.txt", 3, {});
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("Created") != std::string::npos);
+    CHECK(std::filesystem::exists(temp.path / "hook-marker.txt"));
+}
+
+TEST_CASE("runtime mode toggles keep hook executor wired")
+{
+    TempDir temp{"codeharness-runtime-hook-after-mode-toggle-test"};
+    const auto marker = (temp.path / "hook-after-mode.txt").string();
+
+#if defined(_WIN32)
+    const auto argv = nlohmann::json::array(
+        {"powershell.exe", "-NoProfile", "-Command", std::string{"Set-Content -LiteralPath '"} + marker + "' -Value ran"});
+#else
+    const auto argv = nlohmann::json::array({"/bin/sh", "-c", std::string{"printf 'ran\\n' > \""} + marker + "\""});
+#endif
+
+    codeharness::HookRegistry hooks;
+    hooks.add(codeharness::HookDefinition{
+        .event = codeharness::HookEvent::PreToolUse,
+        .type = codeharness::HookType::Command,
+        .matcher = std::string{"write_file"},
+        .block_on_failure = true,
+        .config = nlohmann::json{{"argv", argv}},
+    });
+
+    auto bundle = make_write_bundle(temp, std::move(hooks));
+    REQUIRE(bundle.has_value());
+    REQUIRE((*bundle)->run_prompt("/plan", 3, {}).has_value());
+    REQUIRE((*bundle)->run_prompt("/act", 3, {}).has_value());
+
+    auto result = (*bundle)->run_prompt("write output.txt", 3, {});
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("Created") != std::string::npos);
+    CHECK(std::filesystem::exists(temp.path / "hook-after-mode.txt"));
 }
 
 TEST_CASE("runtime interrupted run does not save a session")

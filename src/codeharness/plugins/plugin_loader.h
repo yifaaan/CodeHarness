@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/core/result.h"
+#include "codeharness/hooks/hook.h"
 #include "codeharness/mcp/types.h"
 #include "codeharness/skills/skill.h"
 
@@ -21,6 +22,7 @@ struct PluginManifest
     std::filesystem::path skills_dir = "skills";
     std::filesystem::path commands_dir = "commands";
     std::filesystem::path mcp_file = "mcp.json";
+    std::filesystem::path hooks_file = "hooks.json";
 };
 
 struct PluginCommandDefinition
@@ -44,6 +46,7 @@ struct LoadedPlugin
     std::vector<SkillDefinition> skills;
     std::vector<PluginCommandDefinition> commands;
     std::vector<McpServerConfig> mcp_servers;
+    std::vector<HookDefinition> hooks;
 };
 
 struct PluginLoadOptions

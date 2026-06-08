@@ -54,6 +54,15 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
             << "}\n";
     }
 
+    {
+        std::ofstream hooks{plugin_dir / "hooks.json", std::ios::binary};
+        hooks << "{\n"
+              << R"(  "hooks": [)"
+              << R"({"event":"pre_tool_use","type":"command","matcher":"write_file","config":{"command":"echo plugin-hook"}})"
+              << "]\n"
+              << "}\n";
+    }
+
     codeharness::PluginLoadOptions options;
     options.load_default_user_plugins = false;
     options.user_plugin_roots = {temp.path / "plugins"};
@@ -74,6 +83,11 @@ TEST_CASE("plugin loader parses manifests and loads enabled plugin skills")
     CHECK(plugins->front().commands.front().description == "Release from plugin.");
     CHECK(plugins->front().commands.front().model == "release-model");
     REQUIRE(plugins->front().mcp_servers.size() == 2);
+    REQUIRE(plugins->front().hooks.size() == 1);
+    CHECK(plugins->front().hooks.front().event == codeharness::HookEvent::PreToolUse);
+    CHECK(plugins->front().hooks.front().type == codeharness::HookType::Command);
+    REQUIRE(plugins->front().hooks.front().matcher.has_value());
+    CHECK(*plugins->front().hooks.front().matcher == "write_file");
 
     const codeharness::McpStdioServerConfig* stdio_server = nullptr;
     const codeharness::McpHttpServerConfig* http_server = nullptr;
@@ -133,6 +147,7 @@ TEST_CASE("disabled plugin does not contribute skills")
     CHECK(plugins->front().skills.empty());
     CHECK(plugins->front().commands.empty());
     CHECK(plugins->front().mcp_servers.empty());
+    CHECK(plugins->front().hooks.empty());
 }
 
 TEST_CASE("plugin loader rejects duplicate MCP server names across plugins")

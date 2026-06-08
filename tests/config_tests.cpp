@@ -168,6 +168,52 @@ TEST_CASE("settings JSON parses MCP servers")
     CHECK(http->url == "https://mcp.example.com");
 }
 
+TEST_CASE("settings JSON parses and serializes command hooks")
+{
+    auto json = nlohmann::json::parse(R"({
+        "hooks": [
+            {
+                "event": "pre_tool_use",
+                "type": "command",
+                "priority": 25,
+                "matcher": "write_file",
+                "block_on_failure": true,
+                "timeout_seconds": 7,
+                "config": {"command": "echo hook"}
+            }
+        ]
+    })");
+
+    auto s = json.get<ch_config::Settings>();
+
+    REQUIRE(s.hooks.size() == 1);
+    CHECK(s.hooks[0].event == codeharness::HookEvent::PreToolUse);
+    CHECK(s.hooks[0].type == codeharness::HookType::Command);
+    CHECK(s.hooks[0].priority == 25);
+    REQUIRE(s.hooks[0].matcher.has_value());
+    CHECK(*s.hooks[0].matcher == "write_file");
+    CHECK(s.hooks[0].block_on_failure);
+    CHECK(s.hooks[0].timeout_seconds == 7);
+    CHECK(s.hooks[0].config.at("command") == "echo hook");
+
+    nlohmann::json serialized = s;
+    CHECK(serialized["hooks"][0]["event"] == "pre_tool_use");
+    CHECK(serialized["hooks"][0]["type"] == "command");
+    CHECK(serialized["hooks"][0]["matcher"] == "write_file");
+    CHECK(serialized["hooks"][0]["config"]["command"] == "echo hook");
+}
+
+TEST_CASE("settings JSON rejects unsupported hook type")
+{
+    auto json = nlohmann::json::parse(R"({
+        "hooks": [
+            {"event": "pre_tool_use", "type": "http", "config": {"command": "echo hook"}}
+        ]
+    })");
+
+    CHECK_THROWS_AS(json.get<ch_config::Settings>(), nlohmann::json::type_error);
+}
+
 TEST_CASE("provider profile JSON round-trip")
 {
     ch_config::ProviderProfile p;
@@ -415,6 +461,45 @@ TEST_CASE("ConfigLoader reads full permission settings from file")
     CHECK(settings->permission.path_rules[0].pattern == ".git/**");
     REQUIRE(settings->permission.command_rules.size() == 1);
     CHECK(settings->permission.command_rules[0].pattern == R"(\bgit\s+push\b)");
+
+    if (old_env)
+    {
+        auto restore = std::string{"CODEHARNESS_CONFIG_DIR="} + old_env;
+        _putenv(restore.c_str());
+    }
+    else
+    {
+        _putenv("CODEHARNESS_CONFIG_DIR=");
+    }
+}
+
+TEST_CASE("ConfigLoader reads hooks from file")
+{
+    TempDir temp{"loader-hooks"};
+    auto config_dir = temp.path;
+    write_file(config_dir / "settings.json", R"({
+        "hooks": [
+            {
+                "event": "post_tool_use",
+                "type": "command",
+                "matcher": "write_file",
+                "config": {"command": "echo post"}
+            }
+        ]
+    })");
+
+    auto old_env = std::getenv("CODEHARNESS_CONFIG_DIR");
+    auto set_env = std::string{"CODEHARNESS_CONFIG_DIR="} + config_dir.string();
+    _putenv(set_env.c_str());
+
+    ch_config::ConfigLoader loader;
+    auto settings = loader.load(ch_config::CliOptions{});
+    REQUIRE(settings);
+
+    REQUIRE(settings->hooks.size() == 1);
+    CHECK(settings->hooks[0].event == codeharness::HookEvent::PostToolUse);
+    REQUIRE(settings->hooks[0].matcher.has_value());
+    CHECK(*settings->hooks[0].matcher == "write_file");
 
     if (old_env)
     {

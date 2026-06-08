@@ -66,6 +66,10 @@ auto ConfigLoader::load(const CliOptions& cli) -> Result<Settings>
         {
             settings.mcp_servers = std::move(file_settings.mcp_servers);
         }
+        if (!file_settings.hooks.empty())
+        {
+            settings.hooks = std::move(file_settings.hooks);
+        }
         if (!file_settings.config_dir.empty())
         {
             settings.config_dir = std::move(file_settings.config_dir);

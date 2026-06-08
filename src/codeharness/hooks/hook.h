@@ -1,10 +1,13 @@
 #pragma once
 
+#include "codeharness/core/result.h"
+
 #include <nlohmann/json.hpp>
 
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace codeharness
@@ -63,5 +66,13 @@ struct HookExecutionResult
     std::string reason;
     std::vector<HookResult> results;
 };
+
+auto hook_event_from_string(std::string_view value) -> std::optional<HookEvent>;
+auto hook_event_to_string(HookEvent event) -> std::string_view;
+auto hook_type_from_string(std::string_view value) -> std::optional<HookType>;
+auto hook_type_to_string(HookType type) -> std::string_view;
+
+auto hook_definition_from_json(const nlohmann::json& json, std::string_view context) -> Result<HookDefinition>;
+auto hook_definition_to_json(const HookDefinition& hook) -> nlohmann::json;
 
 } // namespace codeharness

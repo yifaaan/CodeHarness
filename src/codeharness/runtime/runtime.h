@@ -40,6 +40,8 @@
 #include "codeharness/coordinator/runtime.h"
 #include "codeharness/core/result.h"
 #include "codeharness/engine/engine.h"
+#include "codeharness/hooks/hook_executor.h"
+#include "codeharness/hooks/hook_registry.h"
 #include "codeharness/memory/memory_store.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/plugins/plugin_loader.h"
@@ -63,6 +65,7 @@ struct RuntimeBundleOptions
     std::filesystem::path cwd;
     std::filesystem::path memory_root;
     PermissionSettings permission;
+    std::vector<HookDefinition> hooks;
     bool load_default_user_plugins = true;
     ProviderConfig provider_config;
 };
@@ -79,6 +82,7 @@ class RuntimeBundle
 public:
     RuntimeBundle(std::filesystem::path cwd,
                   PermissionSettings permission,
+                  HookRegistry hooks,
                   SkillRegistryLoadResult loaded_skills,
                   memory::MemoryStore memory_store,
                   std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
@@ -126,6 +130,8 @@ private:
     std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime_;
     ToolRegistry tools_;
     PermissionChecker permissions_;
+    HookRegistry hooks_;
+    HookExecutor hook_executor_;
     std::unique_ptr<Provider> provider_;
     Engine engine_;
     std::optional<sessions::SessionSnapshot> active_session_;

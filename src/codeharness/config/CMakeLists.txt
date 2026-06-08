@@ -8,6 +8,7 @@ codeharness_add_static_module(codeharness_config
 target_link_libraries(codeharness_config
     PUBLIC
         codeharness_foundation
+        codeharness_hooks
         codeharness_mcp
         codeharness_permissions
     PRIVATE

@@ -20,6 +20,7 @@ target_link_libraries(codeharness_extensions
         codeharness_foundation
         codeharness_tools
     PRIVATE
+        codeharness_hooks
         codeharness_options
 )
 codeharness_link_first_existing(codeharness_extensions PUBLIC yaml-cpp yaml-cpp::yaml-cpp)

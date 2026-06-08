@@ -89,6 +89,7 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
     if (auto r = read_path_field("skills_dir", "skillsDir", manifest.skills_dir); !r) { return nonstd::make_unexpected(r.error()); }
     if (auto r = read_path_field("commands_dir", "commandsDir", manifest.commands_dir); !r) { return nonstd::make_unexpected(r.error()); }
     if (auto r = read_path_field("mcp_file", "mcpFile", manifest.mcp_file); !r) { return nonstd::make_unexpected(r.error()); }
+    if (auto r = read_path_field("hooks_file", "hooksFile", manifest.hooks_file); !r) { return nonstd::make_unexpected(r.error()); }
 
     if (!is_safe_relative_path(manifest.skills_dir))
     {
@@ -106,6 +107,12 @@ auto parse_manifest_json(const nlohmann::json& json, const std::filesystem::path
     {
         return fail<PluginManifest>(
             ErrorKind::InvalidArgument, "plugin mcp_file must be a safe relative path: " + manifest_path.string());
+    }
+
+    if (!is_safe_relative_path(manifest.hooks_file))
+    {
+        return fail<PluginManifest>(
+            ErrorKind::InvalidArgument, "plugin hooks_file must be a safe relative path: " + manifest_path.string());
     }
 
     return manifest;
@@ -423,6 +430,56 @@ auto load_plugin_mcp_servers(const std::filesystem::path& path) -> Result<std::v
     return servers;
 }
 
+auto load_plugin_hooks(const std::filesystem::path& path) -> Result<std::vector<HookDefinition>>
+{
+    std::error_code error;
+    if (!std::filesystem::exists(path, error))
+    {
+        return std::vector<HookDefinition>{};
+    }
+
+    auto json = read_json_file(path, "plugin hooks config");
+    if (!json)
+    {
+        return nonstd::make_unexpected(json.error());
+    }
+
+    if (!json->is_object())
+    {
+        return fail<std::vector<HookDefinition>>(
+            ErrorKind::InvalidArgument,
+            "plugin hooks config must be a JSON object: " + path.string());
+    }
+
+    const auto hooks_json = json->find("hooks");
+    if (hooks_json == json->end())
+    {
+        return std::vector<HookDefinition>{};
+    }
+    if (!hooks_json->is_array())
+    {
+        return fail<std::vector<HookDefinition>>(
+            ErrorKind::InvalidArgument,
+            "plugin hooks config hooks must be an array: " + path.string());
+    }
+
+    std::vector<HookDefinition> hooks;
+    hooks.reserve(hooks_json->size());
+    for (std::size_t i = 0; i < hooks_json->size(); ++i)
+    {
+        auto hook = hook_definition_from_json(
+            hooks_json->at(i),
+            fmt::format("plugin hooks {}[{}]", path.string(), i));
+        if (!hook)
+        {
+            return nonstd::make_unexpected(hook.error());
+        }
+        hooks.push_back(std::move(*hook));
+    }
+
+    return hooks;
+}
+
 auto plugin_mcp_path(const LoadedPlugin& plugin) -> std::filesystem::path
 {
     auto path = plugin.path / plugin.manifest.mcp_file;
@@ -433,6 +490,11 @@ auto plugin_mcp_path(const LoadedPlugin& plugin) -> std::filesystem::path
     }
 
     return plugin.path / ".mcp.json";
+}
+
+auto plugin_hooks_path(const LoadedPlugin& plugin) -> std::filesystem::path
+{
+    return plugin.path / plugin.manifest.hooks_file;
 }
 
 auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlugin>
@@ -481,6 +543,14 @@ auto load_plugin(const std::filesystem::path& manifest_path) -> Result<LoadedPlu
     }
 
     plugin.mcp_servers = std::move(*mcp_servers);
+
+    auto hooks = load_plugin_hooks(plugin_hooks_path(plugin));
+    if (!hooks)
+    {
+        return nonstd::make_unexpected(hooks.error());
+    }
+
+    plugin.hooks = std::move(*hooks);
     return plugin;
 }
 

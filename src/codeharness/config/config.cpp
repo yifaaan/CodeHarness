@@ -268,6 +268,26 @@ void from_json(const nlohmann::json& j, Settings& s)
         }
     }
 
+    if (j.contains("hooks"))
+    {
+        const auto& hooks_json = j["hooks"];
+        if (!hooks_json.is_array())
+        {
+            throw nlohmann::json::type_error::create(302, "settings hooks must be an array", nullptr);
+        }
+
+        s.hooks.clear();
+        for (std::size_t i = 0; i < hooks_json.size(); ++i)
+        {
+            auto hook = hook_definition_from_json(hooks_json[i], "settings hooks[" + std::to_string(i) + "]");
+            if (!hook)
+            {
+                throw nlohmann::json::type_error::create(302, hook.error().message, nullptr);
+            }
+            s.hooks.push_back(std::move(*hook));
+        }
+    }
+
     s.allow_project_skills = j.value("allow_project_skills", s.allow_project_skills);
     s.allow_project_plugins = j.value("allow_project_plugins", s.allow_project_plugins);
 
@@ -339,6 +359,16 @@ void to_json(nlohmann::json& j, const Settings& s)
         }
     }
     j["mcp_servers"] = std::move(servers);
+
+    if (!s.hooks.empty())
+    {
+        auto hooks = nlohmann::json::array();
+        for (const auto& hook : s.hooks)
+        {
+            hooks.push_back(hook_definition_to_json(hook));
+        }
+        j["hooks"] = std::move(hooks);
+    }
 
     // Paths (only when non-empty)
     if (!s.config_dir.empty())

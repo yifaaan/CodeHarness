@@ -52,6 +52,7 @@ auto make_write_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<cod
     return std::make_unique<codeharness::runtime::RuntimeBundle>(
         repo,
         codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
         std::move(loaded_skills),
         std::move(memory_store),
         std::move(coordinator_runtime),
@@ -212,6 +213,7 @@ auto make_interrupting_bundle(TempDir& temp) -> codeharness::Result<std::unique_
     return std::make_unique<codeharness::runtime::RuntimeBundle>(
         repo,
         codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
         std::move(loaded_skills),
         std::move(memory_store),
         std::move(coordinator_runtime),
