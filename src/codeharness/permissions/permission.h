@@ -21,7 +21,8 @@ enum class PermissionMode
 
 
 //   - allowed_tools / denied_tools 使用精确工具名匹配
-//   - TODO: wildcard、path rules、command rules
+//   - path_rules 使用 glob 模式匹配，command_rules 使用正则匹配
+//   - session_grants 对相同 (tool, path/command) 组合自动放行
 // 权限判断结果。
 // 
 // Allow：可以直接执行

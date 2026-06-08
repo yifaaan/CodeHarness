@@ -139,7 +139,7 @@ auto SendMessageTool::permission_target(const ToolRequest& request) const -> Per
     return target;
 }
 
-auto SendMessageTool::execute(const ToolRequest& request, [[maybe_unused]] const ToolContext& context) const
+auto SendMessageTool::execute(const ToolRequest& request, const ToolContext& context) const
     -> Result<ToolResponse>
 {
     // 第一步：解析输入
@@ -150,6 +150,13 @@ auto SendMessageTool::execute(const ToolRequest& request, [[maybe_unused]] const
     }
 
     auto& [recipient_id, msg] = *input;
+
+    // sender_id 自动注入：LLM 显式传入的值优先，否则使用 ToolContext 中
+    // Engine 注入的 agent 身份。
+    if (msg.sender_id.empty() && !context.sender_id.empty())
+    {
+        msg.sender_id = context.sender_id;
+    }
 
     // 第二步：如果提供了 TaskManager，验证收件人是否存在
     //

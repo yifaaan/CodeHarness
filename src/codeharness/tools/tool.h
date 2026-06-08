@@ -14,6 +14,10 @@ namespace codeharness
 struct ToolContext
 {
     std::filesystem::path cwd;
+    // 当前 agent 的身份标识（如 task_id）。Engine 在调用工具前自动注入，
+    // 工具实现可以此获知"谁在调用我"。目前 SendMessageTool 用它自动填充
+    // sender_id。
+    std::string sender_id;
 };
 
 struct ToolRequest

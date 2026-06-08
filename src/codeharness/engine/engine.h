@@ -111,6 +111,10 @@ public:
     /// Replace the permission checker mid-session (e.g. on /plan toggle).
     auto set_permission_checker(const PermissionChecker* checker) -> void { permissions_ = checker; }
 
+    /// Set the agent identity used to auto-populate ToolContext::sender_id
+    /// before each tool execution.
+    auto set_sender_id(std::string id) -> void { sender_id_ = std::move(id); }
+
 private:
     auto execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
         -> ToolResultBlock;
@@ -126,6 +130,7 @@ private:
     const PermissionChecker* permissions_ = nullptr;
     const HookExecutor* hooks_ = nullptr;
     PermissionPromptHandler permission_prompt_;
+    std::string sender_id_;
 };
 
 } // namespace codeharness

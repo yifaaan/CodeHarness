@@ -12,6 +12,11 @@
 //   - Worker 遇到权限问题时向 Coordinator 请求帮助
 //
 // send_message 是 LLM 可以调用的工具之一
+//
+// sender_id 的优先级：
+//   1. LLM 在参数中显式传入的 sender_id（最高优先级）
+//   2. ToolContext::sender_id（Engine 自动注入的 agent 身份，fallback）
+//   3. 两者皆空 → sender_id 留空（Mailbox 仍接受）
 namespace codeharness::mailbox
 {
 
@@ -27,11 +32,7 @@ namespace codeharness::mailbox
 //     "type": "user_message"                // 可选：消息类型，默认 "user_message"
 //   }
 //
-// 为什么 sender_id 是可选的？
-//   在当前设计中，sender_id 需要由调用方（通常是 Engine 或 Coordinator）
-//   显式传入。
-//   TODO:当 Engine 支持「当前 Agent 上下文」时，sender_id 可以自动注入。
-
+// sender_id 由 ToolContext::sender_id 自动注入，LLM 显式传入的值优先。
 class SendMessageTool final : public Tool
 {
 public:

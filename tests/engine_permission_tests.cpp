@@ -68,7 +68,7 @@ TEST_CASE("engine blocks write_file in default mode without permission prompt")
 
     // engine 不会崩溃，但最终输出应包含权限确认信息（Ask → 无 UI → 当做拒绝）
     REQUIRE(result.has_value());
-    CHECK(result->output_text.find("permission confirmation required") != std::string::npos);
+    CHECK(result->output_text.find("no UI available") != std::string::npos);
 }
 
 TEST_CASE("engine executes default-mode mutating tool when permission prompt approves")

@@ -279,14 +279,22 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionProm
                 return make_error_tool_result(tool_use.id, "permission denied: " + decision.reason);
             }
 
-            // TODO: 需要确认但当前没有 UI → 当成拒绝。
+            // 权限需确认但当前没有 UI → 当成拒绝。
+            // 这是有意为之：在没有交互式 UI 的环境中（如 cron、管道、
+            // -p 单次模式），无法向用户请求确认，默认拒绝是最安全的降级策略。
+            // 如需在无头模式下允许写操作，应配置 FullAuto 模式或将工具
+            // 加入 allowed_tools 列表。调用方提供 permission_prompt 回调
+            // 时（如 BackendHost / TUI），走正常的交互确认流程。
             if (decision.action == PermissionAction::Ask)
             {
                 if (!permission_prompt)
                 {
-                    spdlog::warn("tool {} needs confirmation but no prompt: {}", tool_use.name, decision.reason);
+                    spdlog::warn("tool {} needs confirmation but no UI is available: {}",
+                                 tool_use.name, decision.reason);
                     return make_error_tool_result(
-                        tool_use.id, "permission confirmation required but no prompt is configured: " + decision.reason);
+                        tool_use.id,
+                        "permission denied: no UI available for confirmation (" + decision.reason +
+                            "). Use FullAuto mode or add '" + std::string{tool_use.name} + "' to allowed_tools.");
                 }
 
                 auto response = permission_prompt(PermissionPrompt{
@@ -330,6 +338,10 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionProm
         // 执行工具
         ToolContext context;
         context.cwd = std::filesystem::current_path();
+        if (!sender_id_.empty())
+        {
+            context.sender_id = sender_id_;
+        }
 
         spdlog::info("tool {} starting (id={})", tool_use.name, tool_use.id);
         auto response = tool->execute(request, context);

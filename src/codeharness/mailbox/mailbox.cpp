@@ -6,9 +6,11 @@
 #include "codeharness/core/time.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <cstdlib>
+#include <format>
 #include <fstream>
 #include <mutex>
 #include <random>
@@ -113,15 +115,27 @@ auto default_mailbox_root() -> std::filesystem::path
 namespace
 {
 
-// TODO:UUID
-// 生成唯一消息 ID："msg-" 前缀 + 8 位十六进制随机数。
+// 生成唯一消息 ID：格式为 "msg-" + UUID v4。
+// RFC 9562: 16 随机字节，version=4（第 7 字节高 4 位），variant=10xx（第 9 字节高 2 位）。
 auto generate_message_id() -> std::string
 {
     std::random_device rd;
-    auto value = rd();
+    std::array<unsigned int, 16> bytes{};
+    for (auto& b : bytes)
+    {
+        b = rd() & 0xFF;
+    }
 
-    // 将 32 位随机数转为 8 位十六进制字符串
-    return std::format("msg-{0:08x}", value);
+    bytes[6] = (bytes[6] & 0x0F) | 0x40;  // version 4
+    bytes[8] = (bytes[8] & 0x3F) | 0x80;  // variant 10xx
+
+    return std::format(
+        "msg-{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3],
+        bytes[4], bytes[5],
+        bytes[6], bytes[7],
+        bytes[8], bytes[9],
+        bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
 }
 
 // 遍历 inbox 目录，返回所有有效的 .json 文件路径。
