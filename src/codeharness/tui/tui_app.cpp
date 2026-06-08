@@ -168,6 +168,7 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime, TuiAppModel& model, 
     {
         model.append_system_message(*command_result->message);
     }
+    model.set_active_session(runtime.active_session_summary());
     if (command_result->submit_prompt)
     {
         return *command_result->submit_prompt;
@@ -693,6 +694,11 @@ auto TuiAppModel::question_modal_submit() -> std::string
     return result;
 }
 
+auto TuiAppModel::set_active_session(std::optional<SessionCommandSummary> summary) -> void
+{
+    state_.active_session = std::move(summary);
+}
+
 // --- Paste burst detection ---
 
 auto TuiAppModel::detect_paste_burst(const std::string& input) -> void
@@ -813,6 +819,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                     model.clear_permission();
                     model.complete_prompt();
                     model.set_permission_mode(runtime.permission_mode());
+                    model.set_active_session(runtime.active_session_summary());
                     permission_response.reset();
                     cancellation_source.reset();
                     worker_finished = true;
@@ -885,6 +892,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                     model.clear_permission();
                     model.complete_prompt();
                     model.set_permission_mode(runtime.permission_mode());
+                    model.set_active_session(runtime.active_session_summary());
                     cancellation_source.reset();
                     worker_finished = true;
                 }
@@ -1049,11 +1057,9 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                         model.question_modal_newline();
                         return true;
                     }
-                    auto answer = model.question_modal_submit();
+                    std::ignore = model.question_modal_submit();
                     model.close_question();
-                    model.append_system_message("Answer submitted.");
-                    // In a real integration, answer would go back via a callback.
-                    // For now, record it in the transcript.
+                    model.append_system_message("User question requests are not connected to a runtime tool yet.");
                     return true;
                 }
                 if (event == Event::Backspace)

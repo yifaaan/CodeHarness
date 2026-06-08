@@ -554,6 +554,23 @@ TEST_CASE("tui footer shows token usage and mcp connections")
     CHECK(footer.find("mode: default") != std::string::npos);
 }
 
+TEST_CASE("tui footer shows active resumed session")
+{
+    codeharness::tui::TuiAppModel model;
+    model.set_active_session(codeharness::SessionCommandSummary{
+        .session_id = "abc123",
+        .model = "echo",
+        .summary = "old work",
+        .message_count = 2,
+    });
+
+    const auto footer = codeharness::tui::render::render_status_footer_line(
+        codeharness::tui::TuiDisplayConfig{.model = "echo", .provider_type = "echo"},
+        model.state());
+
+    CHECK(footer.find("session: abc123") != std::string::npos);
+}
+
 TEST_CASE("tui footer hides token and mcp when zero")
 {
     codeharness::tui::TuiDisplayConfig config{

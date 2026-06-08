@@ -505,6 +505,35 @@ TEST_CASE("runtime resumed run includes history replaces system prompt and reuse
     CHECK((*saved)->summary == "first prompt");
 }
 
+TEST_CASE("runtime resumed run preserves explicit saved summary")
+{
+    TempDir temp{"codeharness-runtime-resume-summary-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "summary-session";
+    snapshot.cwd = (*bundle)->cwd();
+    snapshot.model = "echo";
+    snapshot.summary = "curated summary";
+    snapshot.created_at = 99.0;
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "first raw prompt"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::Assistant, "first answer"));
+    snapshot.message_count = static_cast<int>(snapshot.messages.size());
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+    REQUIRE((*bundle)->resume_session("summary-session").has_value());
+
+    auto result = (*bundle)->run_prompt("second prompt", 3, {});
+    REQUIRE(result.has_value());
+
+    auto saved = (*bundle)->sessions().load_by_id("summary-session");
+    REQUIRE(saved);
+    REQUIRE(saved->has_value());
+    CHECK((*saved)->session_id == "summary-session");
+    CHECK((*saved)->summary == "curated summary");
+    CHECK((*saved)->created_at == doctest::Approx(99.0));
+}
+
 TEST_CASE("runtime saves provider usage into latest session")
 {
     TempDir temp{"codeharness-runtime-usage-save-test"};

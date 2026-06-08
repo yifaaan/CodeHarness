@@ -111,6 +111,7 @@ struct TuiState
 {
     std::vector<TranscriptItem> transcript;
     std::string composer;
+    std::optional<SessionCommandSummary> active_session;
     bool busy = false;
     bool interrupt_requested = false;
     bool should_quit = false;
@@ -162,6 +163,7 @@ public:
     auto question_modal_backspace() -> void;
     auto question_modal_newline() -> void;
     [[nodiscard]] auto question_modal_submit() -> std::string;
+    auto set_active_session(std::optional<SessionCommandSummary> summary) -> void;
 
     // Paste burst detection
     auto detect_paste_burst(const std::string& input) -> void;

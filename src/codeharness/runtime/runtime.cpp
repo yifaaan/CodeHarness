@@ -525,7 +525,10 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     {
         snapshot.created_at = unix_timestamp_now();
     }
-    snapshot.summary = extract_summary(snapshot.messages);
+    if (snapshot.summary.empty())
+    {
+        snapshot.summary = extract_summary(snapshot.messages);
+    }
 
     auto saved = sessions_.save(snapshot);
     if (!saved)

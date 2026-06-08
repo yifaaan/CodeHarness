@@ -261,6 +261,10 @@ auto render_status_footer_line(const TuiDisplayConfig& config, const TuiState& s
     {
         output << " \xe2\x94\x82 skills: " << config.skill_count;
     }
+    if (state.active_session)
+    {
+        output << " \xe2\x94\x82 session: " << state.active_session->session_id;
+    }
     if (config.mcp_info.connected > 0)
     {
         output << " \xe2\x94\x82 mcp: " << config.mcp_info.connected;
@@ -483,6 +487,12 @@ auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state
     {
         parts.push_back(text(std::string{k_separator}) | dim);
         parts.push_back(text("skills: " + std::to_string(config.skill_count)) | dim);
+    }
+
+    if (state.active_session)
+    {
+        parts.push_back(text(std::string{k_separator}) | dim);
+        parts.push_back(text("session: " + state.active_session->session_id) | dim);
     }
 
     // mcp connections
