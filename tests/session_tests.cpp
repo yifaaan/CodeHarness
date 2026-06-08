@@ -147,6 +147,7 @@ TEST_CASE("snapshot JSON round-trip preserves all fields")
     snap.system_prompt = "You are a helpful assistant.";
     snap.messages.push_back(ch_core::make_text_message(ch_core::Role::User, "Hello"));
     snap.messages.push_back(ch_core::make_text_message(ch_core::Role::Assistant, "Hi there!"));
+    snap.usage = ch_sessions::UsageSnapshot{.input_tokens = 10, .output_tokens = 5, .total_tokens = 15};
     snap.created_at = 1234567890.0;
     snap.summary = "Hello";
     snap.message_count = 2;
@@ -159,6 +160,9 @@ TEST_CASE("snapshot JSON round-trip preserves all fields")
     CHECK(j["created_at"] == 1234567890.0);
     CHECK(j["summary"] == "Hello");
     CHECK(j["message_count"] == 2);
+    CHECK(j["usage"]["input_tokens"] == 10);
+    CHECK(j["usage"]["output_tokens"] == 5);
+    CHECK(j["usage"]["total_tokens"] == 15);
     REQUIRE(j["messages"].is_array());
     CHECK(j["messages"].size() == 2);
 
@@ -170,7 +174,36 @@ TEST_CASE("snapshot JSON round-trip preserves all fields")
     CHECK(parsed->created_at == doctest::Approx(1234567890.0));
     CHECK(parsed->summary == "Hello");
     CHECK(parsed->message_count == 2);
+    CHECK(parsed->usage.input_tokens == 10);
+    CHECK(parsed->usage.output_tokens == 5);
+    CHECK(parsed->usage.total_tokens == 15);
     CHECK(parsed->messages.size() == 2);
+}
+
+TEST_CASE("snapshot JSON loads missing and empty legacy usage as zeros")
+{
+    auto missing = nlohmann::json::parse(R"({
+        "session_id": "legacy-missing",
+        "model": "test",
+        "messages": []
+    })");
+    auto parsed_missing = ch_sessions::snapshot_from_json(missing);
+    REQUIRE(parsed_missing);
+    CHECK(parsed_missing->usage.input_tokens == 0);
+    CHECK(parsed_missing->usage.output_tokens == 0);
+    CHECK(parsed_missing->usage.total_tokens == 0);
+
+    auto empty = nlohmann::json::parse(R"({
+        "session_id": "legacy-empty",
+        "model": "test",
+        "usage": {},
+        "messages": []
+    })");
+    auto parsed_empty = ch_sessions::snapshot_from_json(empty);
+    REQUIRE(parsed_empty);
+    CHECK(parsed_empty->usage.input_tokens == 0);
+    CHECK(parsed_empty->usage.output_tokens == 0);
+    CHECK(parsed_empty->usage.total_tokens == 0);
 }
 
 // ---- SessionStore::save and load_latest ----

@@ -12,11 +12,15 @@
 namespace codeharness::sessions
 {
 
-// Usage tracking placeholder. Will be populated when providers report token
-// usage; currently serializes as an empty object for forward compat.
 struct UsageSnapshot
 {
+    int input_tokens = 0;
+    int output_tokens = 0;
+    int total_tokens = 0;
 };
+
+auto to_json(nlohmann::json& output, const UsageSnapshot& usage) -> void;
+auto from_json(const nlohmann::json& input, UsageSnapshot& usage) -> void;
 
 // A complete session snapshot matching the upstream session_storage.py format.
 // JSON round-trip via session_store.cpp serialization.
@@ -27,7 +31,7 @@ struct SessionSnapshot
     std::string model;                   // e.g. "claude-sonnet-4-6"
     std::string system_prompt;           // system prompt text
     std::vector<Message> messages;       // full message history
-    UsageSnapshot usage;                 // placeholder for future token tracking
+    UsageSnapshot usage;
     nlohmann::json tool_metadata;        // placeholder for future tool metadata
     double created_at{};                 // unix timestamp
     std::string summary;                 // first 80 chars of first user message

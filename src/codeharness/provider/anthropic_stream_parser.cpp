@@ -41,6 +41,37 @@ auto unsupported_event(std::string_view type) -> std::string
     return "unsupported Anthropic stream event: " + std::string{type};
 }
 
+auto usage_object_from_event(const nlohmann::json& event) -> const nlohmann::json*
+{
+    if (const auto usage = event.find("usage"); usage != event.end() && usage->is_object())
+    {
+        return &*usage;
+    }
+
+    if (const auto message = event.find("message"); message != event.end() && message->is_object())
+    {
+        if (const auto usage = message->find("usage"); usage != message->end() && usage->is_object())
+        {
+            return &*usage;
+        }
+    }
+
+    return nullptr;
+}
+
+auto apply_usage_update(ProviderUsage& current, const nlohmann::json& usage) -> void
+{
+    if (const auto input = json_int(usage, "input_tokens"); input > 0)
+    {
+        current.input_tokens = input;
+    }
+    if (const auto output = json_int(usage, "output_tokens"); output > 0)
+    {
+        current.output_tokens = output;
+    }
+    current.total_tokens = current.input_tokens + current.output_tokens;
+}
+
 } // namespace
 
 auto AnthropicStreamParser::feed(std::string_view chunk) -> ParsedEvent
@@ -81,7 +112,17 @@ auto AnthropicStreamParser::handle_json_event(const nlohmann::json& event, Parse
         return;
     }
 
-    if (type == "message_start" || type == "message_delta" || type == "ping")
+    if (type == "message_start" || type == "message_delta")
+    {
+        if (const auto* usage = usage_object_from_event(event))
+        {
+            apply_usage_update(usage_, *usage);
+            result.events.push_back(usage_);
+        }
+        return;
+    }
+
+    if (type == "ping")
     {
         return;
     }

@@ -36,6 +36,7 @@ private:
 
     network::SseParser sse_;
     std::map<int, ToolAccum> tool_blocks_;
+    ProviderUsage usage_;
 
     auto handle_json_event(const nlohmann::json& event, ParsedEvent& result) -> void;
     auto emit_tool_start(int index, ParsedEvent& result) -> void;

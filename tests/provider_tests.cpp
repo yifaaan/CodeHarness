@@ -42,6 +42,19 @@ auto has_message_finished(const std::vector<codeharness::ProviderEvent>& events)
     return std::ranges::any_of(events, [](const auto& event) { return std::holds_alternative<codeharness::MessageFinished>(event); });
 }
 
+auto last_usage(const std::vector<codeharness::ProviderEvent>& events) -> codeharness::ProviderUsage
+{
+    codeharness::ProviderUsage usage;
+    for (const auto& event : events)
+    {
+        if (const auto* updated = std::get_if<codeharness::ProviderUsage>(&event))
+        {
+            usage = *updated;
+        }
+    }
+    return usage;
+}
+
 } // namespace
 
 TEST_CASE("echo provider returns latest user text")
@@ -84,6 +97,21 @@ TEST_CASE("echo provider streams text delta")
     REQUIRE(result.has_value());
     CHECK(streamed_text == "hello");
     CHECK(finished);
+}
+
+TEST_CASE("echo provider does not report usage")
+{
+    codeharness::EchoProvider provider;
+    std::vector<codeharness::Message> messages;
+    messages.push_back(codeharness::make_text_message(codeharness::Role::User, "hello"));
+
+    bool saw_usage = false;
+    auto result = provider.stream(messages, [&](const codeharness::ProviderEvent& event) {
+        saw_usage = saw_usage || std::holds_alternative<codeharness::ProviderUsage>(event);
+    });
+
+    REQUIRE(result.has_value());
+    CHECK_FALSE(saw_usage);
 }
 
 namespace
@@ -297,6 +325,23 @@ TEST_CASE("provider openai responses stream parser handles text tool calls compl
     CHECK(error.error.find("Invalid API key") != std::string::npos);
 }
 
+TEST_CASE("provider openai stream parser emits usage from completed event")
+{
+    codeharness::OpenAIStreamParser parser;
+
+    auto parsed = parser.feed(
+        R"(data: {"type":"response.completed","response":{"usage":{"input_tokens":11,"output_tokens":7,"total_tokens":18}}})"
+        "\n\n");
+
+    CHECK(parsed.error.empty());
+    CHECK(parsed.done);
+    const auto usage = last_usage(parsed.events);
+    CHECK(usage.input_tokens == 11);
+    CHECK(usage.output_tokens == 7);
+    CHECK(usage.total_tokens == 18);
+    CHECK(has_message_finished(parsed.events));
+}
+
 TEST_CASE("provider openai stream parser recovers failed event after malformed data line")
 {
     codeharness::OpenAIStreamParser parser;
@@ -407,6 +452,26 @@ TEST_CASE("provider anthropic stream parser handles text tool use completion and
         "\n\n");
     CHECK(unsupported.done);
     CHECK(unsupported.error.find("unsupported Anthropic stream event") != std::string::npos);
+}
+
+TEST_CASE("provider anthropic stream parser accumulates usage from start and delta events")
+{
+    codeharness::AnthropicStreamParser parser;
+
+    auto parsed = parser.feed(
+        R"(data: {"type":"message_start","message":{"usage":{"input_tokens":23,"output_tokens":1}}})"
+        "\n\n"
+        R"(data: {"type":"message_delta","usage":{"output_tokens":9}})"
+        "\n\n"
+        R"(data: {"type":"message_stop"})"
+        "\n\n");
+
+    CHECK(parsed.error.empty());
+    CHECK(parsed.done);
+    const auto usage = last_usage(parsed.events);
+    CHECK(usage.input_tokens == 23);
+    CHECK(usage.output_tokens == 9);
+    CHECK(usage.total_tokens == 32);
 }
 
 TEST_CASE("provider sse parser handles order partial chunks comments and multi-line data")

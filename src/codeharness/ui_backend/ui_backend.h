@@ -119,6 +119,13 @@ struct BackendLineComplete
 {
 };
 
+struct BackendUsage
+{
+    int input_tokens = 0;
+    int output_tokens = 0;
+    int total_tokens = 0;
+};
+
 struct BackendError
 {
     std::string message;
@@ -136,6 +143,7 @@ using BackendEvent = std::variant<BackendReady,
                                   BackendPermissionModal,
                                   BackendSelectRequest,
                                   BackendLineComplete,
+                                  BackendUsage,
                                   BackendError,
                                   BackendShutdown>;
 

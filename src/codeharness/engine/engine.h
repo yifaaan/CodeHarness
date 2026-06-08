@@ -56,6 +56,7 @@ struct RunResult
 {
     std::vector<Message> messages;
     std::string output_text;
+    ProviderUsage usage;
 };
 
 struct EngineAssistantTextDelta
@@ -116,7 +117,8 @@ private:
     // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
     auto stream_provider_turn(std::span<const Message> messages,
                               const EngineEventSink& sink,
-                              const CancellationToken& cancellation) const -> Result<Message>;
+                              const CancellationToken& cancellation,
+                              ProviderUsage& usage) const -> Result<Message>;
 
     Provider& provider_;
     ToolRegistry& tools_;

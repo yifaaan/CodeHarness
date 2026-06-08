@@ -861,6 +861,13 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                     {
                         model.apply_engine_event(EngineAssistantTextDelta{.text = result->output_text});
                     }
+                    if (result)
+                    {
+                        display_config.token_usage = TokenUsage{
+                            .input_tokens = result->usage.input_tokens,
+                            .output_tokens = result->usage.output_tokens,
+                        };
+                    }
                     model.clear_permission();
                     model.complete_prompt();
                     model.set_permission_mode(runtime.permission_mode());

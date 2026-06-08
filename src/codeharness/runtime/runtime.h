@@ -112,6 +112,7 @@ public:
     [[nodiscard]] auto sessions() noexcept -> sessions::SessionStore&;
     [[nodiscard]] auto sessions() const noexcept -> const sessions::SessionStore&;
     [[nodiscard]] auto active_session_summary() const noexcept -> std::optional<SessionCommandSummary>;
+    [[nodiscard]] auto latest_usage() const noexcept -> sessions::UsageSnapshot;
     auto resume_session(std::string_view id) -> Result<SessionCommandSummary>;
 
     auto build_run_request(std::string_view prompt, int max_turns) -> Result<RunRequest>;

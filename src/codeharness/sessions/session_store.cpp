@@ -243,6 +243,34 @@ auto extract_summary(const std::vector<Message>& messages, int max_chars = 80) -
 
 } // namespace
 
+auto to_json(nlohmann::json& output, const UsageSnapshot& usage) -> void
+{
+    output = nlohmann::json{
+        {"input_tokens", usage.input_tokens},
+        {"output_tokens", usage.output_tokens},
+        {"total_tokens", usage.total_tokens > 0 ? usage.total_tokens : usage.input_tokens + usage.output_tokens},
+    };
+}
+
+auto from_json(const nlohmann::json& input, UsageSnapshot& usage) -> void
+{
+    if (!input.is_object())
+    {
+        usage = {};
+        return;
+    }
+
+    usage = UsageSnapshot{
+        .input_tokens = input.value("input_tokens", 0),
+        .output_tokens = input.value("output_tokens", 0),
+        .total_tokens = input.value("total_tokens", 0),
+    };
+    if (usage.total_tokens == 0)
+    {
+        usage.total_tokens = usage.input_tokens + usage.output_tokens;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // generate_session_id
 // ---------------------------------------------------------------------------
@@ -346,7 +374,7 @@ auto snapshot_to_json(const SessionSnapshot& snapshot) -> nlohmann::json
     j["model"] = snapshot.model;
     j["system_prompt"] = snapshot.system_prompt;
     j["messages"] = std::move(messages);
-    j["usage"] = nlohmann::json::object();
+    j["usage"] = nlohmann::json(snapshot.usage);
     j["tool_metadata"] = snapshot.tool_metadata.is_object()
                              ? snapshot.tool_metadata
                              : nlohmann::json::object();
@@ -378,6 +406,11 @@ auto snapshot_from_json(const nlohmann::json& data) -> Result<SessionSnapshot>
     if (data.contains("tool_metadata") && data["tool_metadata"].is_object())
     {
         s.tool_metadata = data["tool_metadata"];
+    }
+
+    if (data.contains("usage"))
+    {
+        s.usage = data["usage"].get<UsageSnapshot>();
     }
 
     // messages

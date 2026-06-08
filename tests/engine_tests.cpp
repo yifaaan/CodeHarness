@@ -57,6 +57,45 @@ public:
     }
 };
 
+class UsageProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        sink(codeharness::ProviderUsage{.input_tokens = 3, .output_tokens = 2, .total_tokens = 5});
+        sink(codeharness::AssistantTextDelta{"ok"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
+class MultiTurnUsageProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        ++calls;
+        if (calls == 1)
+        {
+            sink(codeharness::ProviderUsage{.input_tokens = 4, .output_tokens = 3});
+            sink(codeharness::ToolUseStarted{.id = "tool-use-1", .name = "read_file"});
+            sink(codeharness::ToolUseInputDelta{.id = "tool-use-1", .input_json_delta = R"({"path":"hello.txt"})"});
+            sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
+            sink(codeharness::MessageFinished{});
+            return {};
+        }
+
+        sink(codeharness::ProviderUsage{.input_tokens = 8, .output_tokens = 6});
+        sink(codeharness::AssistantTextDelta{"done"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+
+    int calls = 0;
+};
+
 } // namespace
 
 TEST_CASE("engine runs one provider turn")
@@ -359,6 +398,58 @@ TEST_CASE("engine streaming emits assistant text delta")
     REQUIRE(result.has_value());
     CHECK(streamed_text == "hello");
     CHECK(result->output_text == "hello");
+}
+
+TEST_CASE("engine aggregates usage events into run result")
+{
+    UsageProvider provider;
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "hello";
+    request.options.max_turns = 1;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->usage.input_tokens == 3);
+    CHECK(result->usage.output_tokens == 2);
+    CHECK(result->usage.total_tokens == 5);
+}
+
+TEST_CASE("engine sums usage across provider turns")
+{
+    auto temp_dir = std::filesystem::temp_directory_path() / "codeharness-engine-usage-test";
+    std::filesystem::remove_all(temp_dir);
+    std::filesystem::create_directories(temp_dir);
+
+    {
+        std::ofstream file{temp_dir / "hello.txt"};
+        file << "hello";
+    }
+
+    auto previous_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(temp_dir);
+
+    MultiTurnUsageProvider provider;
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::ReadFileTool>());
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "read";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    std::filesystem::current_path(previous_cwd);
+    std::filesystem::remove_all(temp_dir);
+
+    REQUIRE(result.has_value());
+    CHECK(result->usage.input_tokens == 12);
+    CHECK(result->usage.output_tokens == 9);
+    CHECK(result->usage.total_tokens == 21);
 }
 
 TEST_CASE("engine cancellation before provider turn skips provider")

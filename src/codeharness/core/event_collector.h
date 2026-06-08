@@ -63,7 +63,8 @@ public:
                         set_error(ErrorKind::Provider, "tool finished before tool start: " + finished.id);
                     }
                 },
-                [](const MessageFinished&) {}},
+                [](const MessageFinished&) {},
+                [](const ProviderUsage&) {}},
             event);
     }
 

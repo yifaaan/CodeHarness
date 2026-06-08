@@ -46,8 +46,16 @@ auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<Engi
                 return EngineToolFinished{.id = finished.id};
             },
             [](const MessageFinished&) -> std::optional<EngineEvent> { return std::nullopt; },
+            [](const ProviderUsage&) -> std::optional<EngineEvent> { return std::nullopt; },
         },
         event);
+}
+
+auto add_usage(ProviderUsage& total, const ProviderUsage& turn) -> void
+{
+    total.input_tokens += turn.input_tokens;
+    total.output_tokens += turn.output_tokens;
+    total.total_tokens += turn.normalized_total();
 }
 
 // 构造一个标记为 is_error 的工具结果。execute_tool_use 里
@@ -139,11 +147,13 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
     {
         if (is_cancelled(request.cancellation, sink)) return interrupted_result();
 
-        auto assistant_message = stream_provider_turn(result.messages, sink, request.cancellation);
+        ProviderUsage turn_usage;
+        auto assistant_message = stream_provider_turn(result.messages, sink, request.cancellation, turn_usage);
         if (!assistant_message)
         {
             return nonstd::make_unexpected(assistant_message.error());
         }
+        add_usage(result.usage, turn_usage);
 
         auto tool_uses = collect_tool_uses(*assistant_message);
         result.messages.push_back(std::move(*assistant_message));
@@ -186,7 +196,8 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
 
 auto Engine::stream_provider_turn(std::span<const Message> messages,
                                   const EngineEventSink& sink,
-                                  const CancellationToken& cancellation) const
+                                  const CancellationToken& cancellation,
+                                  ProviderUsage& usage) const
     -> Result<Message>
 {
     if (is_cancelled(cancellation, sink)) return interrupted_message();
@@ -203,6 +214,11 @@ auto Engine::stream_provider_turn(std::span<const Message> messages,
         }
 
         collector.on_event(event);
+        if (const auto* updated_usage = std::get_if<ProviderUsage>(&event))
+        {
+            usage = *updated_usage;
+            usage.total_tokens = usage.normalized_total();
+        }
         if (auto engine_event = translate_to_engine_event(event))
         {
             emit_engine_event(sink, *engine_event);

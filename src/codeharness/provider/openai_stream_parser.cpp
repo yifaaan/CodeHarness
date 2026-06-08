@@ -42,6 +42,24 @@ auto error_message_from(const nlohmann::json& input) -> std::string
     return "OpenAI response failed";
 }
 
+auto usage_object_from_completed_event(const nlohmann::json& event) -> const nlohmann::json*
+{
+    if (const auto usage = event.find("usage"); usage != event.end() && usage->is_object())
+    {
+        return &*usage;
+    }
+
+    if (const auto response = event.find("response"); response != event.end() && response->is_object())
+    {
+        if (const auto usage = response->find("usage"); usage != response->end() && usage->is_object())
+        {
+            return &*usage;
+        }
+    }
+
+    return nullptr;
+}
+
 auto key_for_item(const nlohmann::json& event, const nlohmann::json& item = nlohmann::json::object()) -> std::string
 {
     auto key = json_string_value(event, "item_id");
@@ -234,6 +252,10 @@ auto OpenAIStreamParser::handle_json_event(const nlohmann::json& event, ParsedEv
 
     if (type == "response.completed")
     {
+        if (const auto* usage = usage_object_from_completed_event(event))
+        {
+            result.events.push_back(usage->get<ProviderUsage>());
+        }
         auto tool_events = flush_pending_tools();
         result.events.insert(result.events.end(), tool_events.begin(), tool_events.end());
         result.events.push_back(MessageFinished{});

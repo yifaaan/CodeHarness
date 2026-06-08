@@ -252,6 +252,15 @@ auto format_backend_event(const BackendEvent& event) -> std::string
             [](const BackendLineComplete&) {
                 return prefixed_json_line(nlohmann::json{{"type", "line_complete"}});
             },
+            [](const BackendUsage& usage) {
+                return prefixed_json_line(
+                    nlohmann::json{
+                        {"type", "usage"},
+                        {"input_tokens", usage.input_tokens},
+                        {"output_tokens", usage.output_tokens},
+                        {"total_tokens", usage.total_tokens},
+                    });
+            },
             [](const BackendError& error) {
                 return prefixed_json_line(nlohmann::json{{"type", "error"}, {"message", error.message}});
             },
@@ -484,6 +493,14 @@ auto BackendHost::run_submit_line(std::string line) -> void
         return;
     }
 
+    if (result->usage.normalized_total() > 0)
+    {
+        emit(BackendUsage{
+            .input_tokens = result->usage.input_tokens,
+            .output_tokens = result->usage.output_tokens,
+            .total_tokens = result->usage.normalized_total(),
+        });
+    }
     emit(BackendLineComplete{});
 }
 

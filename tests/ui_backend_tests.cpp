@@ -62,6 +62,52 @@ auto make_write_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<cod
         std::move(*session_store));
 }
 
+class BackendUsageProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        sink(codeharness::ProviderUsage{.input_tokens = 12, .output_tokens = 6, .total_tokens = 18});
+        sink(codeharness::AssistantTextDelta{"usage"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
+auto make_usage_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "usage-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "usage-memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "usage-tasks",
+        temp.path / "usage-teams",
+        temp.path / "usage-mailbox");
+    codeharness::ToolRegistry tools;
+    auto provider = std::make_unique<BackendUsageProvider>();
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "usage-sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
 auto parse_backend_output(std::string_view output) -> std::vector<nlohmann::json>
 {
     std::vector<nlohmann::json> events;
@@ -250,6 +296,34 @@ TEST_CASE("ui backend emits errors and shutdown without throwing")
     CHECK(events.at(3).at("type") == "error");
     CHECK(events.at(3).at("message") == "submit_line requires non-empty line");
     CHECK(events.at(4).at("type") == "shutdown");
+}
+
+TEST_CASE("ui backend emits usage event after prompt completion")
+{
+    TempDir temp{"codeharness-ui-backend-usage-test"};
+    auto bundle = make_usage_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"hello"})"
+        "\n");
+
+    bool saw_usage = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") != "usage")
+        {
+            continue;
+        }
+        saw_usage = true;
+        CHECK(event.at("input_tokens") == 12);
+        CHECK(event.at("output_tokens") == 6);
+        CHECK(event.at("total_tokens") == 18);
+    }
+    REQUIRE(events.size() >= 4);
+    CHECK(saw_usage);
+    CHECK(events.back().at("type") == "line_complete");
 }
 
 TEST_CASE("ui backend rejects permission_response without pending request")

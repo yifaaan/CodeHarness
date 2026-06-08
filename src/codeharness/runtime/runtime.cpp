@@ -351,6 +351,15 @@ auto RuntimeBundle::active_session_summary() const noexcept -> std::optional<Ses
     return session_summary_from(*active_session_);
 }
 
+auto RuntimeBundle::latest_usage() const noexcept -> sessions::UsageSnapshot
+{
+    if (!active_session_)
+    {
+        return {};
+    }
+    return active_session_->usage;
+}
+
 auto RuntimeBundle::resume_session(std::string_view id) -> Result<SessionCommandSummary>
 {
     const auto session_id = std::string{id.empty() ? std::string_view{"latest"} : id};
@@ -473,6 +482,11 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     snapshot.cwd = cwd_;
     snapshot.model = model_;
     snapshot.messages = result->messages;
+    snapshot.usage = sessions::UsageSnapshot{
+        .input_tokens = result->usage.input_tokens,
+        .output_tokens = result->usage.output_tokens,
+        .total_tokens = result->usage.normalized_total(),
+    };
     snapshot.message_count = static_cast<int>(snapshot.messages.size());
     snapshot.system_prompt = extract_system_prompt(snapshot.messages);
     if (snapshot.created_at == 0.0)

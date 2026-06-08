@@ -69,6 +69,55 @@ auto make_write_bundle(TempDir& temp, codeharness::HookRegistry hooks)
         std::move(*session_store));
 }
 
+class RuntimeUsageProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        sink(codeharness::ProviderUsage{.input_tokens = input_tokens, .output_tokens = output_tokens});
+        sink(codeharness::AssistantTextDelta{"usage ok"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+
+    int input_tokens = 13;
+    int output_tokens = 8;
+};
+
+auto make_usage_bundle(TempDir& temp, std::unique_ptr<RuntimeUsageProvider> provider)
+    -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "usage-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "usage-memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "usage-tasks",
+        temp.path / "usage-teams",
+        temp.path / "usage-mailbox");
+    codeharness::ToolRegistry tools;
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "usage-sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "usage-model",
+        std::move(*session_store));
+}
+
 } // namespace
 
 TEST_CASE("runtime bundle creates coding agent runtime for a cwd")
@@ -391,6 +440,66 @@ TEST_CASE("runtime resumed run includes history replaces system prompt and reuse
     CHECK((*saved)->message_count == static_cast<int>(result->messages.size()));
     CHECK((*saved)->created_at == doctest::Approx(42.0));
     CHECK((*saved)->summary == "first prompt");
+}
+
+TEST_CASE("runtime saves provider usage into latest session")
+{
+    TempDir temp{"codeharness-runtime-usage-save-test"};
+    auto bundle = make_usage_bundle(temp, std::make_unique<RuntimeUsageProvider>());
+    REQUIRE(bundle.has_value());
+
+    auto result = (*bundle)->run_prompt("track usage", 1, {});
+    REQUIRE(result.has_value());
+    CHECK(result->usage.input_tokens == 13);
+    CHECK(result->usage.output_tokens == 8);
+    CHECK(result->usage.total_tokens == 21);
+
+    const auto latest_usage = (*bundle)->latest_usage();
+    CHECK(latest_usage.input_tokens == 13);
+    CHECK(latest_usage.output_tokens == 8);
+    CHECK(latest_usage.total_tokens == 21);
+
+    auto loaded = (*bundle)->sessions().load_latest();
+    REQUIRE(loaded);
+    REQUIRE(loaded->has_value());
+    CHECK((*loaded)->usage.input_tokens == 13);
+    CHECK((*loaded)->usage.output_tokens == 8);
+    CHECK((*loaded)->usage.total_tokens == 21);
+}
+
+TEST_CASE("runtime resume keeps saved usage until next run overwrites it")
+{
+    TempDir temp{"codeharness-runtime-usage-resume-test"};
+    auto provider = std::make_unique<RuntimeUsageProvider>();
+    provider->input_tokens = 5;
+    provider->output_tokens = 4;
+    auto bundle = make_usage_bundle(temp, std::move(provider));
+    REQUIRE(bundle.has_value());
+
+    codeharness::sessions::SessionSnapshot snapshot;
+    snapshot.session_id = "usage-resume";
+    snapshot.cwd = (*bundle)->cwd();
+    snapshot.model = "usage-model";
+    snapshot.summary = "saved";
+    snapshot.created_at = 10.0;
+    snapshot.usage = codeharness::sessions::UsageSnapshot{.input_tokens = 100, .output_tokens = 50, .total_tokens = 150};
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::User, "saved"));
+    snapshot.messages.push_back(codeharness::make_text_message(codeharness::Role::Assistant, "answer"));
+    snapshot.message_count = static_cast<int>(snapshot.messages.size());
+    REQUIRE((*bundle)->sessions().save(snapshot).has_value());
+
+    REQUIRE((*bundle)->resume_session("usage-resume").has_value());
+    auto resumed_usage = (*bundle)->latest_usage();
+    CHECK(resumed_usage.input_tokens == 100);
+    CHECK(resumed_usage.output_tokens == 50);
+    CHECK(resumed_usage.total_tokens == 150);
+
+    auto result = (*bundle)->run_prompt("new usage", 1, {});
+    REQUIRE(result.has_value());
+    auto updated_usage = (*bundle)->latest_usage();
+    CHECK(updated_usage.input_tokens == 5);
+    CHECK(updated_usage.output_tokens == 4);
+    CHECK(updated_usage.total_tokens == 9);
 }
 
 TEST_CASE("runtime resume missing session returns not found")
