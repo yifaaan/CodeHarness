@@ -2,8 +2,157 @@
 
 #include <nlohmann/json.hpp>
 
+#include <utility>
+
 namespace codeharness::config
 {
+
+namespace
+{
+
+auto permission_mode_from_string(std::string_view value) -> PermissionMode
+{
+    if (value == "plan")
+    {
+        return PermissionMode::Plan;
+    }
+    if (value == "full_auto")
+    {
+        return PermissionMode::FullAuto;
+    }
+
+    return PermissionMode::Default;
+}
+
+auto permission_mode_to_string(PermissionMode mode) -> std::string_view
+{
+    switch (mode)
+    {
+    case PermissionMode::Plan: return "plan";
+    case PermissionMode::FullAuto: return "full_auto";
+    case PermissionMode::Default: return "default";
+    }
+
+    return "default";
+}
+
+auto permission_action_from_string(std::string_view value) -> PermissionAction
+{
+    if (value == "allow")
+    {
+        return PermissionAction::Allow;
+    }
+    if (value == "deny")
+    {
+        return PermissionAction::Deny;
+    }
+
+    return PermissionAction::Ask;
+}
+
+auto permission_action_to_string(PermissionAction action) -> std::string_view
+{
+    switch (action)
+    {
+    case PermissionAction::Allow: return "allow";
+    case PermissionAction::Deny: return "deny";
+    case PermissionAction::Ask: return "ask";
+    }
+
+    return "ask";
+}
+
+auto parse_path_rules(const nlohmann::json& rules) -> std::vector<PermissionPathRule>
+{
+    std::vector<PermissionPathRule> parsed;
+    if (!rules.is_array())
+    {
+        return parsed;
+    }
+
+    for (const auto& item : rules)
+    {
+        if (!item.is_object())
+        {
+            continue;
+        }
+
+        PermissionPathRule rule;
+        rule.action = permission_action_from_string(item.value("action", std::string{}));
+        rule.pattern = item.value("pattern", std::string{});
+        if (item.contains("tools") && item["tools"].is_array())
+        {
+            rule.tools = item["tools"].get<std::vector<std::string>>();
+        }
+
+        if (!rule.pattern.empty())
+        {
+            parsed.push_back(std::move(rule));
+        }
+    }
+
+    return parsed;
+}
+
+auto parse_command_rules(const nlohmann::json& rules) -> std::vector<PermissionCommandRule>
+{
+    std::vector<PermissionCommandRule> parsed;
+    if (!rules.is_array())
+    {
+        return parsed;
+    }
+
+    for (const auto& item : rules)
+    {
+        if (!item.is_object())
+        {
+            continue;
+        }
+
+        PermissionCommandRule rule;
+        rule.action = permission_action_from_string(item.value("action", std::string{}));
+        rule.pattern = item.value("pattern", std::string{});
+        if (!rule.pattern.empty())
+        {
+            parsed.push_back(std::move(rule));
+        }
+    }
+
+    return parsed;
+}
+
+auto path_rules_to_json(const std::vector<PermissionPathRule>& rules) -> nlohmann::json
+{
+    auto json = nlohmann::json::array();
+    for (const auto& rule : rules)
+    {
+        nlohmann::json item{
+            {"action", permission_action_to_string(rule.action)},
+            {"pattern", rule.pattern},
+        };
+        if (!rule.tools.empty())
+        {
+            item["tools"] = rule.tools;
+        }
+        json.push_back(std::move(item));
+    }
+    return json;
+}
+
+auto command_rules_to_json(const std::vector<PermissionCommandRule>& rules) -> nlohmann::json
+{
+    auto json = nlohmann::json::array();
+    for (const auto& rule : rules)
+    {
+        json.push_back(nlohmann::json{
+            {"action", permission_action_to_string(rule.action)},
+            {"pattern", rule.pattern},
+        });
+    }
+    return json;
+}
+
+} // namespace
 
 // ---- ProviderProfile ----
 
@@ -66,18 +215,25 @@ void from_json(const nlohmann::json& j, Settings& s)
     {
         // PermissionSettings from_json: map "mode" string → PermissionMode enum
         const auto& perm = j["permission"];
-        auto mode_str = perm.value("mode", std::string{});
-        if (mode_str == "plan")
+        if (perm.is_object())
         {
-            s.permission.mode = PermissionMode::Plan;
-        }
-        else if (mode_str == "full_auto")
-        {
-            s.permission.mode = PermissionMode::FullAuto;
-        }
-        else
-        {
-            s.permission.mode = PermissionMode::Default;
+            s.permission.mode = permission_mode_from_string(perm.value("mode", std::string{}));
+            if (perm.contains("allowed_tools") && perm["allowed_tools"].is_array())
+            {
+                s.permission.allowed_tools = perm["allowed_tools"].get<std::vector<std::string>>();
+            }
+            if (perm.contains("denied_tools") && perm["denied_tools"].is_array())
+            {
+                s.permission.denied_tools = perm["denied_tools"].get<std::vector<std::string>>();
+            }
+            if (perm.contains("path_rules"))
+            {
+                s.permission.path_rules = parse_path_rules(perm["path_rules"]);
+            }
+            if (perm.contains("command_rules"))
+            {
+                s.permission.command_rules = parse_command_rules(perm["command_rules"]);
+            }
         }
     }
 
@@ -134,15 +290,23 @@ void to_json(nlohmann::json& j, const Settings& s)
         {"allow_project_plugins", s.allow_project_plugins},
     };
 
-    // Permission
-    std::string mode_str = "default";
-    switch (s.permission.mode)
+    j["permission"] = nlohmann::json{{"mode", permission_mode_to_string(s.permission.mode)}};
+    if (!s.permission.allowed_tools.empty())
     {
-    case PermissionMode::Plan: mode_str = "plan"; break;
-    case PermissionMode::FullAuto: mode_str = "full_auto"; break;
-    default: break;
+        j["permission"]["allowed_tools"] = s.permission.allowed_tools;
     }
-    j["permission"] = nlohmann::json{{"mode", mode_str}};
+    if (!s.permission.denied_tools.empty())
+    {
+        j["permission"]["denied_tools"] = s.permission.denied_tools;
+    }
+    if (!s.permission.path_rules.empty())
+    {
+        j["permission"]["path_rules"] = path_rules_to_json(s.permission.path_rules);
+    }
+    if (!s.permission.command_rules.empty())
+    {
+        j["permission"]["command_rules"] = command_rules_to_json(s.permission.command_rules);
+    }
 
     // MCP servers
     nlohmann::json servers = nlohmann::json::array();

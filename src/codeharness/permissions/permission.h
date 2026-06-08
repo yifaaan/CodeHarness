@@ -22,14 +22,6 @@ enum class PermissionMode
 
 //   - allowed_tools / denied_tools 使用精确工具名匹配
 //   - TODO: wildcard、path rules、command rules
-struct PermissionSettings
-{
-    PermissionMode mode = PermissionMode::Default;
-
-    std::vector<std::string> allowed_tools;
-    std::vector<std::string> denied_tools;
-};
-
 // 权限判断结果。
 // 
 // Allow：可以直接执行
@@ -40,6 +32,29 @@ enum class PermissionAction
     Allow,
     Ask,
     Deny
+};
+
+struct PermissionPathRule
+{
+    PermissionAction action = PermissionAction::Ask;
+    std::string pattern;
+    std::vector<std::string> tools;
+};
+
+struct PermissionCommandRule
+{
+    PermissionAction action = PermissionAction::Ask;
+    std::string pattern;
+};
+
+struct PermissionSettings
+{
+    PermissionMode mode = PermissionMode::Default;
+
+    std::vector<std::string> allowed_tools;
+    std::vector<std::string> denied_tools;
+    std::vector<PermissionPathRule> path_rules;
+    std::vector<PermissionCommandRule> command_rules;
 };
 
 struct PermissionDecision
@@ -62,6 +77,8 @@ class PermissionChecker
 {
 public:
     explicit PermissionChecker(PermissionSettings settings);
+
+    [[nodiscard]] auto settings() const noexcept -> const PermissionSettings& { return settings_; }
 
     // target_path:
     //   工具作用的路径。没有路径的工具可以传 std::nullopt。

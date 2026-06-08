@@ -84,10 +84,13 @@ auto ConfigLoader::load(const CliOptions& cli) -> Result<Settings>
         settings.allow_project_skills = file_settings.allow_project_skills;
         settings.allow_project_plugins = file_settings.allow_project_plugins;
 
-        // Permission mode
-        if (file_settings.permission.mode != PermissionMode::Default)
+        if (file_settings.permission.mode != PermissionMode::Default ||
+            !file_settings.permission.allowed_tools.empty() ||
+            !file_settings.permission.denied_tools.empty() ||
+            !file_settings.permission.path_rules.empty() ||
+            !file_settings.permission.command_rules.empty())
         {
-            settings.permission.mode = file_settings.permission.mode;
+            settings.permission = std::move(file_settings.permission);
         }
     }
 

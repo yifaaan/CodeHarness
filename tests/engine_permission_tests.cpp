@@ -206,3 +206,70 @@ TEST_CASE("engine passes bash command to permission checker")
     REQUIRE(result.has_value());
     CHECK(result->output_text.find("permission denied: dangerous command is blocked") != std::string::npos);
 }
+
+TEST_CASE("engine executes default-mode mutating tool when path allow rule matches")
+{
+    TempDir temp{"codeharness-engine-permission-path-allow-test"};
+
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+    settings.path_rules.push_back(codeharness::PermissionPathRule{
+        .action = codeharness::PermissionAction::Allow,
+        .pattern = "output.txt",
+        .tools = {"write_file"},
+    });
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    WriteFileRequestProvider provider;
+    codeharness::Engine engine{provider, tools, &checker};
+
+    auto previous_cwd = std::filesystem::current_path();
+    std::filesystem::current_path(temp.path);
+
+    int prompt_count = 0;
+    codeharness::RunRequest request;
+    request.prompt = "write output.txt";
+    request.permission_prompt = [&](const codeharness::PermissionPrompt&) -> codeharness::Result<codeharness::PermissionResponse> {
+        prompt_count++;
+        return codeharness::PermissionResponse{.allowed = false};
+    };
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+    std::filesystem::current_path(previous_cwd);
+
+    REQUIRE(result.has_value());
+    CHECK(prompt_count == 0);
+    CHECK(result->output_text.find("Created") != std::string::npos);
+    CHECK(std::filesystem::exists(temp.path / "output.txt"));
+}
+
+TEST_CASE("engine returns tool error when path deny rule matches")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+    settings.path_rules.push_back(codeharness::PermissionPathRule{
+        .action = codeharness::PermissionAction::Deny,
+        .pattern = "output.txt",
+        .tools = {"write_file"},
+    });
+
+    codeharness::PermissionChecker checker{settings};
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    WriteFileRequestProvider provider;
+    codeharness::Engine engine{provider, tools, &checker};
+
+    codeharness::RunRequest request;
+    request.prompt = "write output.txt";
+    request.options.max_turns = 3;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("permission denied: path rule deny matched: output.txt") != std::string::npos);
+}

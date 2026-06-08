@@ -62,7 +62,7 @@ struct RuntimeBundleOptions
 {
     std::filesystem::path cwd;
     std::filesystem::path memory_root;
-    PermissionMode permission_mode = PermissionMode::Default;
+    PermissionSettings permission;
     bool load_default_user_plugins = true;
     ProviderConfig provider_config;
 };
@@ -78,7 +78,7 @@ class RuntimeBundle
 {
 public:
     RuntimeBundle(std::filesystem::path cwd,
-                  PermissionMode permission_mode,
+                  PermissionSettings permission,
                   SkillRegistryLoadResult loaded_skills,
                   memory::MemoryStore memory_store,
                   std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,

@@ -216,7 +216,7 @@ private:
 } // namespace
 
 RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
-                             PermissionMode permission_mode,
+                             PermissionSettings permission,
                              SkillRegistryLoadResult loaded_skills,
                              memory::MemoryStore memory_store,
                              std::unique_ptr<coordinator::CoordinatorRuntime> coordinator_runtime,
@@ -226,7 +226,7 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
                              sessions::SessionStore sessions) :
     cwd_(std::move(cwd)),
     model_(std::move(model)),
-    permission_mode_(permission_mode),
+    permission_mode_(permission.mode),
     loaded_skills_(std::move(loaded_skills)),
     memory_store_(std::move(memory_store)),
     sessions_(std::move(sessions)),
@@ -238,7 +238,7 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
         loaded_skills_.plugins)),
     coordinator_runtime_(std::move(coordinator_runtime)),
     tools_(std::move(tools)),
-    permissions_(PermissionSettings{permission_mode_}),
+    permissions_(std::move(permission)),
     provider_(std::move(provider)),
     engine_(*provider_, tools_, &permissions_)
 {
@@ -257,7 +257,9 @@ auto RuntimeBundle::permission_mode() const noexcept -> PermissionMode
 auto RuntimeBundle::set_permission_mode(PermissionMode mode) -> void
 {
     permission_mode_ = mode;
-    permissions_ = PermissionChecker(PermissionSettings{mode});
+    auto settings = permissions_.settings();
+    settings.mode = mode;
+    permissions_ = PermissionChecker(std::move(settings));
     engine_.set_permission_checker(&permissions_);
 }
 
@@ -555,7 +557,7 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
     }
 
     return std::make_unique<RuntimeBundle>(std::move(options.cwd),
-                                           options.permission_mode,
+                                           std::move(options.permission),
                                            std::move(*loaded_skills),
                                            std::move(*memory_store),
                                            std::move(*coordinator_runtime),

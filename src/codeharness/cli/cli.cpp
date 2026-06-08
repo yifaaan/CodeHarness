@@ -120,11 +120,17 @@ auto run_cli(int argc, char** argv) -> Result<int>
                          "configuration error: " + settings.error().message);
     }
 
+    auto permission = settings->permission;
+    if (plan_mode)
+    {
+        permission.mode = PermissionMode::Plan;
+    }
+
     auto runtime_bundle = runtime::create_runtime_bundle(
         runtime::RuntimeBundleOptions{
             .cwd = settings->cwd,
             .memory_root = settings->memory_root,
-            .permission_mode = plan_mode ? PermissionMode::Plan : settings->permission.mode,
+            .permission = std::move(permission),
             .load_default_user_plugins = true,
             .provider_config = ProviderConfig{
                 .type = settings->provider_type,

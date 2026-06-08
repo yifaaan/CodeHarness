@@ -85,6 +85,66 @@ TEST_CASE("settings JSON parses permission modes")
     test_mode("full_auto", codeharness::PermissionMode::FullAuto);
 }
 
+TEST_CASE("settings JSON parses permission rule settings")
+{
+    auto json = nlohmann::json::parse(R"({
+        "permission": {
+            "mode": "default",
+            "allowed_tools": ["read_file"],
+            "denied_tools": ["bash"],
+            "path_rules": [
+                {"action": "allow", "pattern": "src/**", "tools": ["edit_file", "write_file"]},
+                {"action": "deny", "pattern": ".git/**"}
+            ],
+            "command_rules": [
+                {"action": "deny", "pattern": "\\bgit\\s+push\\b"}
+            ]
+        }
+    })");
+
+    auto s = json.get<ch_config::Settings>();
+
+    CHECK(s.permission.allowed_tools == std::vector<std::string>{"read_file"});
+    CHECK(s.permission.denied_tools == std::vector<std::string>{"bash"});
+    REQUIRE(s.permission.path_rules.size() == 2);
+    CHECK(s.permission.path_rules[0].action == codeharness::PermissionAction::Allow);
+    CHECK(s.permission.path_rules[0].pattern == "src/**");
+    CHECK(s.permission.path_rules[0].tools == std::vector<std::string>{"edit_file", "write_file"});
+    CHECK(s.permission.path_rules[1].action == codeharness::PermissionAction::Deny);
+    CHECK(s.permission.path_rules[1].pattern == ".git/**");
+    REQUIRE(s.permission.command_rules.size() == 1);
+    CHECK(s.permission.command_rules[0].action == codeharness::PermissionAction::Deny);
+    CHECK(s.permission.command_rules[0].pattern == R"(\bgit\s+push\b)");
+}
+
+TEST_CASE("settings JSON serializes permission rule settings")
+{
+    ch_config::Settings s;
+    s.permission.mode = codeharness::PermissionMode::FullAuto;
+    s.permission.allowed_tools = {"read_file"};
+    s.permission.denied_tools = {"bash"};
+    s.permission.path_rules.push_back(codeharness::PermissionPathRule{
+        .action = codeharness::PermissionAction::Allow,
+        .pattern = "src/**",
+        .tools = {"write_file"},
+    });
+    s.permission.command_rules.push_back(codeharness::PermissionCommandRule{
+        .action = codeharness::PermissionAction::Deny,
+        .pattern = R"(\bgit\s+push\b)",
+    });
+
+    nlohmann::json j = s;
+
+    CHECK(j["permission"]["mode"] == "full_auto");
+    CHECK(j["permission"]["allowed_tools"] == nlohmann::json::array({"read_file"}));
+    CHECK(j["permission"]["denied_tools"] == nlohmann::json::array({"bash"}));
+    CHECK(j["permission"]["path_rules"][0]["action"] == "allow");
+    CHECK(j["permission"]["path_rules"][0]["pattern"] == "src/**");
+    CHECK(j["permission"]["path_rules"][0]["tools"] == nlohmann::json::array({"write_file"}));
+    CHECK(j["permission"]["command_rules"][0]["action"] == "deny");
+    CHECK(j["permission"]["command_rules"][0]["pattern"] == R"(\bgit\s+push\b)");
+}
+
 TEST_CASE("settings JSON parses MCP servers")
 {
     auto json = nlohmann::json::parse(R"({
@@ -317,6 +377,45 @@ TEST_CASE("ConfigLoader reads settings.json file")
     CHECK(settings->allow_project_skills == false);
 
     // Restore env
+    if (old_env)
+    {
+        auto restore = std::string{"CODEHARNESS_CONFIG_DIR="} + old_env;
+        _putenv(restore.c_str());
+    }
+    else
+    {
+        _putenv("CODEHARNESS_CONFIG_DIR=");
+    }
+}
+
+TEST_CASE("ConfigLoader reads full permission settings from file")
+{
+    TempDir temp{"loader-permission-rules"};
+    auto config_dir = temp.path;
+    write_file(config_dir / "settings.json", R"({
+        "permission": {
+            "mode": "full_auto",
+            "allowed_tools": ["read_file"],
+            "path_rules": [{"action": "deny", "pattern": ".git/**"}],
+            "command_rules": [{"action": "deny", "pattern": "\\bgit\\s+push\\b"}]
+        }
+    })");
+
+    auto old_env = std::getenv("CODEHARNESS_CONFIG_DIR");
+    auto set_env = std::string{"CODEHARNESS_CONFIG_DIR="} + config_dir.string();
+    _putenv(set_env.c_str());
+
+    ch_config::ConfigLoader loader;
+    auto settings = loader.load(ch_config::CliOptions{});
+    REQUIRE(settings);
+
+    CHECK(settings->permission.mode == codeharness::PermissionMode::FullAuto);
+    CHECK(settings->permission.allowed_tools == std::vector<std::string>{"read_file"});
+    REQUIRE(settings->permission.path_rules.size() == 1);
+    CHECK(settings->permission.path_rules[0].pattern == ".git/**");
+    REQUIRE(settings->permission.command_rules.size() == 1);
+    CHECK(settings->permission.command_rules[0].pattern == R"(\bgit\s+push\b)");
+
     if (old_env)
     {
         auto restore = std::string{"CODEHARNESS_CONFIG_DIR="} + old_env;

@@ -20,7 +20,7 @@ auto make_bundle(TempDir& temp, codeharness::PermissionMode mode = codeharness::
         codeharness::runtime::RuntimeBundleOptions{
             .cwd = repo,
             .memory_root = memory_root,
-            .permission_mode = mode,
+            .permission = codeharness::PermissionSettings{.mode = mode},
             .load_default_user_plugins = false,
         });
 }
