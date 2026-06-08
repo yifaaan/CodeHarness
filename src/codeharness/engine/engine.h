@@ -38,6 +38,7 @@ struct PermissionResponse
 {
     bool allowed = false;
     std::string reason;
+    bool remember_session = false;
 };
 
 using PermissionPromptHandler = std::function<Result<PermissionResponse>(const PermissionPrompt&)>;

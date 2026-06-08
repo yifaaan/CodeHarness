@@ -207,6 +207,42 @@ auto matching_explicit_rule_action(const PermissionSettings& settings,
     return std::nullopt;
 }
 
+auto session_grant_matches(const PermissionSessionGrant& grant,
+                           std::string_view tool_name,
+                           const std::optional<std::filesystem::path>& target_path,
+                           const std::optional<std::string>& command) -> bool
+{
+    if (grant.tool_name != tool_name)
+    {
+        return false;
+    }
+
+    if (grant.path)
+    {
+        return target_path && *grant.path == normalize_path_text(*target_path);
+    }
+    if (target_path)
+    {
+        return false;
+    }
+
+    if (grant.command)
+    {
+        return command && *grant.command == *command;
+    }
+    return !command;
+}
+
+auto matching_session_grant(const PermissionSettings& settings,
+                            std::string_view tool_name,
+                            const std::optional<std::filesystem::path>& target_path,
+                            const std::optional<std::string>& command) -> bool
+{
+    return std::ranges::any_of(settings.session_grants, [&](const auto& grant) {
+        return session_grant_matches(grant, tool_name, target_path, command);
+    });
+}
+
 } // namespace
 
 PermissionChecker::PermissionChecker(PermissionSettings settings) : settings_(std::move(settings))
@@ -284,6 +320,15 @@ auto PermissionChecker::evaluate(
         return PermissionDecision{
             .action = PermissionAction::Allow,
             .reason = "tool is allowed by settings",
+        };
+    }
+
+    if (matching_session_grant(settings_, tool_name, target_path, command))
+    {
+        spdlog::debug("permission allow: tool={} reason=session_grant", tool_name);
+        return PermissionDecision{
+            .action = PermissionAction::Allow,
+            .reason = "tool is allowed by this session",
         };
     }
 

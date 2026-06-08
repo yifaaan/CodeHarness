@@ -47,6 +47,13 @@ struct PermissionCommandRule
     std::string pattern;
 };
 
+struct PermissionSessionGrant
+{
+    std::string tool_name;
+    std::optional<std::string> path;
+    std::optional<std::string> command;
+};
+
 struct PermissionSettings
 {
     PermissionMode mode = PermissionMode::Default;
@@ -55,6 +62,7 @@ struct PermissionSettings
     std::vector<std::string> denied_tools;
     std::vector<PermissionPathRule> path_rules;
     std::vector<PermissionCommandRule> command_rules;
+    std::vector<PermissionSessionGrant> session_grants;
 };
 
 struct PermissionDecision

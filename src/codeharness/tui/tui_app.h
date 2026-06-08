@@ -57,6 +57,7 @@ enum class TuiAction
     SubmitPrompt,
     InsertCommand,
     ApprovePermission,
+    ApprovePermissionForSession,
     DenyPermission,
     Interrupt,
     Quit,
@@ -142,6 +143,7 @@ public:
     auto handle_command_cancel() -> TuiAction;
     auto handle_interrupt() -> TuiAction;
     auto handle_permission_approve() -> TuiAction;
+    auto handle_permission_approve_for_session() -> TuiAction;
     auto handle_permission_deny() -> TuiAction;
     [[nodiscard]] auto toggle_tool_details(std::size_t transcript_index) -> bool;
 

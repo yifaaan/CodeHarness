@@ -85,6 +85,69 @@ public:
     int output_tokens = 8;
 };
 
+class RepeatingWriteProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        if (!messages.empty() && messages.back().role == codeharness::Role::Tool)
+        {
+            sink(codeharness::AssistantTextDelta{"done"});
+            sink(codeharness::MessageFinished{});
+            return {};
+        }
+
+        const auto path = paths.at(std::min(call_index, paths.size() - 1));
+        ++call_index;
+        sink(codeharness::ToolUseStarted{.id = "tool-use-" + std::to_string(call_index), .name = "write_file"});
+        sink(codeharness::ToolUseInputDelta{
+            .id = "tool-use-" + std::to_string(call_index),
+            .input_json_delta = R"({"path":")" + path + R"(","content":"hello"})",
+        });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-" + std::to_string(call_index)});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+
+    std::vector<std::string> paths{"output.txt"};
+    std::size_t call_index = 0;
+};
+
+auto make_repeating_write_bundle(TempDir& temp, std::unique_ptr<RepeatingWriteProvider> provider)
+    -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "remember-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "remember-memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "remember-tasks",
+        temp.path / "remember-teams",
+        temp.path / "remember-mailbox");
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "remember-sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
 auto make_usage_bundle(TempDir& temp, std::unique_ptr<RuntimeUsageProvider> provider)
     -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
 {
@@ -511,4 +574,45 @@ TEST_CASE("runtime resume missing session returns not found")
     auto resumed = (*bundle)->resume_session("missing");
     REQUIRE(!resumed.has_value());
     CHECK(resumed.error().kind == codeharness::ErrorKind::NotFound);
+}
+
+TEST_CASE("runtime permission approve once does not remember")
+{
+    TempDir temp{"codeharness-runtime-permission-once-test"};
+    auto provider = std::make_unique<RepeatingWriteProvider>();
+    provider->paths = {"output.txt", "output.txt"};
+    auto bundle = make_repeating_write_bundle(temp, std::move(provider));
+    REQUIRE(bundle.has_value());
+
+    int prompts = 0;
+    const auto prompt_once = [&](const codeharness::PermissionPrompt&) -> codeharness::Result<codeharness::PermissionResponse> {
+        ++prompts;
+        return codeharness::PermissionResponse{.allowed = true};
+    };
+
+    REQUIRE((*bundle)->run_prompt("first", codeharness::runtime::RunPromptOptions{.permission_prompt = prompt_once}, {}).has_value());
+    REQUIRE((*bundle)->run_prompt("second", codeharness::runtime::RunPromptOptions{.permission_prompt = prompt_once}, {}).has_value());
+
+    CHECK(prompts == 2);
+}
+
+TEST_CASE("runtime permission approve for session remembers same target only")
+{
+    TempDir temp{"codeharness-runtime-permission-remember-test"};
+    auto provider = std::make_unique<RepeatingWriteProvider>();
+    provider->paths = {"output.txt", "output.txt", "other.txt"};
+    auto bundle = make_repeating_write_bundle(temp, std::move(provider));
+    REQUIRE(bundle.has_value());
+
+    int prompts = 0;
+    const auto remember = [&](const codeharness::PermissionPrompt&) -> codeharness::Result<codeharness::PermissionResponse> {
+        ++prompts;
+        return codeharness::PermissionResponse{.allowed = true, .remember_session = true};
+    };
+
+    REQUIRE((*bundle)->run_prompt("first", codeharness::runtime::RunPromptOptions{.permission_prompt = remember}, {}).has_value());
+    REQUIRE((*bundle)->run_prompt("second", codeharness::runtime::RunPromptOptions{.permission_prompt = remember}, {}).has_value());
+    REQUIRE((*bundle)->run_prompt("third", codeharness::runtime::RunPromptOptions{.permission_prompt = remember}, {}).has_value());
+
+    CHECK(prompts == 2);
 }

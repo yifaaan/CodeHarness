@@ -291,6 +291,27 @@ auto RuntimeBundle::set_permission_mode(PermissionMode mode) -> void
     engine_.set_permission_checker(&permissions_);
 }
 
+auto RuntimeBundle::remember_permission_for_session(const PermissionPrompt& prompt) -> void
+{
+    auto settings = permissions_.settings();
+    PermissionSessionGrant grant{
+        .tool_name = prompt.tool_name,
+        .path = prompt.path ? std::make_optional(prompt.path->generic_string()) : std::nullopt,
+        .command = prompt.command,
+    };
+
+    const auto exists = std::ranges::any_of(settings.session_grants, [&](const auto& existing) {
+        return existing.tool_name == grant.tool_name && existing.path == grant.path && existing.command == grant.command;
+    });
+    if (!exists)
+    {
+        settings.session_grants.push_back(std::move(grant));
+    }
+
+    permissions_ = PermissionChecker(std::move(settings));
+    engine_.set_permission_checker(&permissions_);
+}
+
 auto RuntimeBundle::skills() const noexcept -> const SkillRegistry&
 {
     return loaded_skills_.registry;
@@ -452,7 +473,18 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     {
         return nonstd::make_unexpected(request.error());
     }
-    request->permission_prompt = options.permission_prompt;
+    if (options.permission_prompt)
+    {
+        request->permission_prompt = [this, permission_prompt = options.permission_prompt](
+                                         const PermissionPrompt& prompt) -> Result<PermissionResponse> {
+            auto response = permission_prompt(prompt);
+            if (response && response->allowed && response->remember_session)
+            {
+                remember_permission_for_session(prompt);
+            }
+            return response;
+        };
+    }
     request->cancellation = options.cancellation;
 
     ScopedCurrentPath current_path{cwd_};

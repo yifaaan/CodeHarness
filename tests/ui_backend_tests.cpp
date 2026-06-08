@@ -75,6 +75,70 @@ public:
     }
 };
 
+class BackendRepeatingWriteProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        if (!messages.empty() && messages.back().role == codeharness::Role::Tool)
+        {
+            sink(codeharness::AssistantTextDelta{"done"});
+            sink(codeharness::MessageFinished{});
+            return {};
+        }
+
+        const auto path = paths.at(std::min(prompt_index, paths.size() - 1));
+        ++prompt_index;
+        const auto id = "tool-use-" + std::to_string(prompt_index);
+        sink(codeharness::ToolUseStarted{.id = id, .name = "write_file"});
+        sink(codeharness::ToolUseInputDelta{
+            .id = id,
+            .input_json_delta = R"({"path":")" + path + R"(","content":"hello"})",
+        });
+        sink(codeharness::ToolUseFinished{.id = id});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+
+    std::vector<std::string> paths{"output.txt"};
+    std::size_t prompt_index = 0;
+};
+
+auto make_repeating_write_bundle(TempDir& temp, std::unique_ptr<BackendRepeatingWriteProvider> provider)
+    -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "remember-write-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "remember-memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "remember-tasks",
+        temp.path / "remember-teams",
+        temp.path / "remember-mailbox");
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::WriteFileTool>());
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "remember-sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
 auto make_usage_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
 {
     const auto repo = temp.path / "usage-repo";
@@ -160,6 +224,13 @@ TEST_CASE("ui backend parses frontend requests")
     CHECK(*permission->request_id == "perm-1");
     REQUIRE(permission->allowed.has_value());
     CHECK(*permission->allowed);
+    CHECK(!permission->remember_session.has_value());
+
+    auto remembered = codeharness::ui_backend::parse_frontend_request(
+        R"({"type":"permission_response","request_id":"perm-1","allowed":true,"remember_session":true})");
+    REQUIRE(remembered.has_value());
+    REQUIRE(remembered->remember_session.has_value());
+    CHECK(*remembered->remember_session);
 }
 
 TEST_CASE("ui backend rejects malformed frontend requests")
@@ -456,6 +527,47 @@ TEST_CASE("ui backend permission response approves pending tool")
     CHECK(saw_modal);
     CHECK(saw_success);
     CHECK(std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
+}
+
+TEST_CASE("ui backend permission response can remember same target for session")
+{
+    TempDir temp{"codeharness-ui-backend-permission-remember-test"};
+    auto provider = std::make_unique<BackendRepeatingWriteProvider>();
+    provider->paths = {"output.txt", "output.txt", "other.txt"};
+    auto bundle = make_repeating_write_bundle(temp, std::move(provider));
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"first"})"
+        "\n"
+        R"({"type":"permission_response","request_id":"perm-tool-use-1","allowed":true,"remember_session":true})"
+        "\n"
+        R"({"type":"submit_line","line":"second"})"
+        "\n"
+        R"({"type":"submit_line","line":"third"})"
+        "\n"
+        R"({"type":"permission_response","request_id":"perm-tool-use-3","allowed":true})"
+        "\n");
+
+    int modal_count = 0;
+    bool saw_first_modal = false;
+    bool saw_third_modal = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") != "modal_request")
+        {
+            continue;
+        }
+        ++modal_count;
+        const auto request_id = event.at("modal").at("request_id").get<std::string>();
+        saw_first_modal = saw_first_modal || request_id == "perm-tool-use-1";
+        saw_third_modal = saw_third_modal || request_id == "perm-tool-use-3";
+    }
+
+    CHECK(modal_count == 2);
+    CHECK(saw_first_modal);
+    CHECK(saw_third_modal);
 }
 
 TEST_CASE("ui backend permission response denies pending tool")

@@ -169,3 +169,63 @@ TEST_CASE("permission checker sensitive path deny wins over path allow")
     CHECK(decision.action == codeharness::PermissionAction::Deny);
     CHECK(decision.reason.find("sensitive path") != std::string::npos);
 }
+
+TEST_CASE("permission checker session grant allows same tool and path only")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+    settings.session_grants.push_back(codeharness::PermissionSessionGrant{
+        .tool_name = "write_file",
+        .path = "output.txt",
+    });
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto same = checker.evaluate("write_file", false, std::filesystem::path{"output.txt"}, std::nullopt);
+    auto other_path = checker.evaluate("write_file", false, std::filesystem::path{"other.txt"}, std::nullopt);
+    auto other_tool = checker.evaluate("edit_file", false, std::filesystem::path{"output.txt"}, std::nullopt);
+
+    CHECK(same.action == codeharness::PermissionAction::Allow);
+    CHECK(other_path.action == codeharness::PermissionAction::Ask);
+    CHECK(other_tool.action == codeharness::PermissionAction::Ask);
+}
+
+TEST_CASE("permission checker session grant allows same command only")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::Default;
+    settings.session_grants.push_back(codeharness::PermissionSessionGrant{
+        .tool_name = "bash",
+        .command = "git status",
+    });
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto same = checker.evaluate("bash", false, std::nullopt, std::string{"git status"});
+    auto other = checker.evaluate("bash", false, std::nullopt, std::string{"git diff"});
+
+    CHECK(same.action == codeharness::PermissionAction::Allow);
+    CHECK(other.action == codeharness::PermissionAction::Ask);
+}
+
+TEST_CASE("permission checker hard denies win over session grants")
+{
+    codeharness::PermissionSettings settings;
+    settings.mode = codeharness::PermissionMode::FullAuto;
+    settings.session_grants.push_back(codeharness::PermissionSessionGrant{
+        .tool_name = "read_file",
+        .path = ".ssh/id_rsa",
+    });
+    settings.session_grants.push_back(codeharness::PermissionSessionGrant{
+        .tool_name = "bash",
+        .command = "rm -rf /",
+    });
+
+    codeharness::PermissionChecker checker{settings};
+
+    auto path = checker.evaluate("read_file", true, std::filesystem::path{".ssh/id_rsa"}, std::nullopt);
+    auto command = checker.evaluate("bash", false, std::nullopt, std::string{"rm -rf /"});
+
+    CHECK(path.action == codeharness::PermissionAction::Deny);
+    CHECK(command.action == codeharness::PermissionAction::Deny);
+}

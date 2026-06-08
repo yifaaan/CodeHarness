@@ -164,6 +164,11 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
     {
         return nonstd::make_unexpected(allowed.error());
     }
+    auto remember_session = read_optional_json_field<bool>(input, "remember_session", "frontend request");
+    if (!remember_session)
+    {
+        return nonstd::make_unexpected(remember_session.error());
+    }
     auto command = read_optional_json_field<std::string>(input, "command", "frontend request");
     if (!command)
     {
@@ -185,6 +190,7 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
         .line = std::move(*request_line),
         .request_id = std::move(*request_id),
         .allowed = std::move(*allowed),
+        .remember_session = std::move(*remember_session),
         .command = std::move(*command),
         .args = std::move(*args),
         .query = std::move(*query),
@@ -562,6 +568,7 @@ auto BackendHost::handle_permission_response(const FrontendRequest& request) -> 
     pending_permission_response_ = PermissionResponse{
         .allowed = *request.allowed,
         .reason = *request.allowed ? std::string{} : std::string{"user denied permission"},
+        .remember_session = request.remember_session.value_or(false),
     };
     permission_cv_.notify_all();
 }

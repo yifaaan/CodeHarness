@@ -121,6 +121,8 @@ public:
         -> Result<RunResult>;
 
 private:
+    auto remember_permission_for_session(const PermissionPrompt& prompt) -> void;
+
     std::filesystem::path cwd_;
     std::string model_;
     PermissionMode permission_mode_ = PermissionMode::Default;

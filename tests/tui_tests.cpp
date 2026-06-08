@@ -23,6 +23,8 @@ TEST_CASE("tui model renders pending permission modal")
     CHECK(rendered.find("Allow write_file?") != std::string::npos);
     CHECK(rendered.find("write_file") != std::string::npos);
     CHECK(rendered.find("output.txt") != std::string::npos);
+    CHECK(rendered.find("Allow once") != std::string::npos);
+    CHECK(rendered.find("Allow session") != std::string::npos);
     CHECK(model.handle_permission_approve() == codeharness::tui::TuiAction::ApprovePermission);
     CHECK(!model.state().pending_permission.has_value());
 
@@ -30,6 +32,16 @@ TEST_CASE("tui model renders pending permission modal")
         codeharness::PermissionPrompt{
             .id = "perm-2",
             .tool_use_id = "tool-use-2",
+            .tool_name = "write_file",
+            .reason = "default mode requires confirmation for mutating tools",
+        });
+    CHECK(model.handle_permission_approve_for_session() == codeharness::tui::TuiAction::ApprovePermissionForSession);
+    CHECK(!model.state().pending_permission.has_value());
+
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-3",
+            .tool_use_id = "tool-use-3",
             .tool_name = "write_file",
             .reason = "default mode requires confirmation for mutating tools",
         });

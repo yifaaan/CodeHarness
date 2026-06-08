@@ -244,7 +244,7 @@ auto render_permission_lines(const PermissionPrompt& prompt, int width) -> std::
     {
         lines.push_back("│ path: " + trim_to_width(prompt.path->string(), width > 8 ? width - 8 : width));
     }
-    lines.push_back("└ [y] Allow  [n] Deny");
+    lines.push_back("└ [y] Allow once  [a] Allow session  [n] Deny");
     return lines;
 }
 
@@ -447,7 +447,9 @@ auto permission_modal_element(const PermissionPrompt& prompt, int width) -> Elem
     }
     rows.push_back(hbox({
         text("└ ") | color(TuiTheme::warning()),
-        text("[y] Allow") | color(TuiTheme::success()),
+        text("[y] Allow once") | color(TuiTheme::success()),
+        text("  "),
+        text("[a] Allow session") | color(TuiTheme::success()),
         text("  "),
         text("[n] Deny") | color(TuiTheme::error()),
     }));

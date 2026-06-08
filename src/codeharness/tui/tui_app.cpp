@@ -105,8 +105,12 @@ auto update_tool_text(TranscriptItem& item, ToolStatus status, std::string_view 
 
 auto is_permission_approve_key(const ftxui::Event& event) -> bool
 {
-    return event == ftxui::Event::Character("a") || event == ftxui::Event::Character("A")
-        || event == ftxui::Event::Character("y") || event == ftxui::Event::Character("Y");
+    return event == ftxui::Event::Character("y") || event == ftxui::Event::Character("Y");
+}
+
+auto is_permission_approve_session_key(const ftxui::Event& event) -> bool
+{
+    return event == ftxui::Event::Character("a") || event == ftxui::Event::Character("A");
 }
 
 auto is_permission_deny_key(const ftxui::Event& event) -> bool
@@ -395,6 +399,16 @@ auto TuiAppModel::handle_permission_approve() -> TuiAction
     }
     state_.pending_permission.reset();
     return TuiAction::ApprovePermission;
+}
+
+auto TuiAppModel::handle_permission_approve_for_session() -> TuiAction
+{
+    if (!state_.pending_permission)
+    {
+        return TuiAction::None;
+    }
+    state_.pending_permission.reset();
+    return TuiAction::ApprovePermissionForSession;
 }
 
 auto TuiAppModel::handle_permission_deny() -> TuiAction
@@ -931,6 +945,14 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                         if (model.handle_permission_approve() == TuiAction::ApprovePermission)
                         {
                             permission_response = PermissionResponse{.allowed = true};
+                            notify_permission = true;
+                        }
+                    }
+                    else if (is_permission_approve_session_key(event))
+                    {
+                        if (model.handle_permission_approve_for_session() == TuiAction::ApprovePermissionForSession)
+                        {
+                            permission_response = PermissionResponse{.allowed = true, .remember_session = true};
                             notify_permission = true;
                         }
                     }

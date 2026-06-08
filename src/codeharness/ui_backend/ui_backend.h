@@ -60,6 +60,7 @@ struct FrontendRequest
     std::optional<std::string> line;
     std::optional<std::string> request_id;
     std::optional<bool> allowed;
+    std::optional<bool> remember_session;
     std::optional<std::string> command;
     std::optional<std::string> args;
     std::optional<std::string> query;
