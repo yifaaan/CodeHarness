@@ -458,16 +458,20 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
         set_permission_mode(PermissionMode::Default);
         return RunResult{.output_text = "Default mode. Mutating tools allowed with confirmation."};
     }
+    if (trimmed == "/fullauto" || trimmed == "/full_auto" || trimmed == "/permissions full_auto")
+    {
+        set_permission_mode(PermissionMode::FullAuto);
+        return RunResult{.output_text = "Full-auto mode. Mutating tools are allowed unless blocked by safety rules."};
+    }
+    if (trimmed == "/default" || trimmed == "/permissions default")
+    {
+        set_permission_mode(PermissionMode::Default);
+        return RunResult{.output_text = "Default mode. Mutating tools allowed with confirmation."};
+    }
     if (trimmed == "/mode" || trimmed == "/permissions")
     {
-        auto mode_str = [this]() -> std::string_view {
-            switch (permission_mode_) {
-                case PermissionMode::Plan: return "plan";
-                case PermissionMode::FullAuto: return "full_auto";
-                default: return "default";
-            }
-        }();
-        return RunResult{.output_text = std::string{"Current permission mode: "} + std::string{mode_str}};
+        return RunResult{.output_text = std::string{"Current permission mode: "} +
+                                      std::string{permission_mode_label(permission_mode_)}};
     }
 
     auto request = build_run_request(prompt, options.max_turns);

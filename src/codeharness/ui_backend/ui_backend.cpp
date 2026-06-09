@@ -3,6 +3,7 @@
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/core/overloaded.h"
+#include "codeharness/core/strings.h"
 
 #include <nlohmann/json.hpp>
 #include <nonstd/expected.hpp>
@@ -120,6 +121,16 @@ auto format_command_line(std::string_view command, std::string_view args) -> std
         line += args;
     }
     return line;
+}
+
+auto is_runtime_permission_command(std::string_view prompt) -> bool
+{
+    const auto trimmed = trim(prompt);
+    return trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter" ||
+           trimmed == "/act" || trimmed == "/plan off" || trimmed == "/plan exit" ||
+           trimmed == "/fullauto" || trimmed == "/full_auto" || trimmed == "/permissions full_auto" ||
+           trimmed == "/default" || trimmed == "/permissions default" ||
+           trimmed == "/mode" || trimmed == "/permissions";
 }
 
 } // namespace
@@ -481,6 +492,23 @@ auto BackendHost::run_submit_line(std::string line) -> void
 
     if (!prompt.empty() && prompt.front() == '/')
     {
+        if (is_runtime_permission_command(prompt))
+        {
+            auto result = runtime_.run_prompt(prompt, runtime::RunPromptOptions{.max_turns = max_turns_}, [this](const EngineEvent& event) {
+                emit_engine_event(event);
+            });
+            if (!result)
+            {
+                emit(BackendError{.message = result.error().message});
+            }
+            else if (!result->output_text.empty())
+            {
+                emit(BackendAssistantDelta{.text = result->output_text});
+            }
+            emit(BackendLineComplete{});
+            return;
+        }
+
         auto command_result = execute_slash_command(runtime_.commands(), prompt);
         if (!command_result)
         {

@@ -147,13 +147,23 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime, TuiAppModel& model, 
         model.append_system_message("Default mode. Mutating tools allowed with confirmation.");
         return std::nullopt;
     }
+    if (trimmed == "/fullauto" || trimmed == "/full_auto" || trimmed == "/permissions full_auto")
+    {
+        runtime.set_permission_mode(PermissionMode::FullAuto);
+        model.set_permission_mode(PermissionMode::FullAuto);
+        model.append_system_message("Full-auto mode. Mutating tools are allowed unless blocked by safety rules.");
+        return std::nullopt;
+    }
+    if (trimmed == "/default" || trimmed == "/permissions default")
+    {
+        runtime.set_permission_mode(PermissionMode::Default);
+        model.set_permission_mode(PermissionMode::Default);
+        model.append_system_message("Default mode. Mutating tools allowed with confirmation.");
+        return std::nullopt;
+    }
     if (trimmed == "/mode" || trimmed == "/permissions")
     {
-        const auto mode = runtime.permission_mode();
-        const auto label = mode == PermissionMode::Plan ? "plan"
-                         : mode == PermissionMode::FullAuto ? "full_auto"
-                         : "default";
-        model.append_system_message("Current permission mode: " + std::string{label});
+        model.append_system_message("Current permission mode: " + std::string{permission_mode_label(runtime.permission_mode())});
         return std::nullopt;
     }
 

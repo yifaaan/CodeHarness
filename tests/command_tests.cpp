@@ -45,6 +45,18 @@ TEST_CASE("plan mode commands are discoverable as message-only commands")
     CHECK(act.command->description.find("default execution mode") != std::string::npos);
     CHECK(act.command->invocation == codeharness::CommandInvocationKind::MessageOnly);
 
+    const auto full_auto = commands.lookup("/full_auto");
+    REQUIRE(full_auto.command != nullptr);
+    CHECK(full_auto.command->name == "fullauto");
+    CHECK(full_auto.command->description.find("full-auto mode") != std::string::npos);
+    CHECK(full_auto.command->invocation == codeharness::CommandInvocationKind::MessageOnly);
+
+    const auto default_mode = commands.lookup("/default");
+    REQUIRE(default_mode.command != nullptr);
+    CHECK(default_mode.command->name == "default");
+    CHECK(default_mode.command->description.find("default permission mode") != std::string::npos);
+    CHECK(default_mode.command->invocation == codeharness::CommandInvocationKind::MessageOnly);
+
     const auto mode = commands.lookup("/mode");
     REQUIRE(mode.command != nullptr);
     CHECK(mode.command->name == "mode");
@@ -54,6 +66,8 @@ TEST_CASE("plan mode commands are discoverable as message-only commands")
     const auto listed = commands.list();
     CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "plan"; }));
     CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "act"; }));
+    CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "fullauto"; }));
+    CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "default"; }));
     CHECK(std::ranges::any_of(listed, [](const auto& command) { return command.name == "mode"; }));
 }
 

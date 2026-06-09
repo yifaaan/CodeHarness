@@ -283,6 +283,20 @@ TEST_CASE("runtime plan mode commands toggle and report permission mode")
     REQUIRE(exited.has_value());
     CHECK(exited->output_text.find("Default mode") != std::string::npos);
     CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::Default);
+
+    auto full_auto = (*bundle)->run_prompt("/fullauto", 3, {});
+    REQUIRE(full_auto.has_value());
+    CHECK(full_auto->output_text.find("Full-auto mode") != std::string::npos);
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::FullAuto);
+
+    auto full_auto_mode = (*bundle)->run_prompt("/mode", 3, {});
+    REQUIRE(full_auto_mode.has_value());
+    CHECK(full_auto_mode->output_text == "Current permission mode: full_auto");
+
+    auto default_mode = (*bundle)->run_prompt("/default", 3, {});
+    REQUIRE(default_mode.has_value());
+    CHECK(default_mode->output_text.find("Default mode") != std::string::npos);
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::Default);
 }
 
 TEST_CASE("runtime set_permission_mode updates future run request permission guidance")

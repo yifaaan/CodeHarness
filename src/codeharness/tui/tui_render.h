@@ -16,7 +16,6 @@ constexpr int k_tool_error_max_lines = 8;
 constexpr std::string_view k_separator = " \xe2\x94\x82 "; // │
 
 [[nodiscard]] auto horizontal_rule(int width) -> std::string;
-[[nodiscard]] auto permission_mode_label(PermissionMode mode) -> std::string;
 [[nodiscard]] auto tool_line_count(std::string_view detail) -> int;
 [[nodiscard]] auto tool_summary_text(const TranscriptItem& item) -> std::string;
 [[nodiscard]] auto format_token_count(int count) -> std::string;

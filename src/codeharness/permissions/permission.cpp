@@ -243,6 +243,21 @@ PermissionChecker::PermissionChecker(PermissionSettings settings) : settings_(st
 {
 }
 
+auto permission_mode_label(PermissionMode mode) noexcept -> std::string_view
+{
+    switch (mode)
+    {
+    case PermissionMode::Default:
+        return "default";
+    case PermissionMode::Plan:
+        return "plan";
+    case PermissionMode::FullAuto:
+        return "full_auto";
+    }
+
+    return "default";
+}
+
 auto PermissionChecker::evaluate(
     std::string_view tool_name,
     bool is_read_only,

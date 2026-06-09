@@ -881,6 +881,27 @@ TEST_CASE("ui backend message-only slash command emits output and completes")
     CHECK(events.at(2).at("type") == "line_complete");
 }
 
+TEST_CASE("ui backend fullauto command changes permission mode")
+{
+    TempDir temp{"codeharness-ui-backend-fullauto-test"};
+    auto bundle = make_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"/fullauto"})"
+        "\n"
+        R"({"type":"submit_line","line":"/mode"})"
+        "\n");
+
+    REQUIRE(events.size() == 5);
+    CHECK(events.at(1).at("type") == "assistant_delta");
+    CHECK(events.at(1).at("text").get<std::string>().find("Full-auto mode") != std::string::npos);
+    CHECK(events.at(3).at("type") == "assistant_delta");
+    CHECK(events.at(3).at("text") == "Current permission mode: full_auto");
+    CHECK((*bundle)->permission_mode() == codeharness::PermissionMode::FullAuto);
+}
+
 TEST_CASE("ui backend select_command emits available commands")
 {
     TempDir temp{"codeharness-ui-backend-select-command-test"};

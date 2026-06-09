@@ -660,6 +660,25 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         });
     registry.register_command(
         SlashCommand{
+            .name = "fullauto",
+            .description = "Enter full-auto mode while keeping safety hard-denies.",
+            .handler = [](std::string_view) -> Result<CommandResult> {
+                return CommandResult{.message = "Full-auto mode. Mutating tools are allowed unless blocked by safety rules."};
+            },
+            .aliases = {"full_auto"},
+            .invocation = CommandInvocationKind::MessageOnly,
+        });
+    registry.register_command(
+        SlashCommand{
+            .name = "default",
+            .description = "Return to default permission mode.",
+            .handler = [](std::string_view) -> Result<CommandResult> {
+                return CommandResult{.message = "Default mode. Mutating tools allowed with confirmation."};
+            },
+            .invocation = CommandInvocationKind::MessageOnly,
+        });
+    registry.register_command(
+        SlashCommand{
             .name = "mode",
             .description = "Show the current permission mode.",
             .handler = [](std::string_view) -> Result<CommandResult> {

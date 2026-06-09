@@ -202,13 +202,22 @@ auto run_cli(int argc, char** argv) -> Result<int>
             std::cout << "Default mode. Mutating tools allowed with confirmation.\n";
             return 0;
         }
+        if (trimmed == "/fullauto" || trimmed == "/full_auto" || trimmed == "/permissions full_auto")
+        {
+            (*runtime_bundle)->set_permission_mode(codeharness::PermissionMode::FullAuto);
+            std::cout << "Full-auto mode. Mutating tools are allowed unless blocked by safety rules.\n";
+            return 0;
+        }
+        if (trimmed == "/default" || trimmed == "/permissions default")
+        {
+            (*runtime_bundle)->set_permission_mode(codeharness::PermissionMode::Default);
+            std::cout << "Default mode. Mutating tools allowed with confirmation.\n";
+            return 0;
+        }
         if (trimmed == "/mode" || trimmed == "/permissions")
         {
-            auto mode = (*runtime_bundle)->permission_mode();
-            auto label = mode == codeharness::PermissionMode::Plan ? "plan"
-                       : mode == codeharness::PermissionMode::FullAuto ? "full_auto"
-                       : "default";
-            std::cout << "Current permission mode: " << label << '\n';
+            std::cout << "Current permission mode: "
+                      << codeharness::permission_mode_label((*runtime_bundle)->permission_mode()) << '\n';
             return 0;
         }
 

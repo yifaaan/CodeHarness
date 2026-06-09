@@ -19,6 +19,8 @@ enum class PermissionMode
     FullAuto
 };
 
+[[nodiscard]] auto permission_mode_label(PermissionMode mode) noexcept -> std::string_view;
+
 
 //   - allowed_tools / denied_tools 使用精确工具名匹配
 //   - path_rules 使用 glob 模式匹配，command_rules 使用正则匹配

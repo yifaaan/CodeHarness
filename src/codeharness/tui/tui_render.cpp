@@ -69,19 +69,6 @@ auto horizontal_rule(int width) -> std::string
     return std::string(static_cast<std::size_t>(rule_width), '\xe2\x94\x80'); // ─
 }
 
-auto permission_mode_label(PermissionMode mode) -> std::string
-{
-    switch (mode)
-    {
-    case PermissionMode::Plan:
-        return "plan";
-    case PermissionMode::FullAuto:
-        return "full_auto";
-    default:
-        return "default";
-    }
-}
-
 auto format_token_count(int count) -> std::string
 {
     if (count >= 1000)
@@ -275,7 +262,7 @@ auto render_status_footer_line(const TuiDisplayConfig& config, const TuiState& s
     }
     if (state.permission_mode != PermissionMode::Plan)
     {
-        output << " \xe2\x94\x82 mode: " << permission_mode_label(state.permission_mode);
+        output << " \xe2\x94\x82 mode: " << codeharness::permission_mode_label(state.permission_mode);
     }
     return output.str();
 }
@@ -511,7 +498,7 @@ auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state
     if (state.permission_mode != PermissionMode::Plan)
     {
         parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("mode: " + permission_mode_label(state.permission_mode)) | dim);
+        parts.push_back(text("mode: " + std::string{codeharness::permission_mode_label(state.permission_mode)}) | dim);
     }
 
     if (state.permission_mode == PermissionMode::Plan)

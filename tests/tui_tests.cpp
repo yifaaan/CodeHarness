@@ -582,6 +582,18 @@ TEST_CASE("tui footer shows active resumed session")
     CHECK(footer.find("session: abc123") != std::string::npos);
 }
 
+TEST_CASE("tui footer shows full auto permission mode")
+{
+    codeharness::tui::TuiState state;
+    state.permission_mode = codeharness::PermissionMode::FullAuto;
+
+    const auto footer = codeharness::tui::render::render_status_footer_line(
+        codeharness::tui::TuiDisplayConfig{.model = "echo", .provider_type = "echo"},
+        state);
+
+    CHECK(footer.find("mode: full_auto") != std::string::npos);
+}
+
 TEST_CASE("tui footer hides token and mcp when zero")
 {
     codeharness::tui::TuiDisplayConfig config{
