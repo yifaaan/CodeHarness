@@ -489,6 +489,17 @@ TEST_CASE("tui question modal accepts input and submits")
     CHECK(!model.state().question_modal.has_value());
 }
 
+TEST_CASE("tui interrupt clears question modal")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("ask");
+    model.show_question("ask-1", "Which file?", "ask_user", "Need target");
+
+    CHECK(model.handle_interrupt() == codeharness::tui::TuiAction::Interrupt);
+    CHECK(!model.state().question_modal.has_value());
+    CHECK(model.state().interrupt_requested);
+}
+
 TEST_CASE("tui paste burst detection")
 {
     codeharness::tui::TuiAppModel model;

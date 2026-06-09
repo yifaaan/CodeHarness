@@ -64,6 +64,7 @@ struct FrontendRequest
     std::optional<std::string> command;
     std::optional<std::string> args;
     std::optional<std::string> query;
+    std::optional<std::string> answer;
 };
 
 struct BackendReady
@@ -120,6 +121,14 @@ struct BackendLineComplete
 {
 };
 
+struct BackendUserQuestionModal
+{
+    std::string id;
+    std::string tool_use_id;
+    std::string question;
+    std::string reason;
+};
+
 struct BackendUsage
 {
     int input_tokens = 0;
@@ -142,6 +151,7 @@ using BackendEvent = std::variant<BackendReady,
                                   BackendToolCompleted,
                                   BackendToolResult,
                                   BackendPermissionModal,
+                                  BackendUserQuestionModal,
                                   BackendSelectRequest,
                                   BackendLineComplete,
                                   BackendUsage,
@@ -166,9 +176,11 @@ private:
     auto handle_select_command(const FrontendRequest& request) -> void;
     auto handle_apply_select_command(const FrontendRequest& request) -> void;
     auto handle_permission_response(const FrontendRequest& request) -> void;
+    auto handle_user_question_response(const FrontendRequest& request) -> void;
     auto handle_interrupt() -> void;
     auto emit_engine_event(const EngineEvent& event) -> void;
     auto request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>;
+    auto request_user_question(const UserQuestionPrompt& prompt) -> Result<UserQuestionResponse>;
     auto next_frontend_request() -> Result<std::optional<FrontendRequest>>;
     auto has_active_run() const -> bool;
     auto reap_finished_run() -> void;
@@ -182,8 +194,11 @@ private:
     mutable std::mutex state_mutex_;
     std::mutex output_mutex_;
     std::condition_variable permission_cv_;
+    std::condition_variable user_question_cv_;
     std::optional<PermissionPrompt> pending_permission_;
     std::optional<PermissionResponse> pending_permission_response_;
+    std::optional<UserQuestionPrompt> pending_user_question_;
+    std::optional<UserQuestionResponse> pending_user_question_response_;
     std::unique_ptr<CancellationSource> active_cancellation_;
     std::thread active_worker_;
     bool active_run_ = false;

@@ -36,6 +36,7 @@
 #include "codeharness/prompts/system_prompt.h"
 #include "codeharness/skills/skill_loader.h"
 #include "codeharness/tasks/task_tools.h"
+#include "codeharness/tools/ask_user_tool.h"
 #include "codeharness/tools/bash_tool.h"
 #include "codeharness/tools/edit_file_tool.h"
 #include "codeharness/tools/glob_tool.h"
@@ -107,6 +108,7 @@ auto create_command_registry(SkillRegistry& skills,
 auto create_tool_registry(const SkillRegistry& skills, coordinator::CoordinatorRuntime& coordinator_runtime) -> ToolRegistry
 {
     ToolRegistry tools;
+    tools.add(std::make_unique<AskUserTool>());
     tools.add(std::make_unique<ReadFileTool>());
     tools.add(std::make_unique<EditFileTool>());
     tools.add(std::make_unique<GlobTool>());
@@ -485,6 +487,7 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
             return response;
         };
     }
+    request->user_question = options.user_question;
     request->cancellation = options.cancellation;
 
     ScopedCurrentPath current_path{cwd_};

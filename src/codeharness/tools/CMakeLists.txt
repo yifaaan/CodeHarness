@@ -1,4 +1,5 @@
 codeharness_add_static_module(codeharness_tools
+    ask_user_tool.cpp
     bash_tool.cpp
     edit_file_tool.cpp
     glob_tool.cpp

@@ -96,6 +96,38 @@ public:
     int calls = 0;
 };
 
+class AskUserProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        if (!messages.empty() && messages.back().role == codeharness::Role::Tool)
+        {
+            for (const auto& block : messages.back().content)
+            {
+                if (const auto* result = std::get_if<codeharness::ToolResultBlock>(&block))
+                {
+                    sink(codeharness::AssistantTextDelta{result->content});
+                    sink(codeharness::MessageFinished{});
+                    return {};
+                }
+            }
+            sink(codeharness::MessageFinished{});
+            return {};
+        }
+
+        sink(codeharness::ToolUseStarted{.id = "tool-use-ask", .name = "ask_user"});
+        sink(codeharness::ToolUseInputDelta{
+            .id = "tool-use-ask",
+            .input_json_delta = R"({"question":"Which file?","reason":"Need a target"})",
+        });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-ask"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
 } // namespace
 
 TEST_CASE("engine runs one provider turn")
@@ -115,6 +147,67 @@ TEST_CASE("engine runs one provider turn")
     REQUIRE(result->messages.size() == 2);
     CHECK(result->messages[0].role == codeharness::Role::User);
     CHECK(result->messages[1].role == codeharness::Role::Assistant);
+}
+
+TEST_CASE("engine ask_user calls user question handler and returns answer")
+{
+    AskUserProvider provider;
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::AskUserTool>());
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "ask";
+    request.options.max_turns = 2;
+    request.user_question = [](const codeharness::UserQuestionPrompt& prompt) -> codeharness::Result<codeharness::UserQuestionResponse> {
+        CHECK(prompt.id == "ask-tool-use-ask");
+        CHECK(prompt.tool_use_id == "tool-use-ask");
+        CHECK(prompt.question == "Which file?");
+        CHECK(prompt.reason == "Need a target");
+        return codeharness::UserQuestionResponse{.answer = "src/main.cpp"};
+    };
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("src/main.cpp") != std::string::npos);
+}
+
+TEST_CASE("engine ask_user without handler returns model visible tool error")
+{
+    AskUserProvider provider;
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::AskUserTool>());
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "ask";
+    request.options.max_turns = 2;
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->output_text.find("user input unavailable in non-interactive mode") != std::string::npos);
+}
+
+TEST_CASE("engine ask_user accepts empty answer")
+{
+    AskUserProvider provider;
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::AskUserTool>());
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "ask";
+    request.options.max_turns = 2;
+    request.user_question = [](const codeharness::UserQuestionPrompt&) -> codeharness::Result<codeharness::UserQuestionResponse> {
+        return codeharness::UserQuestionResponse{.answer = ""};
+    };
+
+    auto result = engine.run(request);
+
+    REQUIRE(result.has_value());
+    CHECK(result->messages.back().role == codeharness::Role::Assistant);
 }
 
 TEST_CASE("engine prepends system prompt when provided")

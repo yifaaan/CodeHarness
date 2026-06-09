@@ -184,6 +184,11 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
     {
         return nonstd::make_unexpected(query.error());
     }
+    auto answer = read_optional_json_field<std::string>(input, "answer", "frontend request");
+    if (!answer)
+    {
+        return nonstd::make_unexpected(answer.error());
+    }
 
     return FrontendRequest{
         .type = std::move(*type),
@@ -194,6 +199,7 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
         .command = std::move(*command),
         .args = std::move(*args),
         .query = std::move(*query),
+        .answer = std::move(*answer),
     };
 }
 
@@ -240,6 +246,20 @@ auto format_backend_event(const BackendEvent& event) -> std::string
                     payload["command"] = *modal.command;
                 }
                 return prefixed_json_line(nlohmann::json{{"type", "modal_request"}, {"modal", std::move(payload)}});
+            },
+            [](const BackendUserQuestionModal& modal) {
+                return prefixed_json_line(
+                    nlohmann::json{
+                        {"type", "modal_request"},
+                        {"modal",
+                         {
+                             {"kind", "ask_user"},
+                             {"request_id", modal.id},
+                             {"tool_use_id", modal.tool_use_id},
+                             {"question", modal.question},
+                             {"reason", modal.reason},
+                         }},
+                    });
             },
             [](const BackendSelectRequest& select) {
                 nlohmann::json commands = nlohmann::json::array();
@@ -344,6 +364,12 @@ auto BackendHost::handle_request(const FrontendRequest& request) -> bool
         return true;
     }
 
+    if (request.type == "user_question_response")
+    {
+        handle_user_question_response(request);
+        return true;
+    }
+
     if (request.type == "interrupt")
     {
         handle_interrupt();
@@ -429,6 +455,8 @@ auto BackendHost::handle_submit_line(std::string line) -> void
         active_run_finished_ = false;
         pending_permission_.reset();
         pending_permission_response_.reset();
+        pending_user_question_.reset();
+        pending_user_question_response_.reset();
     }
 
     active_worker_ = std::thread{[this, line = std::move(line)]() mutable {
@@ -439,8 +467,11 @@ auto BackendHost::handle_submit_line(std::string line) -> void
             active_run_ = false;
             pending_permission_.reset();
             pending_permission_response_.reset();
+            pending_user_question_.reset();
+            pending_user_question_response_.reset();
         }
         permission_cv_.notify_all();
+        user_question_cv_.notify_all();
     }};
 }
 
@@ -486,6 +517,9 @@ auto BackendHost::run_submit_line(std::string line) -> void
             .max_turns = max_turns_,
             .permission_prompt = [this](const PermissionPrompt& prompt) {
                 return request_permission(prompt);
+            },
+            .user_question = [this](const UserQuestionPrompt& prompt) {
+                return request_user_question(prompt);
             },
             .cancellation = cancellation,
         },
@@ -573,6 +607,41 @@ auto BackendHost::handle_permission_response(const FrontendRequest& request) -> 
     permission_cv_.notify_all();
 }
 
+auto BackendHost::handle_user_question_response(const FrontendRequest& request) -> void
+{
+    std::unique_lock lock{state_mutex_};
+    if (active_run_ && !pending_user_question_)
+    {
+        user_question_cv_.wait(lock, [this] {
+            return pending_user_question_.has_value() || !active_run_;
+        });
+    }
+
+    if (!pending_user_question_)
+    {
+        lock.unlock();
+        emit(BackendError{.message = "user_question_response has no pending user question"});
+        return;
+    }
+
+    if (!request.request_id || *request.request_id != pending_user_question_->id)
+    {
+        lock.unlock();
+        emit(BackendError{.message = "user question response request_id mismatch"});
+        return;
+    }
+
+    if (!request.answer)
+    {
+        lock.unlock();
+        emit(BackendError{.message = "user_question_response requires answer"});
+        return;
+    }
+
+    pending_user_question_response_ = UserQuestionResponse{.answer = *request.answer};
+    user_question_cv_.notify_all();
+}
+
 auto BackendHost::handle_interrupt() -> void
 {
     std::lock_guard lock{state_mutex_};
@@ -594,6 +663,12 @@ auto BackendHost::handle_interrupt() -> void
             .reason = "interrupted",
         };
         permission_cv_.notify_all();
+    }
+
+    if (pending_user_question_)
+    {
+        pending_user_question_response_.reset();
+        user_question_cv_.notify_all();
     }
 }
 
@@ -638,6 +713,40 @@ auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<P
     return response;
 }
 
+auto BackendHost::request_user_question(const UserQuestionPrompt& prompt) -> Result<UserQuestionResponse>
+{
+    {
+        std::lock_guard lock{state_mutex_};
+        pending_user_question_ = prompt;
+        pending_user_question_response_.reset();
+    }
+    user_question_cv_.notify_all();
+
+    emit(BackendUserQuestionModal{
+        .id = prompt.id,
+        .tool_use_id = prompt.tool_use_id,
+        .question = prompt.question,
+        .reason = prompt.reason,
+    });
+
+    std::unique_lock lock{state_mutex_};
+    user_question_cv_.wait(lock, [this] {
+        return pending_user_question_response_.has_value() ||
+               (active_cancellation_ != nullptr && active_cancellation_->is_cancelled());
+    });
+
+    if (!pending_user_question_response_)
+    {
+        pending_user_question_.reset();
+        return fail<UserQuestionResponse>(ErrorKind::Cancelled, "interrupted");
+    }
+
+    auto response = *pending_user_question_response_;
+    pending_user_question_response_.reset();
+    pending_user_question_.reset();
+    return response;
+}
+
 auto BackendHost::has_active_run() const -> bool
 {
     std::lock_guard lock{state_mutex_};
@@ -676,6 +785,8 @@ auto BackendHost::wait_for_active_run() -> void
     active_cancellation_.reset();
     pending_permission_.reset();
     pending_permission_response_.reset();
+    pending_user_question_.reset();
+    pending_user_question_response_.reset();
 }
 
 } // namespace codeharness::ui_backend

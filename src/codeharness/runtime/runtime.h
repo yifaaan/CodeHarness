@@ -74,6 +74,7 @@ struct RunPromptOptions
 {
     int max_turns = 10;
     PermissionPromptHandler permission_prompt;
+    UserQuestionHandler user_question;
     CancellationToken cancellation;
 };
 

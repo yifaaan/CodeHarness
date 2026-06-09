@@ -75,6 +75,38 @@ public:
     }
 };
 
+class BackendAskUserProvider final : public codeharness::Provider
+{
+public:
+    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
+        -> codeharness::Result<void> override
+    {
+        if (!messages.empty() && messages.back().role == codeharness::Role::Tool)
+        {
+            for (const auto& block : messages.back().content)
+            {
+                if (const auto* result = std::get_if<codeharness::ToolResultBlock>(&block))
+                {
+                    sink(codeharness::AssistantTextDelta{result->content});
+                    sink(codeharness::MessageFinished{});
+                    return {};
+                }
+            }
+            sink(codeharness::MessageFinished{});
+            return {};
+        }
+
+        sink(codeharness::ToolUseStarted{.id = "tool-use-ask", .name = "ask_user"});
+        sink(codeharness::ToolUseInputDelta{
+            .id = "tool-use-ask",
+            .input_json_delta = R"({"question":"Which file?","reason":"Need target"})",
+        });
+        sink(codeharness::ToolUseFinished{.id = "tool-use-ask"});
+        sink(codeharness::MessageFinished{});
+        return {};
+    }
+};
+
 class BackendRepeatingWriteProvider final : public codeharness::Provider
 {
 public:
@@ -154,6 +186,40 @@ auto make_usage_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<cod
     auto provider = std::make_unique<BackendUsageProvider>();
 
     auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "usage-sessions");
+    if (!session_store)
+    {
+        return nonstd::make_unexpected(session_store.error());
+    }
+
+    return std::make_unique<codeharness::runtime::RuntimeBundle>(
+        repo,
+        codeharness::PermissionSettings{.mode = codeharness::PermissionMode::Default},
+        codeharness::HookRegistry{},
+        std::move(loaded_skills),
+        std::move(memory_store),
+        std::move(coordinator_runtime),
+        std::move(tools),
+        std::move(provider),
+        "test-model",
+        std::move(*session_store));
+}
+
+auto make_ask_user_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "ask-user-repo";
+    std::filesystem::create_directories(repo);
+
+    codeharness::SkillRegistryLoadResult loaded_skills;
+    auto memory_store = codeharness::memory::MemoryStore{temp.path / "ask-user-memory"};
+    auto coordinator_runtime = std::make_unique<codeharness::coordinator::CoordinatorRuntime>(
+        temp.path / "ask-user-tasks",
+        temp.path / "ask-user-teams",
+        temp.path / "ask-user-mailbox");
+    codeharness::ToolRegistry tools;
+    tools.add(std::make_unique<codeharness::AskUserTool>());
+    auto provider = std::make_unique<BackendAskUserProvider>();
+
+    auto session_store = codeharness::sessions::SessionStore::for_project(repo, temp.path / "ask-user-sessions");
     if (!session_store)
     {
         return nonstd::make_unexpected(session_store.error());
@@ -606,6 +672,116 @@ TEST_CASE("ui backend permission response denies pending tool")
     CHECK(saw_modal);
     CHECK(saw_denial);
     CHECK(!std::filesystem::exists(temp.path / "write-repo" / "output.txt"));
+}
+
+TEST_CASE("ui backend ask_user response continues run")
+{
+    TempDir temp{"codeharness-ui-backend-ask-user-test"};
+    auto bundle = make_ask_user_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"need input"})"
+        "\n"
+        R"({"type":"user_question_response","request_id":"ask-tool-use-ask","answer":"src/main.cpp"})"
+        "\n");
+
+    bool saw_modal = false;
+    bool saw_answer = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "modal_request" &&
+            event.at("modal").at("kind") == "ask_user")
+        {
+            saw_modal = true;
+            CHECK(event.at("modal").at("request_id") == "ask-tool-use-ask");
+            CHECK(event.at("modal").at("question") == "Which file?");
+        }
+        if (event.at("type") == "assistant_delta" &&
+            event.at("text").get<std::string>().find("src/main.cpp") != std::string::npos)
+        {
+            saw_answer = true;
+        }
+    }
+
+    CHECK(saw_modal);
+    CHECK(saw_answer);
+    CHECK(events.back().at("type") == "line_complete");
+}
+
+TEST_CASE("ui backend ask_user response id mismatch does not unblock")
+{
+    TempDir temp{"codeharness-ui-backend-ask-user-mismatch-test"};
+    auto bundle = make_ask_user_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"need input"})"
+        "\n"
+        R"({"type":"user_question_response","request_id":"wrong","answer":"nope"})"
+        "\n"
+        R"({"type":"user_question_response","request_id":"ask-tool-use-ask","answer":"ok"})"
+        "\n");
+
+    bool saw_mismatch = false;
+    bool saw_answer = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "error" && event.at("message") == "user question response request_id mismatch")
+        {
+            saw_mismatch = true;
+        }
+        if (event.at("type") == "assistant_delta" &&
+            event.at("text").get<std::string>().find("ok") != std::string::npos)
+        {
+            saw_answer = true;
+        }
+    }
+
+    CHECK(saw_mismatch);
+    CHECK(saw_answer);
+}
+
+TEST_CASE("ui backend interrupt unblocks pending ask_user")
+{
+    TempDir temp{"codeharness-ui-backend-ask-user-interrupt-test"};
+    auto bundle = make_ask_user_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(
+        **bundle,
+        R"({"type":"submit_line","line":"need input"})"
+        "\n"
+        R"({"type":"user_question_response","request_id":"wrong","answer":"nope"})"
+        "\n"
+        R"({"type":"interrupt"})"
+        "\n");
+
+    bool saw_modal = false;
+    bool saw_mismatch = false;
+    bool saw_complete = false;
+    for (const auto& event : events)
+    {
+        if (event.at("type") == "modal_request" &&
+            event.at("modal").at("kind") == "ask_user")
+        {
+            saw_modal = true;
+        }
+        if (event.at("type") == "error" && event.at("message") == "user question response request_id mismatch")
+        {
+            saw_mismatch = true;
+        }
+        if (event.at("type") == "line_complete")
+        {
+            saw_complete = true;
+        }
+    }
+
+    CHECK(saw_modal);
+    CHECK(saw_mismatch);
+    CHECK(saw_complete);
 }
 
 TEST_CASE("ui backend permission response id mismatch does not unblock")

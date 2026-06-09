@@ -30,6 +30,7 @@
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/skill_tool.h"
 #include "codeharness/tools/tool_registry.h"
+#include "codeharness/tools/ask_user_tool.h"
 #include "codeharness/tools/write_file_tool.h"
 #include "codeharness/version.h"
 

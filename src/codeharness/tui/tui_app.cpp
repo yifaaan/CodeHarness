@@ -389,6 +389,7 @@ auto TuiAppModel::handle_interrupt() -> TuiAction
     state_.interrupt_requested = true;
     state_.pending_permission.reset();
     state_.command_palette.reset();
+    state_.question_modal.reset();
     return TuiAction::Interrupt;
 }
 
@@ -771,7 +772,9 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
     std::mutex mutex;
     std::condition_variable permission_cv;
+    std::condition_variable user_question_cv;
     std::optional<PermissionResponse> permission_response;
+    std::optional<UserQuestionResponse> user_question_response;
     std::unique_ptr<CancellationSource> cancellation_source;
     std::thread worker;
     bool worker_finished = false;
@@ -817,10 +820,12 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                     std::lock_guard lock{mutex};
                     model.apply_engine_event(EngineError{.message = std::move(message)});
                     model.clear_permission();
+                    model.close_question();
                     model.complete_prompt();
                     model.set_permission_mode(runtime.permission_mode());
                     model.set_active_session(runtime.active_session_summary());
                     permission_response.reset();
+                    user_question_response.reset();
                     cancellation_source.reset();
                     worker_finished = true;
                 }
@@ -850,6 +855,49 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                                 auto response = permission_response.value_or(PermissionResponse{.allowed = false, .reason = "interrupted"});
                                 permission_response.reset();
                                 model.clear_permission();
+                                lock.unlock();
+
+                                if (screen_alive->load(std::memory_order_acquire))
+                                {
+                                    screen.PostEvent(Event::Custom);
+                                }
+                                return response;
+                            }
+                        },
+                        .user_question = [&, screen_alive](const UserQuestionPrompt& question_prompt) -> Result<UserQuestionResponse> {
+                            {
+                                std::lock_guard lock{mutex};
+                                user_question_response.reset();
+                                model.show_question(
+                                    question_prompt.id,
+                                    question_prompt.question,
+                                    "ask_user",
+                                    question_prompt.reason);
+                            }
+                            if (screen_alive->load(std::memory_order_acquire))
+                            {
+                                screen.PostEvent(Event::Custom);
+                            }
+
+                            {
+                                std::unique_lock lock{mutex};
+                                user_question_cv.wait(lock, [&] {
+                                    return user_question_response.has_value() || model.state().interrupt_requested;
+                                });
+                                if (!user_question_response)
+                                {
+                                    model.close_question();
+                                    lock.unlock();
+                                    if (screen_alive->load(std::memory_order_acquire))
+                                    {
+                                        screen.PostEvent(Event::Custom);
+                                    }
+                                    return fail<UserQuestionResponse>(ErrorKind::Cancelled, "interrupted");
+                                }
+
+                                auto response = *user_question_response;
+                                user_question_response.reset();
+                                model.close_question();
                                 lock.unlock();
 
                                 if (screen_alive->load(std::memory_order_acquire))
@@ -890,9 +938,11 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                         };
                     }
                     model.clear_permission();
+                    model.close_question();
                     model.complete_prompt();
                     model.set_permission_mode(runtime.permission_mode());
                     model.set_active_session(runtime.active_session_summary());
+                    user_question_response.reset();
                     cancellation_source.reset();
                     worker_finished = true;
                 }
@@ -1057,9 +1107,9 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                         model.question_modal_newline();
                         return true;
                     }
-                    std::ignore = model.question_modal_submit();
+                    user_question_response = UserQuestionResponse{.answer = model.question_modal_submit()};
                     model.close_question();
-                    model.append_system_message("User question requests are not connected to a runtime tool yet.");
+                    user_question_cv.notify_one();
                     return true;
                 }
                 if (event == Event::Backspace)
@@ -1097,6 +1147,8 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                 model.handle_interrupt();
                 permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
                 permission_cv.notify_all();
+                user_question_response.reset();
+                user_question_cv.notify_all();
                 return true;
             }
             if (model.handle_quit() == TuiAction::Quit)
@@ -1116,6 +1168,8 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             model.handle_interrupt();
             permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
             permission_cv.notify_all();
+            user_question_response.reset();
+            user_question_cv.notify_all();
             return true;
         }
 
@@ -1333,6 +1387,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         model.handle_interrupt();
     }
     permission_cv.notify_all();
+    user_question_cv.notify_all();
 
     if (worker.joinable())
     {

@@ -80,6 +80,50 @@ auto make_permission_prompt_id(const ToolUseBlock& tool_use) -> std::string
     return "perm-" + tool_use.id;
 }
 
+auto make_user_question_prompt_id(const ToolUseBlock& tool_use) -> std::string
+{
+    return "ask-" + tool_use.id;
+}
+
+auto make_user_question_tool_result(const ToolUseBlock& tool_use,
+                                    const ToolRequest& request,
+                                    const UserQuestionHandler& user_question)
+    -> std::optional<ToolResultBlock>
+{
+    if (tool_use.name != "ask_user")
+    {
+        return std::nullopt;
+    }
+
+    const auto question = request.parsed_input.value("question", std::string{});
+    if (question.empty())
+    {
+        return make_error_tool_result(tool_use.id, "ask_user requires string field: question");
+    }
+
+    if (!user_question)
+    {
+        return make_error_tool_result(tool_use.id, "user input unavailable in non-interactive mode");
+    }
+
+    auto response = user_question(UserQuestionPrompt{
+        .id = make_user_question_prompt_id(tool_use),
+        .tool_use_id = tool_use.id,
+        .question = question,
+        .reason = request.parsed_input.value("reason", std::string{}),
+    });
+    if (!response)
+    {
+        return make_error_tool_result(tool_use.id, "user input failed: " + response.error().message);
+    }
+
+    return ToolResultBlock{
+        .tool_use_id = tool_use.id,
+        .content = response->answer,
+        .is_error = false,
+    };
+}
+
 auto interrupted_result() -> Result<RunResult>
 {
     return fail<RunResult>(ErrorKind::Cancelled, "interrupted");
@@ -109,12 +153,14 @@ Engine::Engine(
     ToolRegistry& tools,
     const PermissionChecker* permissions,
     const HookExecutor* hooks,
-    PermissionPromptHandler permission_prompt) :
+    PermissionPromptHandler permission_prompt,
+    UserQuestionHandler user_question) :
     provider_(provider),
     tools_(tools),
     permissions_(permissions),
     hooks_(hooks),
-    permission_prompt_(std::move(permission_prompt))
+    permission_prompt_(std::move(permission_prompt)),
+    user_question_(std::move(user_question))
 {
 }
 
@@ -172,7 +218,8 @@ auto Engine::run_streaming(const RunRequest& request, const EngineEventSink& sin
             if (is_cancelled(request.cancellation, sink)) return interrupted_result();
 
             const auto& permission_prompt = request.permission_prompt ? request.permission_prompt : permission_prompt_;
-            auto tool_result = execute_tool_use(tool_use, permission_prompt);
+            const auto& user_question = request.user_question ? request.user_question : user_question_;
+            auto tool_result = execute_tool_use(tool_use, permission_prompt, user_question);
 
             if (is_cancelled(request.cancellation, sink)) return interrupted_result();
 
@@ -243,17 +290,13 @@ auto Engine::stream_provider_turn(std::span<const Message> messages,
     return collector.finalize();
 }
 
-auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
+auto Engine::execute_tool_use(const ToolUseBlock& tool_use,
+                              const PermissionPromptHandler& permission_prompt,
+                              const UserQuestionHandler& user_question)
     -> ToolResultBlock
 {
     try
     {
-        auto tool = tools_.find(tool_use.name);
-        if (tool == nullptr)
-        {
-            return make_error_tool_result(tool_use.id, "tool not found: " + tool_use.name);
-        }
-
         ToolRequest request{
             .id = tool_use.id,
             .name = tool_use.name,
@@ -264,6 +307,17 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionProm
         if (auto parsed = parse_tool_request_input(request, tool_use.name); !parsed)
         {
             return make_error_tool_result(tool_use.id, std::string{parsed.error().message});
+        }
+
+        if (auto question_result = make_user_question_tool_result(tool_use, request, user_question))
+        {
+            return std::move(*question_result);
+        }
+
+        auto tool = tools_.find(tool_use.name);
+        if (tool == nullptr)
+        {
+            return make_error_tool_result(tool_use.id, "tool not found: " + tool_use.name);
         }
 
         // 权限检查

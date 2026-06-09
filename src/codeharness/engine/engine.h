@@ -43,12 +43,28 @@ struct PermissionResponse
 
 using PermissionPromptHandler = std::function<Result<PermissionResponse>(const PermissionPrompt&)>;
 
+struct UserQuestionPrompt
+{
+    std::string id;
+    std::string tool_use_id;
+    std::string question;
+    std::string reason;
+};
+
+struct UserQuestionResponse
+{
+    std::string answer;
+};
+
+using UserQuestionHandler = std::function<Result<UserQuestionResponse>(const UserQuestionPrompt&)>;
+
 struct RunRequest
 {
     std::string prompt;
     std::optional<std::string> system_prompt;
     std::optional<std::vector<Message>> initial_messages;
     PermissionPromptHandler permission_prompt;
+    UserQuestionHandler user_question;
     CancellationToken cancellation;
     EngineOptions options;
 };
@@ -103,7 +119,8 @@ public:
         ToolRegistry& tools,
         const PermissionChecker* permissions = nullptr,
         const HookExecutor* hooks = nullptr,
-        PermissionPromptHandler permission_prompt = {});
+        PermissionPromptHandler permission_prompt = {},
+        UserQuestionHandler user_question = {});
 
     auto run(const RunRequest& request) -> Result<RunResult>;
     auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> Result<RunResult>;
@@ -116,7 +133,9 @@ public:
     auto set_sender_id(std::string id) -> void { sender_id_ = std::move(id); }
 
 private:
-    auto execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt)
+    auto execute_tool_use(const ToolUseBlock& tool_use,
+                          const PermissionPromptHandler& permission_prompt,
+                          const UserQuestionHandler& user_question)
         -> ToolResultBlock;
 
     // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
@@ -130,6 +149,7 @@ private:
     const PermissionChecker* permissions_ = nullptr;
     const HookExecutor* hooks_ = nullptr;
     PermissionPromptHandler permission_prompt_;
+    UserQuestionHandler user_question_;
     std::string sender_id_;
 };
 
