@@ -1,119 +1,47 @@
-# Commands C++20 重写方案
+# Commands C++20 实现参考
 
-Slash command 是用户输入 `/xxx` 时触发的命令系统。它和模型工具不同：工具由模型调用，slash command 由用户直接调用。
+Slash Commands 模块的 C++20 实现已完成，代码见 `src/codeharness/commands/command_registry.h/.cpp`。
 
-上游关键文件：
+## 已实现的能力
 
-- `docs/OpenHarness/src/openharness/commands/registry.py`
-- `docs/OpenHarness/src/openharness/ui/runtime.py`
-- `docs/OpenHarness/src/openharness/skills/registry.py`
-- `docs/OpenHarness/src/openharness/plugins/loader.py`
+| 能力 | 说明 |
+| --- | --- |
+| `CommandRegistry` | `register_command()` / `lookup()` / `list()`，支持 name + aliases 匹配 |
+| `SlashCommand` 结构 | name、description、handler、aliases、remoteInvocable |
+| `CommandResult` | message、shouldExit、clearScreen、refreshRuntime、submitPrompt、submitModel |
+| `CommandContext` | runtime + cwd 传入 handler |
+| 内置命令 | `/help`、`/clear`、`/exit`、`/model`、`/skills`、`/permissions`、`/memory`、`/tasks`、`/mcp` |
+| 用户输入分流 | 在 `cli/cli.cpp` 中：以 `/` 开头 → lookup → 执行 handler → 处理 CommandResult；否则 → `Engine::submit_message()` |
+| Skill slash command | `userInvocable=true` 的 skill 自动注册为 `/skillname`，支持 `$ARGUMENTS` 替换 |
 
-## CommandRegistry
+## 内置命令列表
 
-```cpp
-struct CommandResult {
-    std::optional<std::string> message;
-    bool shouldExit = false;
-    bool clearScreen = false;
-    bool refreshRuntime = false;
-    std::optional<std::string> submitPrompt;
-    std::optional<std::string> submitModel;
-};
+| 命令 | 功能 |
+| --- | --- |
+| `/help` | 列出所有可用命令 |
+| `/clear` | 清空当前会话历史 |
+| `/exit` | 退出程序 |
+| `/model` | 显示或切换当前模型 |
+| `/skills` | 列出已加载的 skills |
+| `/memory` | 记忆管理（添加/列表/移除） |
+| `/permissions` | 显示或切换权限模式 |
+| `/tasks` | 后台任务管理 |
+| `/mcp` | MCP server 状态 |
 
-struct CommandContext {
-    RuntimeBundle& runtime;
-    std::filesystem::path cwd;
-};
+## 用户输入分流逻辑
 
-using CommandHandler = std::function<CommandResult(std::string_view args,
-                                                   CommandContext& ctx)>;
-
-struct SlashCommand {
-    std::string name;
-    std::string description;
-    CommandHandler handler;
-    std::vector<std::string> aliases;
-    bool remoteInvocable = true;
-    bool remoteAdminOptIn = false;
-};
-
-class CommandRegistry {
-public:
-    void registerCommand(SlashCommand command);
-    const SlashCommand* lookup(std::string_view input) const;
-    std::vector<SlashCommand> list() const;
-};
+```
+输入以 "/" 开头
+  → CommandRegistry::lookup() 匹配
+  → 匹配 → 执行 handler，处理 CommandResult
+  → 不匹配但存在同名 skill → 构建 skill prompt
+  → 都不匹配 → 显示未知命令
+否则 → Engine::submit_message()
 ```
 
-## 用户输入分流
+## 暂不实现的功能
 
-Runtime 处理用户输入：
+以下功能暂不在当前 C++ 实现范围内：
 
-```text
-if line starts with "/":
-    command = registry.lookup(line)
-    if found:
-        result = command.handler(args)
-        handle CommandResult
-    else if skill slash command exists:
-        build skill prompt
-    else:
-        show unknown command
-else:
-    QueryEngine.submitMessage(line)
-```
-
-## 常见内置命令
-
-第一版建议支持：
-
-- `/help`：列出命令。
-- `/exit`：退出。
-- `/clear`：清空会话。
-- `/model`：显示或切换模型。
-- `/permissions`：显示或切换权限模式。
-- `/skills`：列出 skills。
-- `/memory`：记忆管理，后续实现。
-- `/tasks`：后台任务，后续实现。
-- `/mcp`：MCP 状态，后续实现。
-
-## Skill command
-
-`userInvocable` skill 可以注册为 command。处理逻辑：
-
-```text
-/review src/main.cpp
-  -> find skill review
-  -> prompt = skill.content with $ARGUMENTS replaced
-  -> return CommandResult{submitPrompt=prompt}
-```
-
-## Plugin command
-
-Plugin command 与 skill command 类似，但命名带 namespace。
-
-```text
-/git:commit
-/security:review
-```
-
-## Command 安全
-
-高风险命令默认只允许在本地 CLI/TUI 会话中触发：
-
-- `/resume`
-- `/diff`
-- `/commit`
-- `/tasks`
-- `/config`
-- `/bridge`
-
-## 测试清单
-
-- `/help` 能列出命令。
-- alias 能命中。
-- 未知命令返回错误。
-- command 能返回 `submitPrompt` 并进入 QueryEngine。
-- 本地会话拒绝敏感命令的危险参数或不安全目标。
-- skill slash command 能替换参数。
+- Plugin command namespace（如 `/git:commit`）
+- 高风险命令的远程会话限制

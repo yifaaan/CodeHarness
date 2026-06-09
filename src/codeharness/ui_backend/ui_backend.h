@@ -65,6 +65,7 @@ struct FrontendRequest
     std::optional<std::string> args;
     std::optional<std::string> query;
     std::optional<std::string> answer;
+    std::optional<std::string> profile_id;
 };
 
 struct BackendReady
@@ -117,6 +118,19 @@ struct BackendSelectRequest
     std::vector<BackendCommandEntry> commands;
 };
 
+struct BackendModelEntry
+{
+    std::string id;
+    std::string label;
+    std::string description;
+    bool is_current = false;
+};
+
+struct BackendModelSelectRequest
+{
+    std::vector<BackendModelEntry> profiles;
+};
+
 struct BackendLineComplete
 {
 };
@@ -153,6 +167,7 @@ using BackendEvent = std::variant<BackendReady,
                                   BackendPermissionModal,
                                   BackendUserQuestionModal,
                                   BackendSelectRequest,
+                                  BackendModelSelectRequest,
                                   BackendLineComplete,
                                   BackendUsage,
                                   BackendError,
@@ -175,6 +190,8 @@ private:
     auto run_submit_line(std::string line) -> void;
     auto handle_select_command(const FrontendRequest& request) -> void;
     auto handle_apply_select_command(const FrontendRequest& request) -> void;
+    auto handle_select_model() -> void;
+    auto handle_apply_model(const FrontendRequest& request) -> void;
     auto handle_permission_response(const FrontendRequest& request) -> void;
     auto handle_user_question_response(const FrontendRequest& request) -> void;
     auto handle_interrupt() -> void;

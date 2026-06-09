@@ -25,6 +25,43 @@ auto make_bundle(TempDir& temp, codeharness::PermissionMode mode = codeharness::
         });
 }
 
+auto make_profile_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "profile-repo";
+    const auto memory_root = temp.path / "profile-memory";
+    std::filesystem::create_directories(repo);
+
+    return codeharness::runtime::create_runtime_bundle(
+        codeharness::runtime::RuntimeBundleOptions{
+            .cwd = repo,
+            .memory_root = memory_root,
+            .load_default_user_plugins = false,
+            .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "echo-a"},
+            .model_profiles =
+                {
+                    codeharness::runtime::RuntimeModelProfile{
+                        .id = "a",
+                        .label = "Echo A",
+                        .description = "echo / echo-a",
+                        .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "echo-a"},
+                    },
+                    codeharness::runtime::RuntimeModelProfile{
+                        .id = "b",
+                        .label = "Echo B",
+                        .description = "echo / echo-b",
+                        .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "echo-b"},
+                    },
+                    codeharness::runtime::RuntimeModelProfile{
+                        .id = "bad",
+                        .label = "Missing OpenAI",
+                        .description = "openai / gpt-test",
+                        .provider_config = codeharness::ProviderConfig{.type = "openai", .model = "gpt-test"},
+                    },
+                },
+            .active_model_profile_id = "a",
+        });
+}
+
 auto contains_tool(const codeharness::ToolRegistry& tools, std::string_view name) -> bool
 {
     const auto names = tools.names();
@@ -350,6 +387,50 @@ TEST_CASE("runtime run_prompt forwards prompt through engine and streams assista
     CHECK(result->output_text == "hello runtime");
     REQUIRE(result->messages.size() >= 2);
     CHECK(result->messages.front().role == codeharness::Role::System);
+}
+
+TEST_CASE("runtime model profile switch updates current model and saved session")
+{
+    TempDir temp{"codeharness-runtime-model-switch-test"};
+    auto bundle = make_profile_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto switched = (*bundle)->switch_model_profile(*(*bundle)->find_model_profile("b"));
+    REQUIRE(switched.has_value());
+    CHECK(switched->id == "b");
+    CHECK(switched->provider_config.model == "echo-b");
+    CHECK((*bundle)->current_model_profile().provider_config.model == "echo-b");
+
+    auto result = (*bundle)->run_prompt("after switch", 1, {});
+    REQUIRE(result.has_value());
+
+    auto loaded = (*bundle)->sessions().load_latest();
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->has_value());
+    CHECK((*loaded)->model == "echo-b");
+}
+
+TEST_CASE("runtime model profile switch failure preserves current provider")
+{
+    TempDir temp{"codeharness-runtime-model-switch-fail-test"};
+    auto bundle = make_profile_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto before = (*bundle)->current_model_profile();
+    auto bad = (*bundle)->find_model_profile("bad");
+    REQUIRE(bad.has_value());
+
+    auto switched = (*bundle)->switch_model_profile(*bad);
+    REQUIRE(!switched.has_value());
+    CHECK(switched.error().message.find("openai provider requires an API key") != std::string::npos);
+
+    auto after = (*bundle)->current_model_profile();
+    CHECK(after.id == before.id);
+    CHECK(after.provider_config.model == before.provider_config.model);
+
+    auto result = (*bundle)->run_prompt("still works", 1, {});
+    REQUIRE(result.has_value());
+    CHECK(result->output_text == "still works");
 }
 
 TEST_CASE("runtime executes configured command hook through engine wiring")

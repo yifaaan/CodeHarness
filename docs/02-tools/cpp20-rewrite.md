@@ -1,275 +1,75 @@
-# Tools C++20 重写方案
+# Tools C++20 实现参考
 
-## 目录建议
+Tools 模块的 C++20 实现已完成，共 ~28 个文件在 `src/codeharness/tools/`。
 
-```text
-src/codeharness/tools/
-  tool.hpp
-  tool_registry.hpp
-  tool_registry.cpp
-  tool_result.hpp
-  tool_context.hpp
-  json_schema.hpp
-  builtin_tools.hpp
-  file_read_tool.cpp
-  file_write_tool.cpp
-  file_edit_tool.cpp
-  glob_tool.cpp
-  grep_tool.cpp
-  bash_tool.cpp
-  todo_write_tool.cpp
-  ask_user_tool.cpp
-  mcp_tool_adapter.cpp
+## 已实现的工具
+
+| 工具 | 类 | 位置 | 备注 |
+| --- | --- | --- | --- |
+| `read_file` | `ReadFileTool` | `tools/read_file_tool.h/.cpp` | offset/limit 行范围，行号输出 |
+| `write_file` | `WriteFileTool` | `tools/write_file_tool.h/.cpp` | atomic write (.tmp + rename)，父目录自动创建 |
+| `edit_file` | `EditFileTool` | `tools/edit_file_tool.h/.cpp` | old_string→new_string，`replace_all` 支持 |
+| `glob` | `GlobTool` | `tools/glob_tool.h/.cpp` | `p-ranav-glob` 匹配 |
+| `grep` | `GrepTool` | `tools/grep_tool.h/.cpp` | `re2` 正则，跳过二进制/大文件 |
+| `bash` | `BashTool` | `tools/bash_tool.h/.cpp` | `reproc` 子进程，timeout，输出截断 |
+| `ask_user` | `AskUserTool` | `tools/ask_user_tool.h/.cpp` | 只读，触发 UI 问答 |
+| `todo_write` | `TodoWriteTool` | `tools/todo_write_tool.h/.cpp` | 任务列表管理 |
+| `skill` | `SkillTool` | `skills/skill_tool.h/.cpp` | 按需加载 skill 内容 |
+| `agent` | `AgentTool` | `tasks/task_tools.h/.cpp` | 创建 subprocess worker |
+| `task_create/get/list/output/stop` | 各 TaskTool | `tasks/task_tools.h/.cpp` | 后台任务管理 |
+| `send_message` | `SendMessageTool` | `mailbox/mailbox_tools.h/.cpp` | 向 task inbox 投递消息 |
+
+## 核心抽象
+
+```
+Tool (抽象基类)
+├── name() / description() / input_schema()
+├── is_read_only(json args) → bool
+├── permission_target(json args) → PermissionTarget
+├── execute(json args, ToolContext) → ToolResponse
+
+ToolRegistry
+├── add(shared_ptr<Tool>) → 按 name 注册
+├── find(name) → shared_ptr<Tool>
+├── execute(name, args, ctx) → ToolResponse
+├── names() → 所有已注册工具名
 ```
 
-## ITool 接口
+`ToolContext` 包含 `cwd`、`metadata`、`HookExecutor*`。
+`ToolResponse` 包含 `output` 文本、`is_error`、`metadata`。
 
-```cpp
-struct ToolExecutionContext {
-    std::filesystem::path cwd;
-    nlohmann::json metadata = nlohmann::json::object();
-    HookExecutor* hooks = nullptr;
-};
+## Workspace 安全
 
-struct ToolResult {
-    std::string output;
-    bool isError = false;
-    nlohmann::json metadata = nlohmann::json::object();
-};
+路径安全通过 `tools/workspace_path.h/.cpp` 统一处理：
 
-class ITool {
-public:
-    virtual ~ITool() = default;
+- `resolve_workspace_path(cwd, user_path)` — 防止 `..` 逃逸
+- `is_under_directory(path, parent)` — 严格前缀检查
+- 所有文件工具在 `execute()` 入口处调用此函数
 
-    virtual std::string_view name() const = 0;
-    virtual std::string_view description() const = 0;
-    virtual nlohmann::json inputSchema() const = 0;
+## Permission 目标提取
 
-    virtual bool isReadOnly(const nlohmann::json& arguments) const {
-        return false;
-    }
+`permission_target.h/.cpp` 为每个工具提取 `PermissionTarget{path, command}`，供 `PermissionChecker` 决策。
 
-    virtual ToolResult execute(const nlohmann::json& arguments,
-                               const ToolExecutionContext& context) = 0;
-};
-```
+## 工具注册
 
-第一版可以同步执行。后续如果工具要异步，可以把返回值换成 `std::future<ToolResult>` 或 coroutine task。
+工具注册在 `runtime/runtime.cpp` 的 `create_tool_registry()` 中完成。内置工具 + MCP 工具 + Task/Mailbox 工具统一注册。
 
-## ToolRegistry
+## 工具输出管理
 
-```cpp
-class ToolRegistry {
-public:
-    void registerTool(std::shared_ptr<ITool> tool);
-    std::shared_ptr<ITool> get(std::string_view name) const;
-    std::vector<std::shared_ptr<ITool>> listTools() const;
-    nlohmann::json toApiSchema() const;
+当前策略：输出小于 ~16000 字符 inline 返回；超过则保存 artifact 并返回 preview + 路径。策略在 `ToolResponse` 的 metadata 字段中传递。
 
-private:
-    std::unordered_map<std::string, std::shared_ptr<ITool>> tools_;
-};
-```
+## 已知问题
 
-`toApiSchema()` 输出给 provider。Anthropic 和 OpenAI 的外层格式不同，但 tool 的 JSON Schema 可以共用。
+- `WriteFileTool` 已实现但**未注册**到 `create_tool_registry()` — 仅有 `ReadFileTool` 和 `EditFileTool` 可用于文件写入
 
-## 输入 schema 和强类型参数
+## 暂不实现的功能
 
-建议组合使用：
+以下功能暂不在当前 C++ 实现范围内：
 
-1. 工具提供手写 JSON Schema。
-2. 执行前用 JSON Schema validator 检查。
-3. 工具内部把 JSON 转为强类型 struct。
-
-示例：
-
-```cpp
-struct ReadFileInput {
-    std::filesystem::path path;
-    int offset = 0;
-    int limit = 200;
-};
-
-ReadFileInput parseReadFileInput(const nlohmann::json& j) {
-    ReadFileInput input;
-    input.path = j.at("path").get<std::string>();
-    input.offset = j.value("offset", 0);
-    input.limit = j.value("limit", 200);
-    return input;
-}
-```
-
-## ReadFileTool
-
-关键行为：
-
-- 解析 path。
-- 转换为 cwd 下的绝对路径。
-- 检查路径存在且是普通文件。
-- 支持 offset/limit 行范围。
-- 长行截断，避免一行超大。
-- 返回带行号文本，方便模型引用。
-
-路径解析建议：
-
-```cpp
-std::filesystem::path resolveUnderCwd(std::filesystem::path cwd,
-                                      std::filesystem::path userPath);
-```
-
-## WriteFileTool
-
-关键行为：
-
-- 写入前确认目标路径在 cwd 内。
-- 父目录不存在时可选创建。
-- 写入使用 atomic write：先写 `.tmp`，再 rename。
-- 返回写入字节数和路径。
-
-如果接入权限系统，`write_file` 在 default 模式下应需要确认。
-
-## EditFileTool
-
-初版不要做太复杂。建议支持简单 replace：
-
-```json
-{
-  "path": "src/main.cpp",
-  "old_string": "...",
-  "new_string": "...",
-  "replace_all": false
-}
-```
-
-行为：
-
-- `old_string` 必须唯一匹配，除非 `replace_all=true`。
-- 匹配不到返回错误。
-- 多次匹配且未开启 replace_all 返回错误。
-- 写入前生成 diff 给权限弹窗或日志。
-
-## GlobTool 和 GrepTool
-
-C++ 标准库没有完整的 grep。按当前项目约束，搜索相关外部库通过 vcpkg manifest 导入。建议：
-
-- glob：用 `std::filesystem::recursive_directory_iterator` 做遍历，自己实现简单 wildcard matcher。
-- grep：用 `re2` 做正则匹配，通过 vcpkg 端口 `re2` 导入。RE2 是 C++ API，避免直接使用 PCRE2 的 C API。
-
-注意：
-
-- 默认跳过 `.git`、build、二进制文件。
-- 限制最大文件大小。
-- 限制最大结果数量。
-
-不建议通过 shell 调 `ripgrep` 作为第一版实现，否则工具行为会依赖用户环境。需要更高性能时，可以在 C++ 内部保留 `re2` matcher 并优化文件遍历、ignore 规则和并发扫描。
-
-## BashTool
-
-建议接口：
-
-```json
-{
-  "command": "ctest --preset linux-debug",
-  "timeout_seconds": 120,
-  "cwd": "."
-}
-```
-
-C++ 需要封装跨平台 process runner：
-
-```cpp
-struct ProcessResult {
-    int exitCode = -1;
-    std::string stdoutText;
-    std::string stderrText;
-    bool timedOut = false;
-};
-
-class ProcessRunner {
-public:
-    ProcessResult runShell(std::string command,
-                           std::filesystem::path cwd,
-                           std::chrono::seconds timeout);
-};
-```
-
-输出建议合并 stdout/stderr，或分别存 metadata。
-
-## Tool output 截断
-
-```cpp
-struct ToolOutputPolicy {
-    size_t inlineChars = 16000;
-    size_t previewChars = 3000;
-    std::filesystem::path artifactDir;
-};
-
-struct PreparedToolOutput {
-    std::string inlineText;
-    std::optional<std::filesystem::path> artifactPath;
-};
-```
-
-行为：
-
-- 输出小于 `inlineChars`：直接返回。
-- 输出大于限制：保存完整输出到 artifact，返回 preview 和路径。
-
-## 权限目标提取
-
-ToolExecutor 需要从参数中提取权限目标：
-
-```cpp
-struct PermissionTarget {
-    std::optional<std::filesystem::path> path;
-    std::optional<std::string> command;
-};
-```
-
-简单规则：
-
-- 参数里有 `path`、`file_path`、`root` 时当路径。
-- `bash` 参数的 `command` 当命令。
-- 工具也可以覆写 `permissionTarget()`，比猜字段更可靠。
-
-推荐在 `ITool` 中增加：
-
-```cpp
-virtual PermissionTarget permissionTarget(const nlohmann::json& arguments) const;
-```
-
-## 内置工具注册
-
-```cpp
-std::shared_ptr<ToolRegistry> createDefaultToolRegistry(RuntimeServices services) {
-    auto registry = std::make_shared<ToolRegistry>();
-    registry->registerTool(std::make_shared<ReadFileTool>());
-    registry->registerTool(std::make_shared<WriteFileTool>());
-    registry->registerTool(std::make_shared<EditFileTool>());
-    registry->registerTool(std::make_shared<GlobTool>());
-    registry->registerTool(std::make_shared<GrepTool>());
-    registry->registerTool(std::make_shared<BashTool>(services.processRunner));
-    return registry;
-}
-```
-
-## 不建议第一版做的事
-
-- 动态加载 C++ 插件工具 `.dll/.so`。
-- 完整 Jupyter notebook 编辑。
-- 图片生成。
-- LSP。
-- cron。
-- remote trigger。
-
-这些可以在核心稳定后加。
-
-## 测试建议
-
-- `ToolRegistry` 重名注册会覆盖还是拒绝，需要明确。
-- `read_file` 行范围正确。
-- `edit_file` 多重匹配返回错误。
-- `bash` timeout。
-- 路径逃逸被拒绝。
-- 大输出保存 artifact。
-- schema JSON snapshot 稳定。
+- 动态加载 C++ 插件工具 `.dll/.so`
+- 完整 Jupyter notebook 编辑（根据用户反馈不需要）
+- 图片生成 / 图像处理工具
+- LSP 工具
+- cron / remote trigger
+- WebFetch / WebSearch 工具
+- EnterWorktree / ExitWorktree 工具（根据用户反馈暂不需要）

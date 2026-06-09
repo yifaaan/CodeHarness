@@ -60,6 +60,14 @@
 namespace codeharness::runtime
 {
 
+struct RuntimeModelProfile
+{
+    std::string id;
+    std::string label;
+    std::string description;
+    ProviderConfig provider_config;
+};
+
 struct RuntimeBundleOptions
 {
     std::filesystem::path cwd;
@@ -68,6 +76,8 @@ struct RuntimeBundleOptions
     std::vector<HookDefinition> hooks;
     bool load_default_user_plugins = true;
     ProviderConfig provider_config;
+    std::vector<RuntimeModelProfile> model_profiles;
+    std::string active_model_profile_id;
 };
 
 struct RunPromptOptions
@@ -90,7 +100,12 @@ public:
                   ToolRegistry tools,
                   std::unique_ptr<Provider> provider,
                   std::string model,
-                  sessions::SessionStore sessions);
+                  sessions::SessionStore sessions,
+                  std::string provider_type = "echo",
+                  std::string base_url = {},
+                  std::string profile_id = "default",
+                  std::string profile_label = "Default",
+                  std::vector<RuntimeModelProfile> model_profiles = {});
 
     RuntimeBundle(const RuntimeBundle&) = delete;
     auto operator=(const RuntimeBundle&) -> RuntimeBundle& = delete;
@@ -100,6 +115,10 @@ public:
     [[nodiscard]] auto cwd() const noexcept -> const std::filesystem::path&;
     [[nodiscard]] auto permission_mode() const noexcept -> PermissionMode;
     auto set_permission_mode(PermissionMode mode) -> void;
+    [[nodiscard]] auto current_model_profile() const -> RuntimeModelProfile;
+    [[nodiscard]] auto model_profiles() const noexcept -> const std::vector<RuntimeModelProfile>&;
+    [[nodiscard]] auto find_model_profile(std::string_view id_or_model) const -> std::optional<RuntimeModelProfile>;
+    auto switch_model_profile(const RuntimeModelProfile& profile) -> Result<RuntimeModelProfile>;
 
     [[nodiscard]] auto skills() const noexcept -> const SkillRegistry&;
     [[nodiscard]] auto plugins() const noexcept -> const std::vector<LoadedPlugin>&;
@@ -125,7 +144,12 @@ private:
     auto remember_permission_for_session(const PermissionPrompt& prompt) -> void;
 
     std::filesystem::path cwd_;
+    std::string profile_id_;
+    std::string profile_label_;
+    std::string provider_type_;
     std::string model_;
+    std::string base_url_;
+    std::vector<RuntimeModelProfile> model_profiles_;
     PermissionMode permission_mode_ = PermissionMode::Default;
     SkillRegistryLoadResult loaded_skills_;
     memory::MemoryStore memory_store_;

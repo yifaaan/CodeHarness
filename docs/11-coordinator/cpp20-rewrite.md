@@ -1,18 +1,6 @@
-# Coordinator 和 Swarm C++20 重写方案
+# Coordinator 和 Swarm C++20 实现参考
 
-Coordinator/Swarm 负责多 agent 协作。它是高级功能，建议在核心 engine、tools、tasks 稳定后再实现。
-
-上游关键文件：
-
-- `docs/OpenHarness/src/openharness/coordinator/coordinator_mode.py`
-- `docs/OpenHarness/src/openharness/coordinator/agent_definitions.py`
-- `docs/OpenHarness/src/openharness/swarm/types.py`
-- `docs/OpenHarness/src/openharness/swarm/registry.py`
-- `docs/OpenHarness/src/openharness/swarm/subprocess_backend.py`
-- `docs/OpenHarness/src/openharness/swarm/in_process.py`
-- `docs/OpenHarness/src/openharness/swarm/mailbox.py`
-- `docs/OpenHarness/src/openharness/swarm/team_lifecycle.py`
-- `docs/OpenHarness/src/openharness/swarm/worktree.py`
+Coordinator/Swarm 的 C++20 第一版实现已完成，代码见 `src/codeharness/coordinator/`（12 个文件）+ `src/codeharness/mailbox/`（10 个文件）。
 
 ## Coordinator 是什么
 
@@ -228,7 +216,15 @@ worker continues
 10. `WorktreeManager`。暂不实现；当前项目阶段先不移植 worktree tool。
 11. 权限同步。未实现；第一版 worker 仍应以只读/受限权限为主。
 
-当前下一步应转向 worker 消息消费，以及 spawn config 与 agent definition 的合并逻辑：让 `AgentDefinitionRegistry` 查到的角色定义真正影响 prompt/model/tools metadata。
+当前下一步：worker 消息消费，以及 spawn config 与 agent definition 的合并逻辑。
+
+## 暂不实现的功能
+
+以下功能暂不在当前 C++ 实现范围内：
+
+- `WorktreeManager`（根据用户反馈暂不需要）
+- 权限同步（当前 worker 使用只读/受限权限）
+- InProcessBackend
 
 ## 初学者建议
 

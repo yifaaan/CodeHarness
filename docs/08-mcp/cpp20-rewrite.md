@@ -1,258 +1,63 @@
-# MCP C++20 重写方案
+# MCP C++20 实现参考
 
-MCP 是 Model Context Protocol，用来把外部工具服务器接入 agent harness。
+MCP 模块的 C++20 实现已完成（stdio transport），代码见 `src/codeharness/mcp/`（13 个文件）。
 
-上游关键文件：
+## 已实现的能力
 
-- `docs/OpenHarness/src/openharness/mcp/types.py`
-- `docs/OpenHarness/src/openharness/mcp/config.py`
-- `docs/OpenHarness/src/openharness/mcp/client.py`
-- `docs/OpenHarness/src/openharness/tools/mcp_tool.py`
-- `docs/OpenHarness/src/openharness/tools/list_mcp_resources_tool.py`
-- `docs/OpenHarness/src/openharness/tools/read_mcp_resource_tool.py`
+| 能力 | 代码位置 |
+| --- | --- |
+| MCP 配置类型 | `mcp/types.h` — `McpStdioServerConfig`、`McpHttpServerConfig`、`McpServerConfig` variant、`McpToolInfo`、`McpResourceInfo`、`McpConnectionStatus`、`McpToolCallResult` |
+| JSON-RPC 2.0 | `mcp/json_rpc.h/.cpp` — 请求/响应/通知构建和解析，自增 id、pending 处理 |
+| Transport 抽象 | `mcp/transport.h` — `IMcpTransport` 接口，`McpTransport` variant wrapper |
+| StdioTransport | `mcp/stdio_transport.h/.cpp` — 基于 `reproc` 子进程 + stdin/stdout JSON Lines |
+| ClientSession | `mcp/client_session.h/.cpp` — initialize → initialized → tools/list → callTool，`McpClientSession` 同步 API |
+| ToolAdapter | `mcp/tool_adapter.h/.cpp` — MCP 工具包装为 CodeHarness `Tool`，命名 `mcp__{server}__{tool}` |
 
 ## MCP 的作用
 
-MCP server 可以提供：
+MCP server 提供 tools + resources。启动时连接 MCP server，读取工具列表，包装为普通工具。Engine 不区分内置工具和 MCP 工具。
 
-- tools：模型可调用的外部函数。
-- resources：可读取的外部资源。
-- prompts：可复用 prompt 模板。
+## 初始化流程
 
-OpenHarness 启动时连接 MCP server，读取工具列表，并把它们包装成普通 OpenHarness 工具。
-
-模型看到的是：
-
-```text
-mcp__github__create_issue
-mcp__filesystem__read_file
 ```
-
-Engine 不需要知道这些工具来自 MCP。
-
-## Transport 类型
-
-上游配置支持：
-
-| 类型 | 说明 |
-| --- | --- |
-| `stdio` | 启动本地子进程，通过 stdin/stdout 传 JSON-RPC |
-| `http` | 连接 streamable HTTP MCP server |
-| `ws` | 配置类型存在，但上游当前支持有限 |
-
-C++ 第一版建议先做 stdio，第二版做 HTTP。
-
-## 配置结构
-
-```cpp
-struct McpStdioServerConfig {
-    std::string name;
-    std::string command;
-    std::vector<std::string> args;
-    std::map<std::string, std::string> env;
-    std::optional<std::filesystem::path> cwd;
-};
-
-struct McpHttpServerConfig {
-    std::string name;
-    std::string url;
-    std::map<std::string, std::string> headers;
-};
-
-using McpServerConfig = std::variant<McpStdioServerConfig, McpHttpServerConfig>;
-```
-
-## JSON-RPC 基础
-
-MCP 消息基于 JSON-RPC 2.0。
-
-请求：
-
-```json
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-```
-
-响应：
-
-```json
-{"jsonrpc":"2.0","id":1,"result":{}}
-```
-
-通知没有 id：
-
-```json
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-```
-
-C++ client 必须维护自增 id 和 pending request map。
-
-## Transport 抽象
-
-```cpp
-class IMcpTransport {
-public:
-    virtual ~IMcpTransport() = default;
-    virtual void start() = 0;
-    virtual void send(const nlohmann::json& message) = 0;
-    virtual nlohmann::json read() = 0;
-    virtual void close() = 0;
-};
-```
-
-同步版足够初版。后续可以改成异步：
-
-```cpp
-virtual Task<void> sendAsync(nlohmann::json message) = 0;
-virtual Task<nlohmann::json> readAsync() = 0;
-```
-
-## StdioTransport
-
-职责：
-
-- 启动 server 子进程。
-- 写 JSON line 到 stdin。
-- 从 stdout 读 JSON line。
-- stderr 记录到日志。
-- 进程退出时关闭 session。
-
-注意：
-
-- JSON-RPC message 以换行分隔。
-- stdout 可能有半行，需要 line buffer。
-- server 可能把日志误写 stdout，解析失败要给出清晰错误。
-
-## HttpTransport
-
-HTTP MCP 比 stdio 复杂。建议第二阶段实现。
-
-要点：
-
-- 支持 streamable HTTP。
-- 维护 session。
-- 处理 reconnect。
-- headers 可能包含 auth token，日志要隐藏。
-
-按当前项目约束，HTTP transport 也统一基于 standalone Asio。建议在 `network/` 模块封装一个 Asio + OpenSSL 的 HTTP/SSE client，MCP HTTP 和 provider streaming 共用它。
-
-## McpClientSession
-
-```cpp
-class McpClientSession {
-public:
-    explicit McpClientSession(std::unique_ptr<IMcpTransport> transport);
-
-    void initialize();
-    std::vector<McpToolInfo> listTools();
-    std::vector<McpResourceInfo> listResources();
-    nlohmann::json callTool(std::string_view name, nlohmann::json arguments);
-    nlohmann::json readResource(std::string_view uri);
-
-private:
-    nlohmann::json request(std::string method, nlohmann::json params);
-};
-```
-
-初始化流程：
-
-```text
 start transport
--> initialize request
--> initialized notification
--> tools/list
--> resources/list optional
+→ initialize (JSON-RPC)
+→ initialized notification
+→ tools/list
+→ resources/list (可选，method not found 不视为失败)
 ```
 
-如果 `resources/list` 返回 method not found，不应认为 server 连接失败。
+## Studio Transport（已实现）
 
-## McpClientManager
+- 启动 server 子进程（reproc）
+- 写 JSON line 到 stdin
+- 从 stdout 读 JSON line（line buffer 处理半行）
+- stderr 记录到日志
+- 进程退出时标记连接失败
 
-```cpp
-class McpClientManager {
-public:
-    void connectAll();
-    void close();
-    void reconnectAll();
+## HTTP Transport
 
-    std::vector<McpConnectionStatus> statuses() const;
-    std::vector<McpToolInfo> listTools() const;
-    std::vector<McpResourceInfo> listResources() const;
+HTTP transport 暂不在当前 C++ 实现范围内。如需添加，要点：
 
-    nlohmann::json callTool(std::string_view server,
-                            std::string_view tool,
-                            nlohmann::json arguments);
-};
+- streamable HTTP + session 管理
+- reconnect 处理
+- headers 可能包含 auth token，日志需隐藏
+- 统一基于 standalone Asio
+
+## Tool Adapter 命名规则
+
 ```
-
-连接失败不应该让整个 runtime 启动失败，除非用户设置 required。默认应标记 server failed，并继续运行。
-
-## MCP Tool Adapter
-
-MCP 工具包装为 `ITool`：
-
-```cpp
-class McpToolAdapter : public ITool {
-public:
-    McpToolAdapter(McpClientManager& manager,
-                   std::string serverName,
-                   McpToolInfo toolInfo);
-
-    std::string_view name() const override;
-    std::string_view description() const override;
-    nlohmann::json inputSchema() const override;
-    ToolResult execute(const nlohmann::json& args,
-                       const ToolExecutionContext& ctx) override;
-};
-```
-
-命名规则：
-
-```text
 mcp__{server_name}__{tool_name}
 ```
 
-要清洗非法字符，保证工具名只包含 API 支持的字符。
-
-## Dynamic schema
-
-MCP server 会返回 JSON Schema。C++ 不需要把它转成 struct，adapter 可以直接：
-
-- 把 schema 暴露给模型。
-- 执行时把 JSON arguments 原样发给 MCP server。
-- 可选做 JSON Schema validator。
+非法字符清洗，保证工具名仅包含 API 支持的字符。
 
 ## 错误处理
 
-MCP 错误要变成 tool result，而不是崩溃：
+- Server 启动失败 → 标记 failed，不阻止 runtime 启动
+- initialize 超时 / JSON 解析失败 / tool 不存在 → 工具返回 `is_error=true`
+- Server 断开 → adapter 返回错误 tool result
 
-```text
-MCP server github is disconnected
-MCP tool create_issue failed: ...
-```
+## 测试
 
-常见错误：
-
-- server 启动失败。
-- initialize 超时。
-- JSON 解析失败。
-- method not found。
-- tool 不存在。
-- server 断开。
-
-## 测试建议
-
-先写一个 fake MCP server：
-
-- 读 stdin JSON line。
-- 响应 initialize。
-- 响应 tools/list。
-- 响应 tools/call。
-
-测试：
-
-- stdio 连接成功。
-- tools/list 注册成 tool。
-- call_tool 返回结果。
-- server 退出时 status 变 failed。
-- method not found resources/list 不导致连接失败。
-- invalid JSON 有清晰错误。
+`tests/mcp_tests.cpp` 覆盖：stdio transport 连接、initialize、tools/list、call_tool、fake MCP server（`tests/fake_mcp_server.cpp`）、server 退出时状态变化、invalid JSON 错误。

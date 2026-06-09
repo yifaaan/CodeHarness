@@ -26,6 +26,7 @@
 
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/config/config_loader.h"
+#include "codeharness/config/credentials.h"
 #include "codeharness/core/log.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/runtime/runtime.h"
@@ -45,6 +46,56 @@
 
 namespace codeharness
 {
+
+namespace
+{
+
+auto make_profile_description(const runtime::RuntimeModelProfile& profile) -> std::string
+{
+    auto description = profile.provider_config.type.empty() ? std::string{"echo"} : profile.provider_config.type;
+    if (!profile.provider_config.model.empty())
+    {
+        description += " / " + profile.provider_config.model;
+    }
+    return description;
+}
+
+auto build_runtime_model_profiles(const config::Settings& settings) -> Result<std::vector<runtime::RuntimeModelProfile>>
+{
+    auto credentials = config::load_credentials(settings.config_dir);
+    if (!credentials)
+    {
+        return nonstd::make_unexpected(credentials.error());
+    }
+
+    std::vector<runtime::RuntimeModelProfile> profiles;
+    profiles.reserve(settings.profiles.size());
+    for (const auto& [id, profile] : settings.profiles)
+    {
+        ProviderConfig provider_config{
+            .type = profile.provider_type.empty() ? std::string{"echo"} : profile.provider_type,
+            .model = profile.model,
+            .api_key = config::resolve_api_key(profile.auth_source, profile.provider_type, *credentials),
+            .base_url = profile.base_url,
+        };
+        auto label = profile.label.empty() ? id : profile.label;
+        auto description = provider_config.type;
+        if (!provider_config.model.empty())
+        {
+            description += " / " + provider_config.model;
+        }
+        profiles.push_back(runtime::RuntimeModelProfile{
+            .id = id,
+            .label = std::move(label),
+            .description = std::move(description),
+            .provider_config = std::move(provider_config),
+        });
+    }
+
+    return profiles;
+}
+
+} // namespace
 
 auto run_cli(int argc, char** argv) -> Result<int>
 {
@@ -126,6 +177,12 @@ auto run_cli(int argc, char** argv) -> Result<int>
         permission.mode = PermissionMode::Plan;
     }
 
+    auto model_profiles = build_runtime_model_profiles(*settings);
+    if (!model_profiles)
+    {
+        return nonstd::make_unexpected(model_profiles.error());
+    }
+
     auto runtime_bundle = runtime::create_runtime_bundle(
         runtime::RuntimeBundleOptions{
             .cwd = settings->cwd,
@@ -139,6 +196,8 @@ auto run_cli(int argc, char** argv) -> Result<int>
                 .api_key = settings->api_key,
                 .base_url = settings->base_url,
             },
+            .model_profiles = *model_profiles,
+            .active_model_profile_id = settings->active_profile,
         });
     if (!runtime_bundle)
     {
@@ -159,16 +218,16 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
     if (prompt.empty())
     {
-        // Build model list from config profiles
-        auto model_list = [&settings]() -> std::vector<tui::ModelOption> {
+        auto model_list = [&runtime_bundle]() -> std::vector<tui::ModelOption> {
             std::vector<tui::ModelOption> options;
-            for (const auto& [name, profile] : settings->profiles)
+            const auto current = (*runtime_bundle)->current_model_profile();
+            for (const auto& profile : (*runtime_bundle)->model_profiles())
             {
                 options.push_back(tui::ModelOption{
-                    .value = profile.model.empty() ? profile.name : profile.model,
-                    .label = profile.label.empty() ? profile.name : profile.label,
-                    .description = profile.provider_type,
-                    .is_current = profile.model == settings->model || name == settings->active_profile,
+                    .value = profile.id,
+                    .label = profile.label,
+                    .description = make_profile_description(profile),
+                    .is_current = profile.id == current.id,
                 });
             }
             return options;
@@ -183,7 +242,27 @@ auto run_cli(int argc, char** argv) -> Result<int>
                 .version = std::string{VERSION},
                 .skill_count = static_cast<int>((*runtime_bundle)->skills().list().size()),
             },
-            tui::ModelListProvider{model_list});
+            tui::ModelListProvider{model_list},
+            tui::ModelSelectCallback{[&](const tui::ModelOption& selected) -> Result<tui::ModelOption> {
+                auto profile = (*runtime_bundle)->find_model_profile(selected.value);
+                if (!profile)
+                {
+                    return fail<tui::ModelOption>(ErrorKind::InvalidArgument, "unknown model profile: " + selected.value);
+                }
+
+                auto switched = (*runtime_bundle)->switch_model_profile(*profile);
+                if (!switched)
+                {
+                    return nonstd::make_unexpected(switched.error());
+                }
+
+                return tui::ModelOption{
+                    .value = switched->provider_config.model,
+                    .label = switched->label,
+                    .description = make_profile_description(*switched),
+                    .is_current = true,
+                };
+            }});
     }
 
     if (!prompt.empty() && prompt.front() == '/')
@@ -242,6 +321,20 @@ auto run_cli(int argc, char** argv) -> Result<int>
         if (!command_result->submit_prompt)
         {
             return 0;
+        }
+
+        if (command_result->submit_model)
+        {
+            auto profile = (*runtime_bundle)->find_model_profile(*command_result->submit_model);
+            if (!profile)
+            {
+                return fail<int>(ErrorKind::InvalidArgument, "unknown model profile: " + *command_result->submit_model);
+            }
+            auto switched = (*runtime_bundle)->switch_model_profile(*profile);
+            if (!switched)
+            {
+                return nonstd::make_unexpected(switched.error());
+            }
         }
 
         prompt = *command_result->submit_prompt;

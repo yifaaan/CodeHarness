@@ -62,6 +62,8 @@
 namespace codeharness::runtime
 {
 
+auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) -> Result<std::unique_ptr<Provider>>;
+
 namespace
 {
 
@@ -143,6 +145,29 @@ auto create_hook_registry(std::span<const HookDefinition> settings_hooks, std::s
     }
 
     return hooks;
+}
+
+auto model_display_name(const ProviderConfig& config) -> std::string
+{
+    if (!config.model.empty())
+    {
+        return config.model;
+    }
+    if (!config.type.empty())
+    {
+        return config.type;
+    }
+    return "echo";
+}
+
+auto profile_description(const ProviderConfig& config) -> std::string
+{
+    auto description = config.type.empty() ? std::string{"echo"} : config.type;
+    if (!config.model.empty())
+    {
+        description += " / " + config.model;
+    }
+    return description;
 }
 
 auto session_summary_from(const sessions::SessionSnapshot& snapshot) -> SessionCommandSummary
@@ -251,9 +276,19 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
                              ToolRegistry tools,
                              std::unique_ptr<Provider> provider,
                              std::string model,
-                             sessions::SessionStore sessions) :
+                             sessions::SessionStore sessions,
+                             std::string provider_type,
+                             std::string base_url,
+                             std::string profile_id,
+                             std::string profile_label,
+                             std::vector<RuntimeModelProfile> model_profiles) :
     cwd_(std::move(cwd)),
+    profile_id_(std::move(profile_id)),
+    profile_label_(std::move(profile_label)),
+    provider_type_(std::move(provider_type)),
     model_(std::move(model)),
+    base_url_(std::move(base_url)),
+    model_profiles_(std::move(model_profiles)),
     permission_mode_(permission.mode),
     loaded_skills_(std::move(loaded_skills)),
     memory_store_(std::move(memory_store)),
@@ -272,6 +307,38 @@ RuntimeBundle::RuntimeBundle(std::filesystem::path cwd,
     provider_(std::move(provider)),
     engine_(*provider_, tools_, &permissions_, &hook_executor_)
 {
+    if (model_.empty())
+    {
+        model_ = model_display_name(ProviderConfig{.type = provider_type_});
+    }
+    if (provider_type_.empty())
+    {
+        provider_type_ = "echo";
+    }
+    if (profile_id_.empty())
+    {
+        profile_id_ = model_;
+    }
+    if (profile_label_.empty())
+    {
+        profile_label_ = profile_id_;
+    }
+    if (model_profiles_.empty())
+    {
+        model_profiles_.push_back(current_model_profile());
+    }
+    else
+    {
+        const auto active = std::ranges::find_if(model_profiles_, [&](const auto& profile) { return profile.id == profile_id_; });
+        if (active != model_profiles_.end())
+        {
+            profile_id_ = active->id.empty() ? model_display_name(active->provider_config) : active->id;
+            profile_label_ = active->label.empty() ? profile_id_ : active->label;
+            provider_type_ = active->provider_config.type.empty() ? std::string{"echo"} : active->provider_config.type;
+            model_ = model_display_name(active->provider_config);
+            base_url_ = active->provider_config.base_url;
+        }
+    }
 }
 
 auto RuntimeBundle::cwd() const noexcept -> const std::filesystem::path&
@@ -291,6 +358,57 @@ auto RuntimeBundle::set_permission_mode(PermissionMode mode) -> void
     settings.mode = mode;
     permissions_ = PermissionChecker(std::move(settings));
     engine_.set_permission_checker(&permissions_);
+}
+
+auto RuntimeBundle::current_model_profile() const -> RuntimeModelProfile
+{
+    return RuntimeModelProfile{
+        .id = profile_id_,
+        .label = profile_label_,
+        .description = profile_description(ProviderConfig{.type = provider_type_, .model = model_, .base_url = base_url_}),
+        .provider_config =
+            ProviderConfig{
+                .type = provider_type_,
+                .model = model_,
+                .base_url = base_url_,
+            },
+    };
+}
+
+auto RuntimeBundle::model_profiles() const noexcept -> const std::vector<RuntimeModelProfile>&
+{
+    return model_profiles_;
+}
+
+auto RuntimeBundle::find_model_profile(std::string_view id_or_model) const -> std::optional<RuntimeModelProfile>
+{
+    const auto needle = std::string{id_or_model};
+    const auto profile = std::ranges::find_if(model_profiles_, [&](const auto& candidate) {
+        return candidate.id == needle || candidate.provider_config.model == needle;
+    });
+    if (profile == model_profiles_.end())
+    {
+        return std::nullopt;
+    }
+    return *profile;
+}
+
+auto RuntimeBundle::switch_model_profile(const RuntimeModelProfile& profile) -> Result<RuntimeModelProfile>
+{
+    auto provider = create_provider(profile.provider_config, tools_);
+    if (!provider)
+    {
+        return nonstd::make_unexpected(provider.error());
+    }
+
+    provider_ = std::move(*provider);
+    engine_.set_provider(*provider_);
+    profile_id_ = profile.id.empty() ? model_display_name(profile.provider_config) : profile.id;
+    profile_label_ = profile.label.empty() ? profile_id_ : profile.label;
+    provider_type_ = profile.provider_config.type.empty() ? std::string{"echo"} : profile.provider_config.type;
+    model_ = model_display_name(profile.provider_config);
+    base_url_ = profile.provider_config.base_url;
+    return current_model_profile();
 }
 
 auto RuntimeBundle::remember_permission_for_session(const PermissionPrompt& prompt) -> void
@@ -629,6 +747,15 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
 
     auto tools = create_tool_registry(loaded_skills->registry, **coordinator_runtime);
     auto hooks = create_hook_registry(options.hooks, loaded_skills->plugins);
+    if (!options.active_model_profile_id.empty())
+    {
+        const auto active = std::ranges::find_if(
+            options.model_profiles, [&](const auto& profile) { return profile.id == options.active_model_profile_id; });
+        if (active != options.model_profiles.end())
+        {
+            options.provider_config = active->provider_config;
+        }
+    }
     auto provider = create_provider(options.provider_config, tools);
     if (!provider)
     {
@@ -650,7 +777,15 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
                                            std::move(tools),
                                            std::move(*provider),
                                            options.provider_config.model,
-                                           std::move(*session_store));
+                                           std::move(*session_store),
+                                           options.provider_config.type.empty() ? std::string{"echo"}
+                                                                                : options.provider_config.type,
+                                           options.provider_config.base_url,
+                                           options.active_model_profile_id.empty() ? std::string{"default"}
+                                                                                  : options.active_model_profile_id,
+                                           options.active_model_profile_id.empty() ? std::string{"Default"}
+                                                                                  : options.active_model_profile_id,
+                                           std::move(options.model_profiles));
 }
 
 } // namespace codeharness::runtime

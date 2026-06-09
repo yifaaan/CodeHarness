@@ -128,6 +128,9 @@ public:
     /// Replace the permission checker mid-session (e.g. on /plan toggle).
     auto set_permission_checker(const PermissionChecker* checker) -> void { permissions_ = checker; }
 
+    /// Replace the provider mid-session (e.g. on /model profile switch).
+    auto set_provider(Provider& provider) noexcept -> void { provider_ = &provider; }
+
     /// Set the agent identity used to auto-populate ToolContext::sender_id
     /// before each tool execution.
     auto set_sender_id(std::string id) -> void { sender_id_ = std::move(id); }
@@ -144,7 +147,7 @@ private:
                               const CancellationToken& cancellation,
                               ProviderUsage& usage) const -> Result<Message>;
 
-    Provider& provider_;
+    Provider* provider_ = nullptr;
     ToolRegistry& tools_;
     const PermissionChecker* permissions_ = nullptr;
     const HookExecutor* hooks_ = nullptr;

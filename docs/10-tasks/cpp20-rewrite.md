@@ -1,14 +1,8 @@
-# Tasks C++20 重写方案
+# Tasks C++20 实现参考
 
-Tasks 管理后台运行的 shell 或 agent 任务。它是 subagent、cron 和长任务编排的基础。
+Tasks 模块的 C++20 实现已完成（TaskManager v1），代码见 `src/codeharness/tasks/`（6 个文件）。
 
-上游关键文件：
-
-- `docs/OpenHarness/src/openharness/tasks/types.py`
-- `docs/OpenHarness/src/openharness/tasks/manager.py`
-- `docs/OpenHarness/src/openharness/tasks/local_agent_task.py`
-- `docs/OpenHarness/src/openharness/tasks/local_shell_task.py`
-- `docs/OpenHarness/src/openharness/tasks/stop_task.py`
+Tasks 管理后台运行的 shell 或 agent 任务，是 subagent、多 agent 协作和长任务编排的基础。
 
 ## TaskRecord
 
@@ -67,7 +61,7 @@ public:
 | task tools | `task_create/get/list/output/stop` | 已接入 ToolRegistry；`task_create` 支持 `local_bash` 和一次性 `local_agent` |
 | `agent` tool | 创建 subprocess worker，并返回 task id | 已接入 ToolRegistry；当前仅支持 `local_agent` mode |
 
-当前进度结论：Tasks 模块进入 Phase 5 的基础可用状态，可以支撑后续 subprocess swarm backend、Mailbox 和 `send_message`，但还不是 OpenHarness 的完整后台任务系统。
+当前进度结论：Tasks 模块已进入可用状态，可以支撑 subprocess swarm backend、Mailbox 和 `send_message`，但还不是 OpenHarness 的完整后台任务系统。
 
 ## 进程模型
 

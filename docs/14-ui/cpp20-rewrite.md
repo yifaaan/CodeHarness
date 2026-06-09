@@ -176,21 +176,38 @@ codeharness-ohmo
 Do not implement full ohmo first. Make the core runtime reusable, then let ohmo
 inject a different workspace, prompt, and memory backend.
 
-## First route
+## Implementation status
 
-1. Implement the `--backend-only` JSON Lines protocol.
-2. Use a fake backend to test the React TUI protocol.
-3. Connect the real runtime assembly.
-4. Support permission modals.
-5. Support select commands.
-6. Support session list and resume.
-7. Later, implement the native TUI.
-8. Later, add the local ohmo workspace layer.
+### Phase A: backend-only protocol ✅
+
+`codeharness --backend-only` is implemented in `src/codeharness/ui_backend/`:
+
+- `BackendHost` 类 — 读取 stdin JSON Lines，输出 `OHJSON:` 前缀事件到 stdout
+- `FrontendRequest` / `BackendEvent` 类型定义
+- 支持 `submit_line`、`permission_response`、`question_response`、`interrupt`、`shutdown`
+- 权限弹窗通过 `modal_request`/`permission_response` 协议实现
+- Pending map 处理异步权限确认
+
+### Phase B: native TUI ✅
+
+Native TUI 已实现（`src/codeharness/tui/`，10 个文件）：
+
+- `TuiAppModel` / `run_tui()` — 状态管理
+- Command palette、model selector、question modal、permission 弹窗
+- Markdown 渲染
+- Paste burst detection
+- 与 Engine 共享相同的事件模型
+
+### Remaining work 📋
+
+1. **Session list and resume** in TUI
+2. **Native TUI polish** — hotkeys、color theme、split pane
+3. **ohmo workspace layer** — `~/.ohmo` workspace、soul.md/identity.md
 
 ## Test checklist
 
-- Receiving `submit_line` emits transcript, assistant delta, and line complete.
-- Permission modal request/response unblocks tool execution.
-- Shutdown saves the session and exits.
-- Partial JSON Lines input and invalid JSON return structured errors.
-- Session list/resume uses the same runtime/session model as CLI.
+- Receiving `submit_line` emits transcript, assistant delta, and line complete. ✅
+- Permission modal request/response unblocks tool execution. ✅
+- Shutdown saves the session and exits. ✅
+- Partial JSON Lines input and invalid JSON return structured errors. ✅
+- Session list/resume uses the same runtime/session model as CLI. 📋

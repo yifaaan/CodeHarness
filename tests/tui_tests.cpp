@@ -565,6 +565,19 @@ TEST_CASE("tui footer shows token usage and mcp connections")
     CHECK(footer.find("mode: default") != std::string::npos);
 }
 
+TEST_CASE("tui footer reflects switched model profile")
+{
+    codeharness::tui::TuiDisplayConfig config{
+        .model = "echo-b",
+        .provider_type = "echo / echo-b",
+    };
+    codeharness::tui::TuiState state;
+
+    const auto footer = codeharness::tui::render::render_status_footer_line(config, state);
+    CHECK(footer.find("model: echo-b") != std::string::npos);
+    CHECK(footer.find("provider: echo / echo-b") != std::string::npos);
+}
+
 TEST_CASE("tui footer shows active resumed session")
 {
     codeharness::tui::TuiAppModel model;

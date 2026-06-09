@@ -155,7 +155,7 @@ Engine::Engine(
     const HookExecutor* hooks,
     PermissionPromptHandler permission_prompt,
     UserQuestionHandler user_question) :
-    provider_(provider),
+    provider_(&provider),
     tools_(tools),
     permissions_(permissions),
     hooks_(hooks),
@@ -253,7 +253,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages,
     collector.message().role = Role::Assistant;
     bool interrupted = false;
 
-    auto streamed = provider_.stream(messages, [&](const ProviderEvent& event) {
+    auto streamed = provider_->stream(messages, [&](const ProviderEvent& event) {
         if (cancellation.is_cancelled())
         {
             interrupted = true;

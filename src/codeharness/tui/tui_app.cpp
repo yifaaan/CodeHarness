@@ -125,7 +125,10 @@ auto is_submit_key(const ftxui::Event& event) -> bool
     return event == ftxui::Event::Return || event == ftxui::Event::CtrlM;
 }
 
-auto resolve_submit_prompt(runtime::RuntimeBundle& runtime, TuiAppModel& model, std::string prompt) -> std::optional<std::string>
+auto resolve_submit_prompt(runtime::RuntimeBundle& runtime,
+                           TuiAppModel& model,
+                           TuiDisplayConfig& display_config,
+                           std::string prompt) -> std::optional<std::string>
 {
     if (prompt.empty() || prompt.front() != '/')
     {
@@ -179,6 +182,25 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime, TuiAppModel& model, 
         model.append_system_message(*command_result->message);
     }
     model.set_active_session(runtime.active_session_summary());
+    if (command_result->submit_model)
+    {
+        auto profile = runtime.find_model_profile(*command_result->submit_model);
+        if (!profile)
+        {
+            model.append_system_message("unknown model profile: " + *command_result->submit_model);
+            return std::nullopt;
+        }
+
+        auto switched = runtime.switch_model_profile(*profile);
+        if (!switched)
+        {
+            model.append_system_message(switched.error().message);
+            return std::nullopt;
+        }
+        display_config.model = switched->provider_config.model;
+        display_config.provider_type = switched->description;
+        model.append_system_message("Switched model to " + switched->label);
+    }
     if (command_result->submit_prompt)
     {
         return *command_result->submit_prompt;
@@ -1065,9 +1087,17 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                     model.close_select_modal();
                     if (selected && model_select_callback)
                     {
-                        model_select_callback(*selected);
-                        display_config.model = selected->value;
-                        model.append_system_message("Switched model to " + selected->label);
+                        auto switched = model_select_callback(*selected);
+                        if (switched)
+                        {
+                            display_config.model = switched->value;
+                            display_config.provider_type = switched->description;
+                            model.append_system_message("Switched model to " + switched->label);
+                        }
+                        else
+                        {
+                            model.append_system_message(switched.error().message);
+                        }
                     }
                     return true;
                 }
@@ -1091,9 +1121,17 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                                 model.close_select_modal();
                                 if (model_select_callback)
                                 {
-                                    model_select_callback(*selected);
-                                    display_config.model = selected->value;
-                                    model.append_system_message("Switched model to " + selected->label);
+                                    auto switched = model_select_callback(*selected);
+                                    if (switched)
+                                    {
+                                        display_config.model = switched->value;
+                                        display_config.provider_type = switched->description;
+                                        model.append_system_message("Switched model to " + switched->label);
+                                    }
+                                    else
+                                    {
+                                        model.append_system_message(switched.error().message);
+                                    }
                                 }
                             }
                             return true;
@@ -1273,7 +1311,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                 model.set_composer("");
             }
 
-            if (auto engine_prompt = resolve_submit_prompt(runtime, model, std::move(prompt)))
+            if (auto engine_prompt = resolve_submit_prompt(runtime, model, display_config, std::move(prompt)))
             {
                 run_prompt(std::move(*engine_prompt));
             }

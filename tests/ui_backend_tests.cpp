@@ -28,6 +28,37 @@ auto make_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharne
         });
 }
 
+auto make_model_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "model-repo";
+    const auto memory_root = temp.path / "model-memory";
+    std::filesystem::create_directories(repo);
+
+    return codeharness::runtime::create_runtime_bundle(
+        codeharness::runtime::RuntimeBundleOptions{
+            .cwd = repo,
+            .memory_root = memory_root,
+            .load_default_user_plugins = false,
+            .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "echo-a"},
+            .model_profiles =
+                {
+                    codeharness::runtime::RuntimeModelProfile{
+                        .id = "a",
+                        .label = "Echo A",
+                        .description = "echo / echo-a",
+                        .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "echo-a"},
+                    },
+                    codeharness::runtime::RuntimeModelProfile{
+                        .id = "b",
+                        .label = "Echo B",
+                        .description = "echo / echo-b",
+                        .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "echo-b"},
+                    },
+                },
+            .active_model_profile_id = "a",
+        });
+}
+
 auto make_write_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
 {
     const auto repo = temp.path / "write-repo";
@@ -925,6 +956,52 @@ TEST_CASE("ui backend select_command emits available commands")
         }
     }
     CHECK(saw_skills);
+}
+
+TEST_CASE("ui backend select_model emits available model profiles")
+{
+    TempDir temp{"codeharness-ui-backend-select-model-test"};
+    auto bundle = make_model_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"select_model"})" "\n");
+
+    REQUIRE(events.size() == 2);
+    CHECK(events.at(0).at("type") == "ready");
+    CHECK(events.at(1).at("type") == "model_select");
+    REQUIRE(events.at(1).at("profiles").size() == 2);
+    CHECK(events.at(1).at("profiles").at(0).at("id") == "a");
+    CHECK(events.at(1).at("profiles").at(0).at("is_current") == true);
+    CHECK(!events.at(1).at("profiles").at(0).contains("api_key"));
+}
+
+TEST_CASE("ui backend apply_model switches current model profile")
+{
+    TempDir temp{"codeharness-ui-backend-apply-model-test"};
+    auto bundle = make_model_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"apply_model","profile_id":"b"})" "\n");
+
+    REQUIRE(events.size() == 3);
+    CHECK(events.at(1).at("type") == "assistant_delta");
+    CHECK(events.at(1).at("text") == "Switched model to Echo B");
+    CHECK(events.at(2).at("type") == "line_complete");
+    CHECK((*bundle)->current_model_profile().id == "b");
+}
+
+TEST_CASE("ui backend apply_model rejects unknown profile")
+{
+    TempDir temp{"codeharness-ui-backend-apply-model-unknown-test"};
+    auto bundle = make_model_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    auto events = run_backend_host(**bundle, R"({"type":"apply_model","profile_id":"missing"})" "\n");
+
+    REQUIRE(events.size() == 2);
+    CHECK(events.at(1).at("type") == "error");
+    CHECK(events.at(1).at("message") == "unknown model profile: missing");
+    CHECK((*bundle)->current_model_profile().id == "a");
 }
 
 TEST_CASE("ui backend apply_select_command executes selected slash command")

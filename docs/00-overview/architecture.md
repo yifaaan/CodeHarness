@@ -155,53 +155,65 @@ src/codeharness/
   cli/           main command line
 ```
 
-## 分阶段重写路线
+## 分阶段重写进度
 
-### 阶段 1：最小 agent loop
+五个阶段的核心重写已全部完成（共 153 个源文件、27 个测试文件）。实现代码见 `src/codeharness/`。
 
-- CLI：`codeharness -p "prompt"`
-- Provider：OpenAI-compatible streaming。
-- Messages：`TextBlock`、`ToolUseBlock`、`ToolResultBlock`。
-- Tools：`read_file`、`glob`、`grep`。
-- Engine：工具调用回填和 max turns。
-- Session：保存 JSON snapshot。
+### 阶段 1：最小 agent loop ✅ 已完成
 
-### 阶段 2：安全工具执行
+- CLI：`cli/` — `run_cli()` 参数解析（CLI11）
+- Provider：`provider/` — `EchoProvider`、`OpenAIProvider`、`AnthropicProvider`，统一 `Provider` 接口，SSE streaming
+- Messages：`core/message.h` — `TextBlock`、`ToolUseBlock`、`ToolResultBlock`、`ContentBlock` variant
+- Tools：`read_file`、`glob`、`grep`，通过 `ToolRegistry` 注册和查找
+- Engine：`engine/engine.h/.cpp` — `Engine::run_streaming()`，工具调用回填和 max turns，`EngineEvent` variant
+- Session：`sessions/session_store.h/.cpp` — JSON 保存和恢复，Markdown 导出
 
-- `bash`、`write_file`、`edit_file`。
-- `PermissionChecker`。
-- 敏感路径硬拒绝。
-- 默认模式需要确认。
-- 工具输出截断和 artifact 保存。
+### 阶段 2：安全工具执行 ✅ 已完成
 
-### 阶段 3：上下文系统
+- `bash` + `reproc`、`write_file` + atomic write、`edit_file` + old/new string replace
+- `PermissionChecker`：`PermissionMode::{Default, Plan, FullAuto}`、路径规则、命令规则
+- 敏感路径硬拒绝（`.ssh`、`.aws/credentials`、`.kube/config` 等），不可被 `full_auto` 绕过
+- 默认模式写操作需要确认，read-only 工具自动允许
+- 工具输出截断 + artifact 保存策略
 
-- system prompt builder。
-- CLAUDE.md discovery。
-- skills loader。
-- memory store。
-- slash commands。
+### 阶段 3：上下文系统 ✅ 已完成
 
-### 阶段 4：MCP 和插件
+- `prompts/system_prompt.h/.cpp` — `build_system_prompt()` + `EnvironmentDetector`
+- `prompts/project_context.h/.cpp` — `load_project_context_files()` 向上搜索 AGENTS.md/CLAUDE.md
+- `skills/` — `SkillRegistry`、`SkillTool`、bundled/用户/项目技能加载
+- `memory/memory_store.h/.cpp` — Markdown memory、相关性搜索、使用索引
+- `commands/command_registry.h/.cpp` — `/help`、`/skills`、`/model`、`/clear` 等 slash command
 
-- MCP stdio transport。
-- MCP HTTP transport。
-- plugin manifest、plugin skills、plugin commands、plugin MCP config。
+### 阶段 4：MCP 和插件 ✅ 已完成
 
-### 阶段 5：交互和多 agent
+- MCP stdio transport：`mcp/stdio_transport.h/.cpp`（基于 `reproc`）
+- MCP JSON-RPC：`mcp/json_rpc.h/.cpp`
+- MCP ClientSession：`mcp/client_session.h/.cpp` — initialize、list_tools、call_tool
+- MCP ToolAdapter：`mcp/tool_adapter.h/.cpp` — MCP 工具包装为标准 `Tool`
+- Plugin：`plugins/plugin_loader.h/.cpp` — `plugin.json` 解析、user/project 插件加载
 
-- JSON Lines backend-only 协议。
-- 复用或替换 React TUI。
-- TaskManager。
-- Subprocess subagent。
-- Mailbox 和 team lifecycle。
+### 阶段 5：交互和多 agent ✅ 已完成
 
-### 阶段 6：coding agent refinement
+- TUI：`tui/` — TuiAppModel、command palette、model selector、permission 弹窗、Markdown 渲染
+- BackendHost：`ui_backend/ui_backend.h/.cpp` — JSON Lines OHJSON: 协议
+- TaskManager：`tasks/task_manager.h/.cpp` — shell/agent task 创建、状态落盘、stop、tail
+- Task tools + Agent tool：`tasks/task_tools.h/.cpp`，已接入 ToolRegistry
+- Mailbox + TeamLifecycle：`mailbox/` — 文件系统 mailbox、`send_message` 工具、team CRUD
+- Coordinator：`coordinator/` — AgentDefinition 加载、SubprocessBackend::spawn
+- Runtime：`runtime/runtime.h/.cpp` — `RuntimeBundle` 组装层
 
-- ohmo workspace。
-- CLI / TUI runtime assembly。
-- session resume 和 permission UX。
-- coding-agent workflow polish。
+---
+
+## 后续可能扩展
+
+以下功能不在当前 C++ 实现范围内，可根据需求后续添加：
+
+- MCP HTTP transport
+- Provider：GitHub Copilot、Codex subscription
+- `write_to_task` stdin 写入
+- 自动上下文压缩（Auto-compact）
+- 并发工具执行
+- ohmo workspace 层
 
 ## 初学者常见误区
 

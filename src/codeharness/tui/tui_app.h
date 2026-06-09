@@ -189,7 +189,7 @@ private:
 };
 
 using ModelListProvider = std::function<std::vector<ModelOption>()>;
-using ModelSelectCallback = std::function<void(const ModelOption&)>;
+using ModelSelectCallback = std::function<Result<ModelOption>(const ModelOption&)>;
 
 auto run_tui(runtime::RuntimeBundle& runtime,
              int max_turns,

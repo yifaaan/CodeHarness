@@ -15,35 +15,37 @@ docs/OpenHarness
 建议按下面顺序阅读。你是 agent 开发和网络编程初学者时，不要直接从 MCP、swarm 或 UI 开始。
 
 1. `00-overview/architecture.md`：先理解 OpenHarness 是什么，以及一次 agent 对话如何流动。
-2. `00-overview/beginner-guide.md`：补齐 agent、streaming、JSON-RPC、进程、并发等基础概念。
-3. `01-engine/design.md`：理解核心 agent loop。
-4. `15-provider/cpp20-rewrite.md`：理解模型 API、流式响应、工具调用格式转换。
-5. `02-tools/design.md` 和 `05-permissions/cpp20-rewrite.md`：理解模型如何调用本地工具，以及如何加安全边界。
-6. `08-mcp/cpp20-rewrite.md`：理解外部工具服务器接入。
-7. `09-memory/cpp20-rewrite.md`、`03-skills/cpp20-rewrite.md`、`04-plugins/cpp20-rewrite.md`：理解上下文、记忆和扩展系统。
-8. `14-ui/cpp20-rewrite.md`：最后理解交互式 TUI 和可选 ohmo workspace。
+2. `00-overview/feature-gap.md`：了解 CodeHarness 与 OpenHarness 的功能差异。
+3. `00-overview/beginner-guide.md`：补齐 agent、streaming、JSON-RPC、进程、并发等基础概念。
+4. `01-engine/cpp20-rewrite.md`：理解核心 agent loop 实现。
+5. `15-provider/cpp20-rewrite.md`：理解模型 API、流式响应、工具调用格式转换。
+6. `02-tools/cpp20-rewrite.md` 和 `05-permissions/cpp20-rewrite.md`：理解模型如何调用本地工具，以及如何加安全边界。
+7. `08-mcp/cpp20-rewrite.md`：理解外部工具服务器接入。
+8. `09-memory/cpp20-rewrite.md`、`03-skills/cpp20-rewrite.md`、`04-plugins/cpp20-rewrite.md`：理解上下文、记忆和扩展系统。
+9. `14-ui/cpp20-rewrite.md`：最后理解交互式 TUI。
 
 ## 文档目录
 
 ```text
 docs/
-  00-overview/      总体架构、学习路线、分阶段重写路线
-                    dependency 选型见 dependencies.md
-  01-engine/        Agent Loop、QueryEngine、stream event
-  02-tools/         ToolRegistry、内置工具、工具结果管理
-  03-skills/        Markdown skills 加载和 C++20 重写
-  04-plugins/       插件 manifest、commands、hooks、MCP 配置
-  05-permissions/   权限模式、路径规则、敏感路径保护
-  06-hooks/         生命周期 hook 和拦截机制
-  07-commands/      Slash command 注册和执行
-  08-mcp/           MCP client、stdio/http transport、JSON-RPC
-  09-memory/        MEMORY.md、相关性搜索、usage index
-  10-tasks/         后台任务、进程管理、日志
-  11-coordinator/   多 agent、swarm、mailbox、team lifecycle
-  12-prompts/       system prompt 拼装、CLAUDE.md、环境注入
-  13-config/        Settings、profile、路径、持久化
-  14-ui/            React TUI 协议、backend-only、ohmo workspace
-  15-provider/      Anthropic/OpenAI/Copilot/Codex provider 适配
+  00-overview/      总体架构、功能对比、学习路线
+                    feature-gap.md — CodeHarness vs OpenHarness 功能差异
+                    dependencies.md — 依赖选型
+  01-engine/        Agent Loop、Engine 实现
+  02-tools/         ToolRegistry、内置工具实现
+  03-skills/        Skills 加载和注册
+  04-plugins/       Plugin manifest 解析
+  05-permissions/   权限模式、路径规则
+  06-hooks/         生命周期 hook
+  07-commands/      Slash command 注册
+  08-mcp/           MCP client、stdio transport、JSON-RPC
+  09-memory/        MEMORY.md、相关性搜索
+  10-tasks/         后台任务、进程管理
+  11-coordinator/   AgentDefinition、SubprocessBackend
+  12-prompts/       System prompt 拼装
+  13-config/        Settings、Credentials、Paths
+  14-ui/            Native TUI、BackendHost
+  15-provider/      OpenAI/Anthropic provider
   OpenHarness/      上游源码 submodule
 ```
 
@@ -70,31 +72,38 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 | `config` | settings、profile、路径、权限、sandbox、MCP 配置 |
 | `ui` | React TUI 后端协议、runtime 装配、print mode |
 
-## C++20 重写目标
+## C++20 实现进度
 
-第一版不要追求完全复刻所有功能。建议先做一个可运行、可测试、边界清晰的核心版本：
+五个阶段的核心重写已全部完成，共 153 个源文件、27 个测试文件：
 
-1. 支持 `codeharness -p "prompt"` 非交互模式。
-2. 支持 OpenAI-compatible 和 Anthropic-compatible streaming。
-3. 支持内部统一消息模型和工具调用模型。
-4. 支持 3 到 6 个基础工具：`read_file`、`write_file`、`edit_file`、`grep`、`glob`、`bash`。
-5. 支持权限确认、敏感路径硬拒绝、max turns。
-6. 支持 JSON session 保存和恢复。
-7. 后续再加入 TUI、subagent、ohmo。
+| 阶段 | 模块 | 状态 |
+| --- | --- | --- |
+| 1. Agent Loop | CLI、Engine、Provider(OpenAI/Anthropic)、Messages、Sessions、Tools(read/glob/grep) | ✅ 已完成 |
+| 2. Safe Tool Execution | bash/write/edit tools、PermissionChecker、敏感路径硬拒绝、输出截断 | ✅ 已完成 |
+| 3. Context System | SystemPromptBuilder、AGENTS.md 发现、Skills、Memory、SlashCommands | ✅ 已完成 |
+| 4. MCP & Plugins | MCP stdio transport、JSON-RPC、ClientSession、ToolAdapter、PluginLoader | ✅ 已完成 |
+| 5. Interaction & Multi-Agent | TUI、BackendHost、TaskManager、Mailbox、TeamLifecycle、Coordinator | ✅ 已完成 |
 
-## 当前 C++ 实现进度
+实现代码见 `src/codeharness/`，测试见 `tests/`。
 
-截至 2026-06-04，本仓库已实现并测试的 C++ 模块包括：
+### 模块文件统计
 
-| 模块 | 当前状态 |
-| --- | --- |
-| engine/provider/tools/permissions/hooks | 已有基础实现和测试，支持工具回填、权限判定和 hook 拦截 |
-| skills/plugins/commands/prompts/memory/MCP | 已有 C++ 骨架与 focused tests，可作为后续 runtime 组装材料 |
-| tasks | 已实现 `TaskManager` v1、一次性 `local_agent`、`task_*` 工具和最小 `agent` 工具：后台 shell/agent task、JSON 状态、log、tail、stop、ToolRegistry 接入；stop 采用 request-stop 机制，避免 `reproc::process` 跨线程并发访问 |
-| mailbox/coordinator | 已实现文件系统 Mailbox、`send_message` 工具、TeamLifecycleManager v1、AgentDefinitionLoader v1、AgentDefinitionRegistry v1，以及 SubprocessBackend::spawn 最小版（创建 `local_agent` task 并记录 team membership） |
-| swarm/UI | 仍处设计阶段；下一步依赖 worker 消息消费、spawn config 与 agent definition 合并逻辑、backend-only UI 协议继续推进 |
-
-与上游 `docs/OpenHarness` 对比，Mailbox、`send_message`、TeamLifecycleManager、AgentDefinitionLoader、AgentDefinitionRegistry 和 SubprocessBackend::spawn 已进入 C++ 第一版；当前最自然的后续实现顺序是：worker 消息消费、spawn config 与 agent definition 合并逻辑、backend-only UI 协议。
+| 目录 | 文件数 | 说明 |
+| --- | --- | --- |
+| tools | 26 | 工具注册和执行 |
+| provider | 22 | OpenAI/Anthropic/Echo provider |
+| core | 14 | 基础类型（Result、Message、Error 等） |
+| coordinator | 10 | AgentDefinition、SubprocessBackend |
+| mcp | 11 | MCP stdio transport、JSON-RPC |
+| skills | 8 | SkillRegistry、SkillLoader |
+| mailbox | 8 | 文件系统 mailbox、TeamLifecycle |
+| config | 8 | Settings、Credentials、Paths |
+| tui | 9 | Native TUI 渲染 |
+| prompts | 4 | SystemPromptBuilder、ProjectContext |
+| network | 4 | HTTP client、SSE parser |
+| tasks | 4 | TaskManager、TaskTools |
+| hooks | 6 | HookRegistry、HookExecutor |
+| 其他 | 23 | CLI、commands、memory、permissions、plugins、runtime、sessions、engine、ui_backend |
 
 ## 推荐依赖
 
@@ -114,7 +123,7 @@ OpenHarness 的核心目录是 `docs/OpenHarness/src/openharness`：
 | Result 类型 | `expected-lite`，用户确认可作为 awesome-cpp 约束外的例外导入 |
 | 本地索引 | `sqlite3` |
 | 测试 | `doctest` |
-| TUI | 初版先不做，后续考虑 `FTXUI` |
+| TUI | 已实现 native TUI（`tui/`），使用控制台原生渲染 |
 
 ## 重要原则
 

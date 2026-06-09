@@ -200,6 +200,11 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
     {
         return nonstd::make_unexpected(answer.error());
     }
+    auto profile_id = read_optional_json_field<std::string>(input, "profile_id", "frontend request");
+    if (!profile_id)
+    {
+        return nonstd::make_unexpected(profile_id.error());
+    }
 
     return FrontendRequest{
         .type = std::move(*type),
@@ -211,6 +216,7 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
         .args = std::move(*args),
         .query = std::move(*query),
         .answer = std::move(*answer),
+        .profile_id = std::move(*profile_id),
     };
 }
 
@@ -285,6 +291,20 @@ auto format_backend_event(const BackendEvent& event) -> std::string
                         });
                 }
                 return prefixed_json_line(nlohmann::json{{"type", "select_request"}, {"commands", std::move(commands)}});
+            },
+            [](const BackendModelSelectRequest& select) {
+                nlohmann::json profiles = nlohmann::json::array();
+                for (const auto& profile : select.profiles)
+                {
+                    profiles.push_back(
+                        nlohmann::json{
+                            {"id", profile.id},
+                            {"label", profile.label},
+                            {"description", profile.description},
+                            {"is_current", profile.is_current},
+                        });
+                }
+                return prefixed_json_line(nlohmann::json{{"type", "model_select"}, {"profiles", std::move(profiles)}});
             },
             [](const BackendLineComplete&) {
                 return prefixed_json_line(nlohmann::json{{"type", "line_complete"}});
@@ -411,6 +431,18 @@ auto BackendHost::handle_request(const FrontendRequest& request) -> bool
         return true;
     }
 
+    if (request.type == "select_model")
+    {
+        handle_select_model();
+        return true;
+    }
+
+    if (request.type == "apply_model")
+    {
+        handle_apply_model(request);
+        return true;
+    }
+
     if (request.type != "submit_line")
     {
         emit(BackendError{.message = "unsupported frontend request type: " + request.type});
@@ -527,6 +559,25 @@ auto BackendHost::run_submit_line(std::string line) -> void
             return;
         }
 
+        if (command_result->submit_model)
+        {
+            auto profile = runtime_.find_model_profile(*command_result->submit_model);
+            if (!profile)
+            {
+                emit(BackendError{.message = "unknown model profile: " + *command_result->submit_model});
+                emit(BackendLineComplete{});
+                return;
+            }
+
+            auto switched = runtime_.switch_model_profile(*profile);
+            if (!switched)
+            {
+                emit(BackendError{.message = switched.error().message});
+                emit(BackendLineComplete{});
+                return;
+            }
+        }
+
         prompt = *command_result->submit_prompt;
     }
 
@@ -594,6 +645,49 @@ auto BackendHost::handle_apply_select_command(const FrontendRequest& request) ->
     }
 
     handle_submit_line(line);
+}
+
+auto BackendHost::handle_select_model() -> void
+{
+    BackendModelSelectRequest request;
+    const auto current = runtime_.current_model_profile();
+    for (const auto& profile : runtime_.model_profiles())
+    {
+        request.profiles.push_back(
+            BackendModelEntry{
+                .id = profile.id,
+                .label = profile.label,
+                .description = profile.description,
+                .is_current = profile.id == current.id,
+            });
+    }
+    emit(request);
+}
+
+auto BackendHost::handle_apply_model(const FrontendRequest& request) -> void
+{
+    if (!request.profile_id || request.profile_id->empty())
+    {
+        emit(BackendError{.message = "apply_model requires profile_id"});
+        return;
+    }
+
+    auto profile = runtime_.find_model_profile(*request.profile_id);
+    if (!profile)
+    {
+        emit(BackendError{.message = "unknown model profile: " + *request.profile_id});
+        return;
+    }
+
+    auto switched = runtime_.switch_model_profile(*profile);
+    if (!switched)
+    {
+        emit(BackendError{.message = switched.error().message});
+        return;
+    }
+
+    emit(BackendAssistantDelta{.text = "Switched model to " + switched->label});
+    emit(BackendLineComplete{});
 }
 
 auto BackendHost::handle_permission_response(const FrontendRequest& request) -> void

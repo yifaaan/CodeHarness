@@ -1,328 +1,82 @@
-# Engine C++20 重写方案
+# Engine C++20 实现参考
 
-本文件给出 `engine` 模块的 C++20 实现建议。
+Engine 模块的 C++20 实现已完成，代码见 `src/codeharness/engine/engine.h`（159 行声明）+ `engine.cpp`（448 行实现）。
 
-## 目标
+## 已实现的能力
 
-第一版 engine 要做到：
-
-- 管理对话历史。
-- 调用统一 provider 接口。
-- 消费 streaming event。
-- 执行 tool calls。
-- 把 tool results 回填给模型。
-- 输出统一 `StreamEvent` 给 CLI/TUI。
-- 能处理错误、权限拒绝、max turns。
-
-不要在第一版做完整 auto compact、复杂 cost 统计、图像预处理。先保留接口。
-
-## 目录建议
-
-```text
-src/codeharness/engine/
-  conversation.hpp
-  conversation.cpp
-  stream_event.hpp
-  query_context.hpp
-  query_engine.hpp
-  query_engine.cpp
-  tool_executor.hpp
-  tool_executor.cpp
-  cost_tracker.hpp
-```
-
-## 消息模型
-
-Python 的 Pydantic union 在 C++ 中建议用 `std::variant`。
-
-```cpp
-struct TextBlock {
-    std::string text;
-};
-
-struct ImageBlock {
-    std::string mediaType;
-    std::string dataBase64;
-    std::optional<std::string> sourcePath;
-};
-
-struct ToolUseBlock {
-    std::string id;
-    std::string name;
-    nlohmann::json input;
-};
-
-struct ToolResultBlock {
-    std::string toolUseId;
-    std::string content;
-    bool isError = false;
-    nlohmann::json metadata = nlohmann::json::object();
-};
-
-using ContentBlock = std::variant<TextBlock, ImageBlock, ToolUseBlock, ToolResultBlock>;
-
-enum class Role {
-    User,
-    Assistant
-};
-
-struct ConversationMessage {
-    Role role;
-    std::vector<ContentBlock> content;
-};
-```
-
-## StreamEvent 设计
-
-```cpp
-struct AssistantTextDelta {
-    std::string text;
-};
-
-struct AssistantTurnComplete {
-    ConversationMessage message;
-    nlohmann::json usage;
-};
-
-struct ToolExecutionStarted {
-    std::string toolUseId;
-    std::string toolName;
-    nlohmann::json input;
-};
-
-struct ToolExecutionCompleted {
-    std::string toolUseId;
-    std::string toolName;
-    std::string output;
-    bool isError = false;
-    nlohmann::json metadata;
-};
-
-struct StatusEvent {
-    std::string message;
-};
-
-struct ErrorEvent {
-    std::string message;
-    bool fatal = false;
-};
-
-using StreamEvent = std::variant<
-    AssistantTextDelta,
-    AssistantTurnComplete,
-    ToolExecutionStarted,
-    ToolExecutionCompleted,
-    StatusEvent,
-    ErrorEvent
->;
-```
-
-## Provider 接口
-
-Engine 只依赖统一接口：
-
-```cpp
-class IStreamingClient {
-public:
-    virtual ~IStreamingClient() = default;
-
-    virtual void streamMessage(
-        const ApiMessageRequest& request,
-        std::function<void(ApiStreamEvent)> onEvent
-    ) = 0;
-};
-```
-
-如果后续使用 coroutine，可以改成 generator 或 async task，但第一版 callback 更容易。
-
-## QueryContext
-
-```cpp
-struct QueryContext {
-    IStreamingClient& apiClient;
-    ToolRegistry& toolRegistry;
-    PermissionChecker& permissionChecker;
-    std::filesystem::path cwd;
-    std::string model;
-    std::string systemPrompt;
-    int maxTokens = 4096;
-    std::optional<int> maxTurns = 200;
-    HookExecutor* hooks = nullptr;
-    nlohmann::json* toolMetadata = nullptr;
-    std::function<bool(std::string_view tool, std::string_view reason)> permissionPrompt;
-};
-```
-
-## QueryEngine 类
-
-```cpp
-class QueryEngine {
-public:
-    QueryEngine(QueryContext context);
-
-    void submitMessage(
-        std::string text,
-        std::function<void(StreamEvent)> emit
-    );
-
-    const std::vector<ConversationMessage>& messages() const;
-    void loadMessages(std::vector<ConversationMessage> messages);
-    void clear();
-
-private:
-    QueryContext context_;
-    std::vector<ConversationMessage> messages_;
-    nlohmann::json toolMetadata_;
-};
-```
-
-第一版可以让 `submitMessage` 阻塞执行，边执行边调用 `emit`。后续再改成后台线程或 coroutine。
-
-## ToolExecutor
-
-把工具执行从 QueryEngine 中拆出，避免 `query_engine.cpp` 变成巨型文件。
-
-```cpp
-class ToolExecutor {
-public:
-    ToolExecutor(ToolRegistry& registry,
-                 PermissionChecker& permissions,
-                 HookExecutor* hooks);
-
-    ToolResultBlock execute(
-        const ToolUseBlock& call,
-        const ToolExecutionContext& ctx,
-        std::function<void(StreamEvent)> emit
-    );
-};
-```
-
-职责：
-
-- 查找工具。
-- 校验输入。
-- 执行 pre hook。
-- 做权限检查。
-- 调用工具。
-- 截断大输出。
-- 执行 post hook。
-- 返回 `ToolResultBlock`。
-
-## run loop 伪代码
-
-```cpp
-void QueryEngine::submitMessage(std::string text, Emit emit) {
-    messages_.push_back(userTextMessage(text));
-
-    int turn = 0;
-    while (true) {
-        if (context_.maxTurns && turn++ >= *context_.maxTurns) {
-            emit(ErrorEvent{"Exceeded max turns", true});
-            return;
-        }
-
-        ApiMessageRequest request = buildRequest(messages_, context_);
-        ProviderResult providerResult;
-
-        context_.apiClient.streamMessage(request, [&](ApiStreamEvent ev) {
-            if (auto* delta = std::get_if<ApiTextDelta>(&ev)) {
-                emit(AssistantTextDelta{delta->text});
-            }
-            if (auto* done = std::get_if<ApiMessageComplete>(&ev)) {
-                providerResult.message = done->message;
-                providerResult.usage = done->usage;
-            }
-        });
-
-        messages_.push_back(providerResult.message);
-        emit(AssistantTurnComplete{providerResult.message, providerResult.usage});
-
-        auto calls = extractToolUses(providerResult.message);
-        if (calls.empty()) {
-            break;
-        }
-
-        std::vector<ToolResultBlock> results;
-        for (const auto& call : calls) {
-            results.push_back(toolExecutor.execute(call, toolCtx, emit));
-        }
-
-        messages_.push_back(userToolResultsMessage(results));
-    }
-}
-```
-
-## 并发执行策略
-
-第一版可以顺序执行工具，保证逻辑正确。第二版再加入并发。
-
-并发版本建议：
-
-- 用 `ThreadPool` 投递工具任务。
-- 结果用 vector 按原 index 保存。
-- 所有任务完成后一次性追加 tool result message。
-- 工具开始和结束事件仍实时 emit。
-
-```cpp
-std::vector<std::future<ToolResultBlock>> futures;
-for (const auto& call : calls) {
-    futures.push_back(pool.submit([&, call] {
-        return executor.execute(call, ctx, emit);
-    }));
-}
-
-for (auto& future : futures) {
-    results.push_back(future.get());
-}
-```
-
-注意：`emit` 如果被多个线程调用，必须加锁或把事件投递到线程安全队列。
-
-## 错误处理
-
-建议区分三类错误：
-
-| 错误 | 处理 |
+| 能力 | 代码位置 |
 | --- | --- |
-| Provider fatal error | 发 `ErrorEvent{fatal=true}`，停止本轮 |
-| Tool execution error | 变成 `ToolResultBlock{isError=true}`，继续回给模型 |
-| Permission denied | 变成 error tool result，继续回给模型 |
+| 管理对话历史 | `Engine::messages()` / `Engine::load_messages()` |
+| 调用统一 Provider 接口 | `m_api_client` 持有 `Provider` 抽象 |
+| 消费 streaming event | `run_streaming()` 内 lambda 回调 |
+| 执行 tool calls | `execute_tool_use()` — 查找 → 权限 → hook → 执行 → 回填 |
+| tool results 回填给模型 | 追加 `ToolResultBlock` 作为下一轮 user message |
+| 输出统一事件给 CLI/TUI | `EngineEvent` variant：`TextDelta`、`ToolUse`、`ToolResult`、`Status`、`Error`、`Done` |
+| 错误、权限拒绝、max turns | 三者在 `submit_message()`/`run_streaming()` 中分别处理 |
 
-不要让某个工具异常直接终止进程。
+消息模型和事件类型分别定义于 `core/message.h` 和 `engine/engine.h`。
 
-## JSON 序列化
+## 核心接口
 
-所有消息和事件都应支持 JSON 序列化，方便：
-
-- session 保存。
-- stream-json 输出。
-- UI backend-only 协议。
-- 单元测试快照。
-
-建议为每个 block 加 `type` 字段：
-
-```json
-{"type":"text","text":"hello"}
-{"type":"tool_use","id":"...","name":"read_file","input":{}}
+```
+Engine                           主机 loop，持有 provider/registry/permission/hooks
+├── submit_message(text, emit)   用户文本消息入口
+├── run_streaming(request, emit) 核心 agent loop（最大 200 轮）
+├── execute_tool_use(call, emit) 单个 tool use 的完整生命周期
+└── messages() / load_messages   对话历史访问
 ```
 
-## 测试建议
+Tool 执行完整流程（`engine.cpp` `execute_tool_use()`）：查找工具 → 权限目标提取 → `PermissionChecker.evaluate()` → PreToolUse hook → `Tool::execute()` → 输出截断 → PostToolUse hook → `ToolResponse`。
 
-写一个 fake provider，不需要真实网络：
+## 消息模型（`core/message.h`）
 
-```cpp
-class FakeStreamingClient : public IStreamingClient {
-public:
-    std::vector<ApiStreamEvent> scriptedEvents;
-    void streamMessage(const ApiMessageRequest&, Callback cb) override {
-        for (auto& ev : scriptedEvents) cb(ev);
-    }
-};
+```
+Message           role + content blocks
+  Role::User | Assistant | Tool | System
+ContentBlock      std::variant<TextBlock, ImageBlock, ToolUseBlock, ToolResultBlock>
 ```
 
-测试用 fake provider 返回 tool call，然后检查：
+## 事件模型（`engine/engine.h`）
 
-- 工具被调用。
-- messages 里追加了 assistant message。
-- messages 里追加了 tool result user message。
-- emit 收到 tool_started 和 tool_completed。
+```
+EngineEvent       std::variant<
+                    TextDelta, ToolUseDelta, ToolUse,
+                    ToolResult, StatusEvent, ErrorEvent, DoneEvent
+                  >
+```
+
+`submit_message()` 阻塞执行但通过 `emit` 回调实时输出事件，CLI/TUI/Tests 统一消费。
+
+## 整体架构设计参考
+
+### Provider 抽象
+
+Engine 只依赖 `Provider` 接口（`provider/provider.h`）：
+
+- `Provider::stream_message(Request, on_event)` — callback 驱动
+- 子类：`OpenAIProvider`、`AnthropicProvider`、`EchoProvider`（测试用）
+
+### Tool 抽象
+
+Engine 通过 `ToolRegistry` 访问工具：
+
+- `Tool::execute(json args, ToolContext) → ToolResponse`
+- `Tool::input_schema()` / `is_read_only()` / `permission_target()` / `name()` / `description()`
+
+注册在 `runtime/runtime.cpp` 的 `create_tool_registry()` 中。
+
+### Permission 集成
+
+`PermissionChecker::evaluate()` 在工具执行前调用。支持三种模式：
+- `Default` — 只读自动允许，写操作需确认
+- `Plan` — 阻止所有写操作
+- `FullAuto` — 自动允许，但敏感路径仍硬拒绝
+
+## 当前引擎暂未实现
+
+以下功能暂不在当前 C++ 实现范围内：
+
+- **并发工具执行**：当前顺序执行多个 tool use
+- **Auto compact**：上下文长度达到阈值时自动压缩历史
+- **Cost tracker**：未独立统计
+- **图像预处理**：`ImageBlock` 消息类型预留了接口，provider 尚未实现
