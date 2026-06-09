@@ -23,6 +23,7 @@ constexpr std::string_view k_separator = " \xe2\x94\x82 "; // │
 [[nodiscard]] auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>;
 [[nodiscard]] auto render_transcript_lines(const std::vector<TranscriptItem>& transcript, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_command_palette_lines(const CommandPaletteState& palette, int width) -> std::vector<std::string>;
+[[nodiscard]] auto render_select_modal_lines(const SelectModalState& modal, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_permission_lines(const PermissionPrompt& prompt, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_status_footer_line(const TuiDisplayConfig& config, const TuiState& state) -> std::string;
 [[nodiscard]] auto render_composer_hint(bool busy, int history_index = -1) -> std::string;

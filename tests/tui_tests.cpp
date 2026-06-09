@@ -23,8 +23,8 @@ TEST_CASE("tui model renders pending permission modal")
     CHECK(rendered.find("Allow write_file?") != std::string::npos);
     CHECK(rendered.find("write_file") != std::string::npos);
     CHECK(rendered.find("output.txt") != std::string::npos);
-    CHECK(rendered.find("Allow once") != std::string::npos);
-    CHECK(rendered.find("Allow session") != std::string::npos);
+    CHECK(rendered.find("allow once") != std::string::npos);
+    CHECK(rendered.find("allow session") != std::string::npos);
     CHECK(model.handle_permission_approve() == codeharness::tui::TuiAction::ApprovePermission);
     CHECK(!model.state().pending_permission.has_value());
 
@@ -65,6 +65,18 @@ TEST_CASE("tui model composer submit and quit states")
     CHECK(!model.state().busy);
     CHECK(model.handle_quit() == codeharness::tui::TuiAction::Quit);
     CHECK(model.state().should_quit);
+}
+
+TEST_CASE("tui busy state suppresses prompt submit but allows interrupt")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("running");
+
+    model.set_composer("new prompt");
+    CHECK(model.handle_submit() == codeharness::tui::TuiAction::None);
+    CHECK(model.handle_quit() == codeharness::tui::TuiAction::None);
+    CHECK(model.handle_interrupt() == codeharness::tui::TuiAction::Interrupt);
+    CHECK(model.state().interrupt_requested);
 }
 
 TEST_CASE("tui model interrupt marks busy run and renders status")
@@ -283,6 +295,32 @@ TEST_CASE("tui render uses codex style transcript and command palette")
     CHECK(palette_rendered.find("↑↓ navigate · Enter select · Esc cancel") != std::string::npos);
 }
 
+TEST_CASE("tui command palette renders search empty and overflow states")
+{
+    codeharness::tui::TuiAppModel model;
+    std::vector<codeharness::tui::CommandPaletteEntry> commands;
+    for (int index = 0; index < 10; ++index)
+    {
+        commands.push_back(codeharness::tui::CommandPaletteEntry{
+            .name = "cmd" + std::to_string(index),
+            .description = "Command " + std::to_string(index),
+        });
+    }
+
+    model.set_composer("/");
+    model.open_command_palette(commands);
+    auto rendered = model.render_text();
+    CHECK(rendered.find("Select a command  (type to search)") != std::string::npos);
+    CHECK(rendered.find("↑↓ navigate · Enter select · Esc cancel") != std::string::npos);
+    CHECK(rendered.find("▼ 2 more") != std::string::npos);
+
+    model.command_palette_input('z');
+    rendered = model.render_text();
+    CHECK(rendered.find("Search: z") != std::string::npos);
+    CHECK(rendered.find("Backspace clear") != std::string::npos);
+    CHECK(rendered.find("No matches") != std::string::npos);
+}
+
 TEST_CASE("tui render auto expands failed tool output")
 {
     codeharness::tui::TuiAppModel model;
@@ -345,6 +383,14 @@ TEST_CASE("tui composer only treats shifted enter sequences as newline")
     CHECK(codeharness::tui::is_composer_newline_event(ftxui::Event::Special("\x1b[27;2~")));
 }
 
+TEST_CASE("tui composer hint matches codex style")
+{
+    CHECK(codeharness::tui::render::render_composer_hint(false) ==
+          "Shift+Enter newline · Enter send · / commands · Ctrl+P/N history · Ctrl+C exit");
+    CHECK(codeharness::tui::render::render_composer_hint(true) == "Esc stop · Ctrl+C stop");
+    CHECK(codeharness::tui::render::render_composer_hint(false, 1).find("history 2") != std::string::npos);
+}
+
 TEST_CASE("tui markdown parses headings lists and inline styles")
 {
     const auto blocks = codeharness::tui::markdown::parse_blocks("# Title\n\n- item\n\n`code` and **bold**");
@@ -392,6 +438,7 @@ TEST_CASE("tui select modal opens navigates and selects")
     REQUIRE(model.state().select_modal.has_value());
     CHECK(model.state().select_modal->title == "Select model");
     CHECK(model.state().select_modal->options.size() == 3);
+    CHECK(model.state().select_modal->matches.size() == 3);
     // Cursor should start at the current item (Claude 3, index 1)
     CHECK(model.state().select_modal->cursor == 1);
 
@@ -425,6 +472,38 @@ TEST_CASE("tui select modal opens navigates and selects")
 
     // Close
     model.close_select_modal();
+    CHECK(!model.state().select_modal.has_value());
+}
+
+TEST_CASE("tui select modal uses list dialog style and supports search cancel")
+{
+    codeharness::tui::TuiAppModel model;
+    model.open_select_modal("Select model", {
+        codeharness::tui::ModelOption{.value = "gpt-4", .label = "GPT-4", .description = "openai"},
+        codeharness::tui::ModelOption{.value = "echo", .label = "Echo", .description = "echo", .is_current = true},
+    });
+
+    auto rendered = model.render_text();
+    CHECK(rendered.find("Select model  (type to search)") != std::string::npos);
+    CHECK(rendered.find("↑↓ navigate · Enter select · Esc cancel") != std::string::npos);
+    CHECK(rendered.find("\xe2\x9d\xaf Echo  echo") != std::string::npos);
+    CHECK(rendered.find("\xe2\x86\x90 current") != std::string::npos);
+
+    model.select_modal_input('g');
+    rendered = model.render_text();
+    CHECK(rendered.find("Search: g") != std::string::npos);
+    CHECK(rendered.find("Backspace clear") != std::string::npos);
+    REQUIRE(model.state().select_modal.has_value());
+    CHECK(model.state().select_modal->matches.size() == 1);
+    auto selected = model.select_modal_current();
+    REQUIRE(selected.has_value());
+    CHECK(selected->value == "gpt-4");
+
+    model.handle_select_cancel();
+    REQUIRE(model.state().select_modal.has_value());
+    CHECK(model.state().select_modal->query.empty());
+    CHECK(model.state().select_modal->matches.size() == 2);
+    model.handle_select_cancel();
     CHECK(!model.state().select_modal.has_value());
 }
 
@@ -541,6 +620,14 @@ TEST_CASE("tui paste is suppressed while busy")
     model.begin_prompt("busy");
     model.apply_paste_to_composer("should not appear");
     CHECK(model.state().composer.empty());
+}
+
+TEST_CASE("tui transcript follow wheel behavior")
+{
+    CHECK(!codeharness::tui::apply_transcript_follow_wheel(true, true, false));
+    CHECK(codeharness::tui::apply_transcript_follow_wheel(false, false, true));
+    CHECK(codeharness::tui::apply_transcript_follow_wheel(true, false, false));
+    CHECK(!codeharness::tui::apply_transcript_follow_wheel(false, false, false));
 }
 
 TEST_CASE("tui footer shows token usage and mcp connections")

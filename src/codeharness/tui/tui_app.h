@@ -94,7 +94,10 @@ struct SelectModalState
 {
     std::string title;
     std::vector<ModelOption> options;
+    std::string query;
+    std::vector<std::size_t> matches;
     std::size_t cursor = 0;
+    bool is_searchable = false;
 };
 
 struct QuestionModalState
@@ -153,6 +156,9 @@ public:
     auto close_select_modal() -> void;
     auto select_modal_up() -> void;
     auto select_modal_down() -> void;
+    auto select_modal_input(char character) -> void;
+    auto select_modal_backspace() -> void;
+    auto handle_select_cancel() -> TuiAction;
     [[nodiscard]] auto select_modal_current() const -> std::optional<ModelOption>;
     [[nodiscard]] auto select_modal_quick_select(int digit) -> std::optional<ModelOption>;
 
@@ -183,6 +189,7 @@ public:
 
 private:
     auto refresh_command_palette_matches() -> void;
+    auto refresh_select_modal_matches() -> void;
 
     TuiState state_;
     bool streamed_assistant_output_ = false;
@@ -190,6 +197,8 @@ private:
 
 using ModelListProvider = std::function<std::vector<ModelOption>()>;
 using ModelSelectCallback = std::function<Result<ModelOption>(const ModelOption&)>;
+
+auto apply_transcript_follow_wheel(bool current_follow, bool wheel_up, bool wheel_down) -> bool;
 
 auto run_tui(runtime::RuntimeBundle& runtime,
              int max_turns,

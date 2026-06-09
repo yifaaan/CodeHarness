@@ -47,6 +47,17 @@ auto command_matches_query(const CommandPaletteEntry& command, std::string_view 
     return std::ranges::any_of(command.aliases, contains);
 }
 
+auto model_option_matches_query(const ModelOption& option, std::string_view query) -> bool
+{
+    if (query.empty())
+    {
+        return true;
+    }
+
+    const auto contains = [query](const std::string& value) { return value.find(query) != std::string::npos; };
+    return contains(option.value) || contains(option.label) || contains(option.description);
+}
+
 auto command_entries_from_registry(const CommandRegistry& registry) -> std::vector<CommandPaletteEntry>
 {
     std::vector<CommandPaletteEntry> entries;
@@ -244,6 +255,13 @@ auto TuiAppModel::render_text(int width) const -> std::string
     if (state_.command_palette)
     {
         for (const auto& line : render::render_command_palette_lines(*state_.command_palette, width))
+        {
+            output << line << '\n';
+        }
+    }
+    if (state_.select_modal)
+    {
+        for (const auto& line : render::render_select_modal_lines(*state_.select_modal, width))
         {
             output << line << '\n';
         }
@@ -590,21 +608,23 @@ auto TuiAppModel::open_select_modal(std::string title, std::vector<ModelOption> 
         return;
     }
 
-    std::size_t initial_cursor = 0;
-    for (std::size_t index = 0; index < options.size(); ++index)
-    {
-        if (options.at(index).is_current)
-        {
-            initial_cursor = index;
-            break;
-        }
-    }
-
     state_.select_modal = SelectModalState{
         .title = std::move(title),
         .options = std::move(options),
-        .cursor = initial_cursor,
+        .is_searchable = true,
     };
+    refresh_select_modal_matches();
+    if (state_.select_modal)
+    {
+        for (std::size_t match_index = 0; match_index < state_.select_modal->matches.size(); ++match_index)
+        {
+            if (state_.select_modal->options.at(state_.select_modal->matches.at(match_index)).is_current)
+            {
+                state_.select_modal->cursor = match_index;
+                break;
+            }
+        }
+    }
     state_.command_palette.reset();
     state_.question_modal.reset();
 }
@@ -616,31 +636,71 @@ auto TuiAppModel::close_select_modal() -> void
 
 auto TuiAppModel::select_modal_up() -> void
 {
-    if (!state_.select_modal || state_.select_modal->options.empty())
+    if (!state_.select_modal || state_.select_modal->matches.empty())
     {
         return;
     }
     auto& cursor = state_.select_modal->cursor;
-    cursor = cursor == 0 ? state_.select_modal->options.size() - 1 : cursor - 1;
+    cursor = cursor == 0 ? state_.select_modal->matches.size() - 1 : cursor - 1;
 }
 
 auto TuiAppModel::select_modal_down() -> void
 {
-    if (!state_.select_modal || state_.select_modal->options.empty())
+    if (!state_.select_modal || state_.select_modal->matches.empty())
     {
         return;
     }
     auto& cursor = state_.select_modal->cursor;
-    cursor = (cursor + 1) % state_.select_modal->options.size();
+    cursor = (cursor + 1) % state_.select_modal->matches.size();
+}
+
+auto TuiAppModel::select_modal_input(char character) -> void
+{
+    if (!state_.select_modal || !state_.select_modal->is_searchable || state_.busy || state_.pending_permission)
+    {
+        return;
+    }
+
+    state_.select_modal->query.push_back(character);
+    refresh_select_modal_matches();
+}
+
+auto TuiAppModel::select_modal_backspace() -> void
+{
+    if (!state_.select_modal || !state_.select_modal->is_searchable || state_.busy || state_.pending_permission || state_.select_modal->query.empty())
+    {
+        return;
+    }
+
+    state_.select_modal->query.pop_back();
+    refresh_select_modal_matches();
+}
+
+auto TuiAppModel::handle_select_cancel() -> TuiAction
+{
+    if (!state_.select_modal)
+    {
+        return TuiAction::None;
+    }
+
+    if (!state_.select_modal->query.empty())
+    {
+        state_.select_modal->query.clear();
+        refresh_select_modal_matches();
+        return TuiAction::None;
+    }
+
+    close_select_modal();
+    return TuiAction::None;
 }
 
 auto TuiAppModel::select_modal_current() const -> std::optional<ModelOption>
 {
-    if (!state_.select_modal || state_.select_modal->options.empty())
+    if (!state_.select_modal || state_.select_modal->matches.empty())
     {
         return std::nullopt;
     }
-    return state_.select_modal->options.at(state_.select_modal->cursor);
+    return state_.select_modal->options.at(state_.select_modal->matches.at(state_.select_modal->cursor));
 }
 
 auto TuiAppModel::select_modal_quick_select(int digit) -> std::optional<ModelOption>
@@ -652,11 +712,11 @@ auto TuiAppModel::select_modal_quick_select(int digit) -> std::optional<ModelOpt
 
     // 1-based digit → 0-based index
     const auto index = static_cast<std::size_t>(digit - 1);
-    if (index >= state_.select_modal->options.size())
+    if (index >= state_.select_modal->matches.size())
     {
         return std::nullopt;
     }
-    return state_.select_modal->options.at(index);
+    return state_.select_modal->options.at(state_.select_modal->matches.at(index));
 }
 
 // --- Question modal (AskUser) ---
@@ -789,6 +849,42 @@ auto TuiAppModel::refresh_command_palette_matches() -> void
     {
         palette.cursor = 0;
     }
+}
+
+auto TuiAppModel::refresh_select_modal_matches() -> void
+{
+    if (!state_.select_modal)
+    {
+        return;
+    }
+
+    auto& modal = *state_.select_modal;
+    modal.matches.clear();
+    for (std::size_t index = 0; index < modal.options.size(); ++index)
+    {
+        if (model_option_matches_query(modal.options.at(index), modal.query))
+        {
+            modal.matches.push_back(index);
+        }
+    }
+
+    if (modal.cursor >= modal.matches.size())
+    {
+        modal.cursor = 0;
+    }
+}
+
+auto apply_transcript_follow_wheel(bool current_follow, bool wheel_up, bool wheel_down) -> bool
+{
+    if (wheel_up)
+    {
+        return false;
+    }
+    if (wheel_down)
+    {
+        return true;
+    }
+    return current_follow;
 }
 
 auto run_tui(runtime::RuntimeBundle& runtime,
@@ -1105,7 +1201,12 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                 }
                 if (event == Event::Escape)
                 {
-                    model.close_select_modal();
+                    model.handle_select_cancel();
+                    return true;
+                }
+                if (event == Event::Backspace)
+                {
+                    model.select_modal_backspace();
                     return true;
                 }
                 // Number keys 1-9 for quick selection
@@ -1136,6 +1237,11 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                                     }
                                 }
                             }
+                            return true;
+                        }
+                        if (std::isprint(static_cast<unsigned char>(digit)) != 0)
+                        {
+                            model.select_modal_input(digit);
                             return true;
                         }
                     }
@@ -1221,6 +1327,14 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             user_question_response.reset();
             user_question_cv.notify_all();
             return true;
+        }
+
+        {
+            std::lock_guard lock{mutex};
+            if (model.state().busy)
+            {
+                return true;
+            }
         }
 
         {
@@ -1334,11 +1448,12 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             const auto& mouse = event.mouse();
             if (mouse.button == Mouse::WheelUp)
             {
-                follow_transcript = false;
+                follow_transcript = apply_transcript_follow_wheel(follow_transcript, true, false);
                 return true;
             }
             if (mouse.button == Mouse::WheelDown)
             {
+                follow_transcript = apply_transcript_follow_wheel(follow_transcript, false, true);
                 return true;
             }
         }

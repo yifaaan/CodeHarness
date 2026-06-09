@@ -61,6 +61,17 @@ auto tool_status_suffix(const TranscriptItem& item) -> std::string
     return "";
 }
 
+auto dialog_hint(bool has_query) -> std::string
+{
+    return has_query ? "↑↓ navigate · Enter select · Esc cancel · Backspace clear"
+                     : "↑↓ navigate · Enter select · Esc cancel";
+}
+
+auto more_indicator(std::size_t hidden_count) -> std::string
+{
+    return "▼ " + std::to_string(hidden_count) + " more";
+}
+
 } // namespace
 
 auto horizontal_rule(int width) -> std::string
@@ -184,8 +195,7 @@ auto render_command_palette_lines(const CommandPaletteState& palette, int width)
         title += "  (type to search)";
     }
     lines.push_back(title);
-    lines.push_back(palette.query.empty() ? "↑↓ navigate · Enter select · Esc cancel"
-                                        : "↑↓ navigate · Enter select · Esc cancel · Backspace clear");
+    lines.push_back(dialog_hint(!palette.query.empty()));
     lines.push_back("");
     if (!palette.query.empty())
     {
@@ -215,6 +225,54 @@ auto render_command_palette_lines(const CommandPaletteState& palette, int width)
     return lines;
 }
 
+auto render_select_modal_lines(const SelectModalState& modal, int width) -> std::vector<std::string>
+{
+    std::vector<std::string> lines;
+    lines.push_back(horizontal_rule(width));
+    auto title = modal.title.empty() ? std::string{"Select"} : modal.title;
+    if (modal.is_searchable && modal.query.empty())
+    {
+        title += "  (type to search)";
+    }
+    lines.push_back(title);
+    lines.push_back(dialog_hint(!modal.query.empty()));
+    lines.push_back("");
+    if (!modal.query.empty())
+    {
+        lines.push_back("Search: " + modal.query);
+    }
+
+    const auto visible = std::min(modal.matches.size(), static_cast<std::size_t>(k_command_palette_page_size));
+    if (modal.matches.empty())
+    {
+        lines.push_back("No matches");
+    }
+    for (std::size_t row = 0; row < visible; ++row)
+    {
+        const auto option_index = modal.matches.at(row);
+        const auto& option = modal.options.at(option_index);
+        const auto pointer = row == modal.cursor ? std::string{k_select_pointer} : "  ";
+        auto line = pointer + option.label;
+        if (!option.description.empty())
+        {
+            line += "  " + option.description;
+        }
+        if (option.is_current)
+        {
+            line += std::string{k_current_mark};
+        }
+        lines.push_back(trim_to_width(std::move(line), width));
+    }
+    if (modal.matches.size() > visible)
+    {
+        lines.push_back("▼ " + std::to_string(modal.matches.size() - visible) + " more");
+    }
+
+    lines.push_back("");
+    lines.push_back(horizontal_rule(width));
+    return lines;
+}
+
 auto render_permission_lines(const PermissionPrompt& prompt, int width) -> std::vector<std::string>
 {
     std::vector<std::string> lines;
@@ -231,7 +289,7 @@ auto render_permission_lines(const PermissionPrompt& prompt, int width) -> std::
     {
         lines.push_back("│ path: " + trim_to_width(prompt.path->string(), width > 8 ? width - 8 : width));
     }
-    lines.push_back("└ [y] Allow once  [a] Allow session  [n] Deny");
+    lines.push_back("└ y allow once · a allow session · n/d deny · Esc cancel");
     return lines;
 }
 
@@ -271,9 +329,9 @@ auto render_composer_hint(bool busy, int history_index) -> std::string
 {
     if (busy)
     {
-        return "esc stop · ctrl+c stop";
+        return "Esc stop · Ctrl+C stop";
     }
-    auto hint = std::string{"shift+enter newline · enter send · / commands · ctrl+p/n history · ctrl+c exit"};
+    auto hint = std::string{"Shift+Enter newline · Enter send · / commands · Ctrl+P/N history · Ctrl+C exit"};
     if (history_index >= 0)
     {
         hint += " · history " + std::to_string(history_index + 1);
@@ -374,9 +432,7 @@ auto command_palette_element(const CommandPaletteState& palette, int width) -> E
         title += "  (type to search)";
     }
     rows.push_back(text(title) | color(TuiTheme::primary()) | bold);
-    rows.push_back(text(palette.query.empty() ? "↑↓ navigate · Enter select · Esc cancel"
-                                              : "↑↓ navigate · Enter select · Esc cancel · Backspace clear")
-                   | dim);
+    rows.push_back(text(dialog_hint(!palette.query.empty())) | dim);
 
     rows.push_back(text(" "));
 
@@ -442,7 +498,9 @@ auto permission_modal_element(const PermissionPrompt& prompt, int width) -> Elem
         text("  "),
         text("[a] Allow session") | color(TuiTheme::success()),
         text("  "),
-        text("[n] Deny") | color(TuiTheme::error()),
+        text("[n/d] Deny") | color(TuiTheme::error()),
+        text("  "),
+        text("Esc cancel") | dim,
     }));
     return vbox(std::move(rows));
 }
@@ -511,45 +569,62 @@ auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state
 auto select_modal_element(const SelectModalState& modal, int width) -> Element
 {
     Elements rows;
+    rows.push_back(text(horizontal_rule(width)) | color(TuiTheme::primary()));
 
-    // Title
-    rows.push_back(text(modal.title) | color(TuiTheme::primary()) | bold);
+    auto title = modal.title.empty() ? std::string{"Select"} : modal.title;
+    if (modal.is_searchable && modal.query.empty())
+    {
+        title += "  (type to search)";
+    }
+    rows.push_back(text(title) | color(TuiTheme::primary()) | bold);
+    rows.push_back(text(dialog_hint(!modal.query.empty())) | dim);
     rows.push_back(text(" "));
 
-    // Options
-    for (std::size_t index = 0; index < modal.options.size(); ++index)
+    if (!modal.query.empty())
     {
-        const auto& option = modal.options.at(index);
-        const auto is_selected = index == modal.cursor;
+        rows.push_back(hbox({text("Search: ") | color(TuiTheme::primary()), text(modal.query)}));
+    }
 
-        auto pointer = is_selected ? std::string{k_select_pointer} : std::string{"  "};
-        auto name = text(pointer + option.label);
+    const auto visible = std::min(modal.matches.size(), static_cast<std::size_t>(k_command_palette_page_size));
+    if (modal.matches.empty())
+    {
+        rows.push_back(text("No matches") | dim);
+    }
+    for (std::size_t row = 0; row < visible; ++row)
+    {
+        const auto option_index = modal.matches.at(row);
+        const auto& option = modal.options.at(option_index);
+        const auto is_selected = row == modal.cursor;
+
+        Elements row_parts;
+        row_parts.push_back(text(is_selected ? std::string{k_select_pointer} : std::string{"  "}));
+
+        Element name = text(option.label);
         if (is_selected)
         {
             name = name | color(TuiTheme::primary()) | bold;
         }
-
-        Elements row_parts;
         row_parts.push_back(std::move(name));
-
-        if (option.is_current)
-        {
-            row_parts.push_back(text(std::string{k_current_mark}) | color(TuiTheme::success()));
-        }
 
         if (!option.description.empty())
         {
             row_parts.push_back(text("  " + option.description) | dim);
         }
+        if (option.is_current)
+        {
+            row_parts.push_back(text(std::string{k_current_mark}) | color(TuiTheme::success()));
+        }
 
         rows.push_back(hbox(std::move(row_parts)));
     }
+    if (modal.matches.size() > visible)
+    {
+        rows.push_back(text("▼ " + std::to_string(modal.matches.size() - visible) + " more") | dim);
+    }
 
-    // Navigation hints
     rows.push_back(text(" "));
-    rows.push_back(text("\xe2\x86\x91\xe2\x86\x93"" navigate  \xe2\x8f\x8e"" select  esc cancel  1-9 quick select") | dim);
-
-    return vbox(std::move(rows)) | borderRounded | color(TuiTheme::primary());
+    rows.push_back(text(horizontal_rule(width)) | color(TuiTheme::primary()));
+    return vbox(std::move(rows));
 }
 
 auto question_modal_element(const QuestionModalState& modal, int width) -> Element
@@ -608,7 +683,7 @@ auto question_modal_element(const QuestionModalState& modal, int width) -> Eleme
     }
     rows.push_back(input_element);
 
-    rows.push_back(text("  shift+enter newline | enter submit") | dim);
+    rows.push_back(text("  Shift+Enter newline · Enter submit") | dim);
 
     return vbox(std::move(rows)) | borderDouble | color(TuiTheme::warning());
 }
