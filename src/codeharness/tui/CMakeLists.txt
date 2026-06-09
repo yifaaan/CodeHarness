@@ -1,4 +1,5 @@
 codeharness_add_static_module(codeharness_tui
+    chat_surface.cpp
     tui_app.cpp
     tui_composer.cpp
     tui_markdown.cpp

@@ -4,6 +4,7 @@
 #include "codeharness/engine/engine.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/runtime/runtime.h"
+#include "codeharness/tui/chat_surface.h"
 
 #include <functional>
 #include <optional>
@@ -43,14 +44,6 @@ struct TuiDisplayConfig
     McpConnectionInfo mcp_info;
 };
 
-enum class ToolStatus
-{
-    none,
-    running,
-    completed,
-    failed,
-};
-
 enum class TuiAction
 {
     None,
@@ -61,18 +54,6 @@ enum class TuiAction
     DenyPermission,
     Interrupt,
     Quit,
-};
-
-struct TranscriptItem
-{
-    std::string kind;
-    std::string text;
-    std::string detail;
-    std::string id;
-    std::string label;
-    ToolStatus tool_status = ToolStatus::none;
-    bool is_error = false;
-    bool expanded = false;
 };
 
 struct CommandPaletteEntry
@@ -190,9 +171,10 @@ public:
 private:
     auto refresh_command_palette_matches() -> void;
     auto refresh_select_modal_matches() -> void;
+    auto sync_transcript_view() -> void;
 
     TuiState state_;
-    bool streamed_assistant_output_ = false;
+    ChatSurface chat_;
 };
 
 using ModelListProvider = std::function<std::vector<ModelOption>()>;

@@ -1,7 +1,6 @@
 #include "codeharness/tui/tui_app.h"
 
 #include "codeharness/commands/command_registry.h"
-#include "codeharness/core/overloaded.h"
 #include "codeharness/core/strings.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_render.h"
@@ -76,43 +75,6 @@ auto command_entries_from_registry(const CommandRegistry& registry) -> std::vect
 auto is_slash_command_prefix(std::string_view input) -> bool
 {
     return input.starts_with('/') && input.find_first_of(" \t\r\n") == std::string_view::npos;
-}
-
-auto last_transcript_is_error(const TuiState& state, std::string_view text) -> bool
-{
-    return !state.transcript.empty() && state.transcript.back().kind == "error" && state.transcript.back().text == text;
-}
-
-auto find_tool_item(TuiState& state, std::string_view id) -> TranscriptItem*
-{
-    const auto item = std::ranges::find_if(state.transcript, [id](const TranscriptItem& transcript_item) { return transcript_item.kind == "tool" && transcript_item.id == id; });
-    if (item == state.transcript.end())
-    {
-        return nullptr;
-    }
-    return &*item;
-}
-
-auto update_tool_text(TranscriptItem& item, ToolStatus status, std::string_view detail = {}) -> void
-{
-    item.tool_status = status;
-    item.detail = std::string{detail};
-    if (item.label.empty())
-    {
-        return;
-    }
-    if (status == ToolStatus::running)
-    {
-        item.text = item.label + " running";
-    }
-    else if (status == ToolStatus::failed)
-    {
-        item.text = item.label + " failed";
-    }
-    else
-    {
-        item.text = item.label + " completed";
-    }
 }
 
 auto is_permission_approve_key(const ftxui::Event& event) -> bool
@@ -225,6 +187,11 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime,
 auto TuiAppModel::state() const noexcept -> const TuiState&
 {
     return state_;
+}
+
+auto TuiAppModel::sync_transcript_view() -> void
+{
+    state_.transcript = chat_.items();
 }
 
 auto TuiAppModel::render_text(int width) const -> std::string
@@ -433,9 +400,10 @@ auto TuiAppModel::handle_interrupt() -> TuiAction
         return TuiAction::None;
     }
 
-    if (!state_.interrupt_requested && !last_transcript_is_error(state_, "interrupted"))
+    if (!state_.interrupt_requested)
     {
-        state_.transcript.push_back(TranscriptItem{.kind = "error", .text = "interrupted", .is_error = true});
+        chat_.append_error_once("interrupted");
+        sync_transcript_view();
     }
     state_.interrupt_requested = true;
     state_.pending_permission.reset();
@@ -476,28 +444,18 @@ auto TuiAppModel::handle_permission_deny() -> TuiAction
 
 auto TuiAppModel::toggle_tool_details(std::size_t transcript_index) -> bool
 {
-    if (transcript_index >= state_.transcript.size())
-    {
-        return false;
-    }
-
-    auto& item = state_.transcript.at(transcript_index);
-    if (item.kind != "tool" || item.detail.empty())
-    {
-        return false;
-    }
-
-    item.expanded = !item.expanded;
-    return true;
+    const auto toggled = chat_.toggle_tool_details(transcript_index);
+    sync_transcript_view();
+    return toggled;
 }
 
 auto TuiAppModel::begin_prompt(std::string prompt) -> void
 {
-    state_.transcript.push_back(TranscriptItem{.kind = "user", .text = std::move(prompt)});
+    chat_.begin_prompt(std::move(prompt));
+    sync_transcript_view();
     state_.composer.clear();
     state_.command_palette.reset();
     state_.interrupt_requested = false;
-    streamed_assistant_output_ = false;
     state_.busy = true;
 }
 
@@ -509,74 +467,13 @@ auto TuiAppModel::complete_prompt() -> void
 
 auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
 {
-    std::visit(
-        Overloaded{
-            [this](const EngineAssistantTextDelta& delta) {
-                streamed_assistant_output_ = true;
-                if (!state_.transcript.empty() && state_.transcript.back().kind == "assistant")
-                {
-                    state_.transcript.back().text += delta.text;
-                    return;
-                }
-                state_.transcript.push_back(TranscriptItem{.kind = "assistant", .text = delta.text});
-            },
-            [this](const EngineToolStarted& started) {
-                state_.transcript.push_back(
-                    TranscriptItem{
-                        .kind = "tool",
-                        .text = started.name + " running",
-                        .id = started.id,
-                        .label = started.name,
-                        .tool_status = ToolStatus::running,
-                    });
-            },
-            [this](const EngineToolFinished& finished) {
-                if (auto* item = find_tool_item(state_, finished.id))
-                {
-                    update_tool_text(*item, ToolStatus::completed);
-                    return;
-                }
-                state_.transcript.push_back(
-                    TranscriptItem{
-                        .kind = "tool",
-                        .text = "completed " + finished.id,
-                        .id = finished.id,
-                        .tool_status = ToolStatus::completed,
-                    });
-            },
-            [this](const EngineToolResult& result) {
-                if (auto* item = find_tool_item(state_, result.id))
-                {
-                    item->is_error = result.is_error;
-                    item->expanded = result.is_error;
-                    update_tool_text(*item, result.is_error ? ToolStatus::failed : ToolStatus::completed, result.content);
-                    return;
-                }
-                state_.transcript.push_back(
-                    TranscriptItem{
-                        .kind = "tool",
-                        .text = result.is_error ? "failed" : "completed",
-                        .detail = result.content,
-                        .id = result.id,
-                        .tool_status = result.is_error ? ToolStatus::failed : ToolStatus::completed,
-                        .is_error = result.is_error,
-                        .expanded = result.is_error,
-                    });
-            },
-            [this](const EngineError& error) {
-                if (last_transcript_is_error(state_, error.message))
-                {
-                    return;
-                }
-                state_.transcript.push_back(TranscriptItem{.kind = "error", .text = error.message, .is_error = true});
-            },
-        },
-        event);
+    chat_.apply_engine_event(event);
+    sync_transcript_view();
 }
 
 auto TuiAppModel::has_streamed_assistant_output() const noexcept -> bool
 {
-    return streamed_assistant_output_;
+    return chat_.has_streamed_assistant_output();
 }
 
 auto TuiAppModel::show_permission(const PermissionPrompt& prompt) -> void
@@ -592,11 +489,8 @@ auto TuiAppModel::clear_permission() -> void
 
 auto TuiAppModel::append_system_message(std::string text) -> void
 {
-    if (text.empty())
-    {
-        return;
-    }
-    state_.transcript.push_back(TranscriptItem{.kind = "system", .text = std::move(text)});
+    chat_.append_system_message(std::move(text));
+    sync_transcript_view();
 }
 
 // --- Select modal (/model picker) ---

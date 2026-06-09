@@ -1,10 +1,94 @@
 #include "codeharness/tui/tui_app.h"
+#include "codeharness/tui/chat_surface.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_markdown.h"
 #include "codeharness/tui/tui_render.h"
 #include "test_support.h"
 
 #include <ftxui/component/event.hpp>
+
+TEST_CASE("tui chat surface streams assistant output and resets on new prompt")
+{
+    codeharness::tui::ChatSurface chat;
+
+    chat.begin_prompt("run tool");
+    CHECK(!chat.has_streamed_assistant_output());
+    chat.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "hello"});
+    chat.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = " world"});
+
+    REQUIRE(chat.items().size() == 2);
+    CHECK(chat.has_streamed_assistant_output());
+    CHECK(chat.items().at(0).kind == "user");
+    CHECK(chat.items().at(1).kind == "assistant");
+    CHECK(chat.items().at(1).text == "hello world");
+
+    chat.begin_prompt("next");
+    CHECK(!chat.has_streamed_assistant_output());
+}
+
+TEST_CASE("tui chat surface merges tool events and toggles details")
+{
+    codeharness::tui::ChatSurface chat;
+    chat.begin_prompt("run tool");
+
+    chat.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+    chat.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "done", .is_error = false});
+    chat.apply_engine_event(codeharness::EngineToolFinished{.id = "tool-use-1"});
+
+    REQUIRE(chat.items().size() == 2);
+    CHECK(chat.items().at(1).kind == "tool");
+    CHECK(chat.items().at(1).id == "tool-use-1");
+    CHECK(chat.items().at(1).text == "bash completed");
+    CHECK(chat.items().at(1).detail == "done");
+    CHECK(!chat.items().at(1).expanded);
+
+    CHECK(!chat.toggle_tool_details(0));
+    CHECK(chat.toggle_tool_details(1));
+    CHECK(chat.items().at(1).expanded);
+}
+
+TEST_CASE("tui chat surface merges duplicate tool starts")
+{
+    codeharness::tui::ChatSurface chat;
+    chat.begin_prompt("run tool");
+
+    chat.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+    chat.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "read_file"});
+
+    REQUIRE(chat.items().size() == 2);
+    CHECK(chat.items().at(1).kind == "tool");
+    CHECK(chat.items().at(1).id == "tool-use-1");
+    CHECK(chat.items().at(1).text == "read_file running");
+}
+
+TEST_CASE("tui chat surface records orphan and failed tool results")
+{
+    codeharness::tui::ChatSurface chat;
+    chat.begin_prompt("orphan result");
+
+    chat.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-2", .content = "exit 1", .is_error = true});
+
+    REQUIRE(chat.items().size() == 2);
+    CHECK(chat.items().at(1).kind == "tool");
+    CHECK(chat.items().at(1).id == "tool-use-2");
+    CHECK(chat.items().at(1).text == "failed");
+    CHECK(chat.items().at(1).detail == "exit 1");
+    CHECK(chat.items().at(1).is_error);
+    CHECK(chat.items().at(1).expanded);
+}
+
+TEST_CASE("tui chat surface suppresses duplicate errors")
+{
+    codeharness::tui::ChatSurface chat;
+
+    chat.append_error_once("interrupted");
+    chat.append_error_once("interrupted");
+    chat.apply_engine_event(codeharness::EngineError{.message = "interrupted"});
+
+    REQUIRE(chat.items().size() == 1);
+    CHECK(chat.items().at(0).kind == "error");
+    CHECK(chat.items().at(0).text == "interrupted");
+}
 
 TEST_CASE("tui model renders pending permission modal")
 {
