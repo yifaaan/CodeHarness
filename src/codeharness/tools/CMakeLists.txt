@@ -6,14 +6,19 @@ codeharness_add_static_module(codeharness_tools
     grep_tool.cpp
     permission_target.cpp
     read_file_tool.cpp
+    sleep_tool.cpp
     text_file.cpp
+    todo_write_tool.cpp
     tool.cpp
     tool_registry.cpp
+    web_fetch_tool.cpp
+    web_search_tool.cpp
     workspace_path.cpp
     write_file_tool.cpp
 )
 
 target_link_libraries(codeharness_tools PUBLIC codeharness_foundation)
+target_link_libraries(codeharness_tools PRIVATE codeharness_network_objects)
 
 codeharness_link_first_existing(codeharness_tools PUBLIC nlohmann_json nlohmann_json::nlohmann_json)
 codeharness_link_first_existing(codeharness_tools PRIVATE fmt fmt::fmt)

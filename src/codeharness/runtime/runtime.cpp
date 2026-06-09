@@ -43,6 +43,11 @@
 #include "codeharness/tools/grep_tool.h"
 #include "codeharness/tools/read_file_tool.h"
 #include "codeharness/tools/skill_tool.h"
+#include "codeharness/tools/sleep_tool.h"
+#include "codeharness/tools/todo_write_tool.h"
+#include "codeharness/tools/write_file_tool.h"
+#include "codeharness/tools/web_fetch_tool.h"
+#include "codeharness/tools/web_search_tool.h"
 
 #include "codeharness/core/strings.h"
 
@@ -116,6 +121,11 @@ auto create_tool_registry(const SkillRegistry& skills, coordinator::CoordinatorR
     tools.add(std::make_unique<GlobTool>());
     tools.add(std::make_unique<GrepTool>());
     tools.add(std::make_unique<BashTool>());
+    tools.add(std::make_unique<TodoWriteTool>());
+    tools.add(std::make_unique<SleepTool>());
+    tools.add(std::make_unique<WebFetchTool>());
+    tools.add(std::make_unique<WebSearchTool>());
+    tools.add(std::make_unique<WriteFileTool>());
     tools.add(std::make_unique<SkillTool>(skills));
     tasks::register_task_tools(tools, coordinator_runtime.task_manager(), coordinator_runtime.spawn_handler());
     mailbox::register_mailbox_tools(tools, coordinator_runtime.mailbox(), &coordinator_runtime.task_manager());

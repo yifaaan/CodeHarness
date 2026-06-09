@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <condition_variable>
 #include <exception>
 #include <iostream>
@@ -813,6 +814,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
     auto screen_alive = std::make_shared<std::atomic<bool>>(true);
     bool follow_transcript = true;
     int spinner_frame = 0;
+    auto last_spinner_tick = std::chrono::steady_clock::now();
     int last_transcript_count = 0;
 
     auto reap_worker = [&] {
@@ -1349,7 +1351,17 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
         if (model.state().busy)
         {
-            spinner_frame = (spinner_frame + 1) % 10;
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_spinner_tick >= std::chrono::milliseconds{120})
+            {
+                spinner_frame = (spinner_frame + 1) % 10;
+                last_spinner_tick = now;
+            }
+        }
+        else
+        {
+            spinner_frame = 0;
+            last_spinner_tick = std::chrono::steady_clock::now();
         }
 
         const auto terminal_width = std::max(screen.dimx(), 40);
