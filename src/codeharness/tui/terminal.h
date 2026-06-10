@@ -6,9 +6,12 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <string_view>
 
 namespace codeharness::tui
 {
+
+[[nodiscard]] auto disable_mouse_motion_tracking_sequence() -> std::string_view;
 
 class TerminalAliveGate
 {

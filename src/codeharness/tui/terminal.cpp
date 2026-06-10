@@ -2,10 +2,16 @@
 
 #include <ftxui/component/event.hpp>
 
+#include <iostream>
 #include <utility>
 
 namespace codeharness::tui
 {
+
+auto disable_mouse_motion_tracking_sequence() -> std::string_view
+{
+    return "\x1B[?1003l";
+}
 
 TerminalAliveGate::TerminalAliveGate()
     : alive_{std::make_shared<std::atomic<bool>>(true)}
@@ -84,7 +90,20 @@ auto TuiTerminalSession::exit_loop() -> void
 
 auto TuiTerminalSession::run(ftxui::Component component) -> void
 {
-    screen_.Loop(std::move(component));
+    auto child = std::move(component);
+    auto mouse_motion_disabled = std::make_shared<bool>(false);
+    auto wrapped = ftxui::Renderer(child, [child, mouse_motion_disabled] {
+        if (!*mouse_motion_disabled)
+        {
+            const auto sequence = disable_mouse_motion_tracking_sequence();
+            std::cout.write(sequence.data(), static_cast<std::streamsize>(sequence.size()));
+            std::cout << std::flush;
+            *mouse_motion_disabled = true;
+        }
+        return child->Render();
+    });
+
+    screen_.Loop(std::move(wrapped));
     close();
 }
 

@@ -291,6 +291,11 @@ TEST_CASE("tui terminal alive gate starts alive and closes idempotently")
     CHECK(!gate.is_alive());
 }
 
+TEST_CASE("tui terminal disables passive mouse motion tracking")
+{
+    CHECK(codeharness::tui::disable_mouse_motion_tracking_sequence() == "\x1B[?1003l");
+}
+
 TEST_CASE("tui terminal alive gate only posts while alive")
 {
     codeharness::tui::TerminalAliveGate gate;
