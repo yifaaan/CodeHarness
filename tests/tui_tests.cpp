@@ -2,6 +2,7 @@
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
 #include "codeharness/tui/history_cell/history_cell.h"
+#include "codeharness/tui/selection_list.h"
 #include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_event.h"
@@ -71,6 +72,38 @@ TEST_CASE("tui run completed event carries result fields")
     CHECK(completed.output_tokens == 34);
 }
 
+TEST_CASE("tui selection list moves and clamps cursor")
+{
+    CHECK(codeharness::tui::move_selection_up(4, 0) == 4);
+    CHECK(codeharness::tui::move_selection_down(4, 0) == 4);
+
+    CHECK(codeharness::tui::move_selection_up(0, 3) == 2);
+    CHECK(codeharness::tui::move_selection_up(2, 3) == 1);
+    CHECK(codeharness::tui::move_selection_down(0, 3) == 1);
+    CHECK(codeharness::tui::move_selection_down(2, 3) == 0);
+
+    CHECK(codeharness::tui::clamp_selection_cursor(1, 3) == 1);
+    CHECK(codeharness::tui::clamp_selection_cursor(3, 3) == 0);
+    CHECK(codeharness::tui::clamp_selection_cursor(3, 0) == 0);
+}
+
+TEST_CASE("tui selection list maps selected and visible counts")
+{
+    const std::vector<std::size_t> matches{4, 8, 12};
+
+    CHECK(!codeharness::tui::selected_match_index({}, 0).has_value());
+    CHECK(!codeharness::tui::selected_match_index(matches, 3).has_value());
+    REQUIRE(codeharness::tui::selected_match_index(matches, 1).has_value());
+    CHECK(*codeharness::tui::selected_match_index(matches, 1) == 8);
+
+    CHECK(codeharness::tui::visible_selection_count(2, 5) == 2);
+    CHECK(codeharness::tui::visible_selection_count(5, 5) == 5);
+    CHECK(codeharness::tui::visible_selection_count(8, 5) == 5);
+    CHECK(codeharness::tui::hidden_selection_count(2, 5) == 0);
+    CHECK(codeharness::tui::hidden_selection_count(5, 5) == 0);
+    CHECK(codeharness::tui::hidden_selection_count(8, 5) == 3);
+}
+
 TEST_CASE("tui terminal alive gate starts alive and closes idempotently")
 {
     codeharness::tui::TerminalAliveGate gate;
@@ -131,6 +164,82 @@ TEST_CASE("tui history cell helpers expose stable kind names")
     CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::system) == "system");
     CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::tool) == "tool");
     CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::error) == "error");
+}
+
+TEST_CASE("tui history cell factories create basic cells")
+{
+    auto user = codeharness::tui::make_user_cell("hello");
+    CHECK(user.kind == codeharness::tui::HistoryCellKind::user);
+    CHECK(user.text == "hello");
+    CHECK(!user.is_error);
+
+    auto assistant = codeharness::tui::make_assistant_cell("hi");
+    CHECK(assistant.kind == codeharness::tui::HistoryCellKind::assistant);
+    CHECK(assistant.text == "hi");
+    codeharness::tui::append_assistant_delta(assistant, " there");
+    CHECK(assistant.text == "hi there");
+
+    const auto system = codeharness::tui::make_system_cell("ready");
+    CHECK(system.kind == codeharness::tui::HistoryCellKind::system);
+    CHECK(system.text == "ready");
+
+    const auto error = codeharness::tui::make_error_cell("boom");
+    CHECK(error.kind == codeharness::tui::HistoryCellKind::error);
+    CHECK(error.text == "boom");
+    CHECK(error.is_error);
+}
+
+TEST_CASE("tui history cell factories create tool cells")
+{
+    const auto started = codeharness::tui::make_tool_started_cell("tool-1", "bash");
+    CHECK(started.kind == codeharness::tui::HistoryCellKind::tool);
+    CHECK(started.id == "tool-1");
+    CHECK(started.label == "bash");
+    CHECK(started.text == "bash running");
+    CHECK(started.tool_status == codeharness::tui::ToolStatus::running);
+
+    const auto finished = codeharness::tui::make_tool_finished_cell("tool-2");
+    CHECK(finished.kind == codeharness::tui::HistoryCellKind::tool);
+    CHECK(finished.id == "tool-2");
+    CHECK(finished.text == "completed tool-2");
+    CHECK(finished.tool_status == codeharness::tui::ToolStatus::completed);
+
+    const auto completed = codeharness::tui::make_tool_result_cell("tool-3", "ok", false);
+    CHECK(completed.kind == codeharness::tui::HistoryCellKind::tool);
+    CHECK(completed.id == "tool-3");
+    CHECK(completed.text == "completed");
+    CHECK(completed.detail == "ok");
+    CHECK(completed.tool_status == codeharness::tui::ToolStatus::completed);
+    CHECK(!completed.is_error);
+    CHECK(!completed.expanded);
+
+    const auto failed = codeharness::tui::make_tool_result_cell("tool-4", "bad", true);
+    CHECK(failed.kind == codeharness::tui::HistoryCellKind::tool);
+    CHECK(failed.id == "tool-4");
+    CHECK(failed.text == "failed");
+    CHECK(failed.detail == "bad");
+    CHECK(failed.tool_status == codeharness::tui::ToolStatus::failed);
+    CHECK(failed.is_error);
+    CHECK(failed.expanded);
+}
+
+TEST_CASE("tui history cell tool status helper preserves detail and updates labeled text")
+{
+    auto item = codeharness::tui::make_tool_started_cell("tool-1", "bash");
+
+    codeharness::tui::apply_tool_status(item, codeharness::tui::ToolStatus::completed, "line 1");
+    CHECK(item.text == "bash completed");
+    CHECK(item.detail == "line 1");
+    CHECK(item.tool_status == codeharness::tui::ToolStatus::completed);
+
+    codeharness::tui::apply_tool_status(item, codeharness::tui::ToolStatus::running);
+    CHECK(item.text == "bash running");
+    CHECK(item.detail == "line 1");
+
+    codeharness::tui::apply_tool_status(item, codeharness::tui::ToolStatus::failed, "line 2");
+    CHECK(item.text == "bash failed");
+    CHECK(item.detail == "line 2");
+    CHECK(item.tool_status == codeharness::tui::ToolStatus::failed);
 }
 
 TEST_CASE("tui history cell expandable helper only accepts tool details")

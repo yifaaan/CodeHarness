@@ -37,5 +37,14 @@ struct TranscriptItem
 
 [[nodiscard]] auto history_cell_kind_name(HistoryCellKind kind) -> std::string_view;
 [[nodiscard]] auto is_expandable_tool_cell(const TranscriptItem& item) -> bool;
+[[nodiscard]] auto make_user_cell(std::string text) -> TranscriptItem;
+[[nodiscard]] auto make_assistant_cell(std::string text) -> TranscriptItem;
+[[nodiscard]] auto make_system_cell(std::string text) -> TranscriptItem;
+[[nodiscard]] auto make_error_cell(std::string text) -> TranscriptItem;
+[[nodiscard]] auto make_tool_started_cell(std::string id, std::string label) -> TranscriptItem;
+[[nodiscard]] auto make_tool_finished_cell(std::string id) -> TranscriptItem;
+[[nodiscard]] auto make_tool_result_cell(std::string id, std::string detail, bool is_error) -> TranscriptItem;
+auto append_assistant_delta(TranscriptItem& item, std::string_view delta) -> void;
+auto apply_tool_status(TranscriptItem& item, ToolStatus status, std::string_view detail = {}) -> void;
 
 } // namespace codeharness::tui

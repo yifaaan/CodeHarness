@@ -1,5 +1,7 @@
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
 
+#include "codeharness/tui/selection_list.h"
+
 #include <algorithm>
 #include <string_view>
 #include <utility>
@@ -159,35 +161,39 @@ auto BottomPane::command_palette_backspace(bool busy) -> void
 
 auto BottomPane::command_palette_up() -> void
 {
-    if (!state_.command_palette || state_.command_palette->matches.empty())
+    if (!state_.command_palette)
     {
         return;
     }
 
-    auto& cursor = state_.command_palette->cursor;
-    cursor = cursor == 0 ? state_.command_palette->matches.size() - 1 : cursor - 1;
+    state_.command_palette->cursor =
+        move_selection_up(state_.command_palette->cursor, state_.command_palette->matches.size());
 }
 
 auto BottomPane::command_palette_down() -> void
 {
-    if (!state_.command_palette || state_.command_palette->matches.empty())
+    if (!state_.command_palette)
     {
         return;
     }
 
-    auto& cursor = state_.command_palette->cursor;
-    cursor = (cursor + 1) % state_.command_palette->matches.size();
+    state_.command_palette->cursor =
+        move_selection_down(state_.command_palette->cursor, state_.command_palette->matches.size());
 }
 
 auto BottomPane::selected_command_text() const -> std::optional<std::string>
 {
-    if (!state_.command_palette || state_.command_palette->matches.empty())
+    if (!state_.command_palette)
     {
         return std::nullopt;
     }
 
-    const auto index = state_.command_palette->matches.at(state_.command_palette->cursor);
-    return "/" + state_.command_palette->commands.at(index).name + " ";
+    const auto index = selected_match_index(state_.command_palette->matches, state_.command_palette->cursor);
+    if (!index)
+    {
+        return std::nullopt;
+    }
+    return "/" + state_.command_palette->commands.at(*index).name + " ";
 }
 
 auto BottomPane::handle_command_select() -> bool
@@ -296,22 +302,21 @@ auto BottomPane::close_select_modal() -> void
 
 auto BottomPane::select_modal_up() -> void
 {
-    if (!state_.select_modal || state_.select_modal->matches.empty())
+    if (!state_.select_modal)
     {
         return;
     }
-    auto& cursor = state_.select_modal->cursor;
-    cursor = cursor == 0 ? state_.select_modal->matches.size() - 1 : cursor - 1;
+    state_.select_modal->cursor = move_selection_up(state_.select_modal->cursor, state_.select_modal->matches.size());
 }
 
 auto BottomPane::select_modal_down() -> void
 {
-    if (!state_.select_modal || state_.select_modal->matches.empty())
+    if (!state_.select_modal)
     {
         return;
     }
-    auto& cursor = state_.select_modal->cursor;
-    cursor = (cursor + 1) % state_.select_modal->matches.size();
+    state_.select_modal->cursor =
+        move_selection_down(state_.select_modal->cursor, state_.select_modal->matches.size());
 }
 
 auto BottomPane::select_modal_input(char character, bool busy) -> void
@@ -355,11 +360,16 @@ auto BottomPane::handle_select_cancel() -> void
 
 auto BottomPane::select_modal_current() const -> std::optional<ModelOption>
 {
-    if (!state_.select_modal || state_.select_modal->matches.empty())
+    if (!state_.select_modal)
     {
         return std::nullopt;
     }
-    return state_.select_modal->options.at(state_.select_modal->matches.at(state_.select_modal->cursor));
+    const auto index = selected_match_index(state_.select_modal->matches, state_.select_modal->cursor);
+    if (!index)
+    {
+        return std::nullopt;
+    }
+    return state_.select_modal->options.at(*index);
 }
 
 auto BottomPane::select_modal_quick_select(int digit) const -> std::optional<ModelOption>
@@ -370,11 +380,12 @@ auto BottomPane::select_modal_quick_select(int digit) const -> std::optional<Mod
     }
 
     const auto index = static_cast<std::size_t>(digit - 1);
-    if (index >= state_.select_modal->matches.size())
+    const auto selected_index = selected_match_index(state_.select_modal->matches, index);
+    if (!selected_index)
     {
         return std::nullopt;
     }
-    return state_.select_modal->options.at(state_.select_modal->matches.at(index));
+    return state_.select_modal->options.at(*selected_index);
 }
 
 auto BottomPane::show_question(std::string request_id, std::string question, std::string tool_name, std::string reason)
@@ -483,10 +494,7 @@ auto BottomPane::refresh_command_palette_matches() -> void
         }
     }
 
-    if (palette.cursor >= palette.matches.size())
-    {
-        palette.cursor = 0;
-    }
+    palette.cursor = clamp_selection_cursor(palette.cursor, palette.matches.size());
 }
 
 auto BottomPane::refresh_select_modal_matches() -> void
@@ -506,10 +514,7 @@ auto BottomPane::refresh_select_modal_matches() -> void
         }
     }
 
-    if (modal.cursor >= modal.matches.size())
-    {
-        modal.cursor = 0;
-    }
+    modal.cursor = clamp_selection_cursor(modal.cursor, modal.matches.size());
 }
 
 } // namespace codeharness::tui

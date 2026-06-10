@@ -3,6 +3,7 @@ codeharness_add_static_module(codeharness_tui
     chat_surface.cpp
     history_cell/history_cell.cpp
     history_cell/history_cell_render.cpp
+    selection_list.cpp
     terminal.cpp
     tui_app.cpp
     tui_composer.cpp

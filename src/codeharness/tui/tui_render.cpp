@@ -1,5 +1,6 @@
 #include "codeharness/tui/tui_render.h"
 
+#include "codeharness/tui/selection_list.h"
 #include "codeharness/tui/tui_theme.h"
 
 #include <ftxui/dom/elements.hpp>
@@ -99,7 +100,8 @@ auto render_command_palette_lines(const CommandPaletteState& palette, int width)
         lines.push_back("Search: " + palette.query);
     }
 
-    const auto visible = std::min(palette.matches.size(), static_cast<std::size_t>(k_command_palette_page_size));
+    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
+    const auto visible = visible_selection_count(palette.matches.size(), page_size);
     for (std::size_t row = 0; row < visible; ++row)
     {
         const auto command_index = palette.matches.at(row);
@@ -112,9 +114,9 @@ auto render_command_palette_lines(const CommandPaletteState& palette, int width)
     {
         lines.push_back("No matches");
     }
-    else if (palette.matches.size() > visible)
+    else if (const auto hidden = hidden_selection_count(palette.matches.size(), page_size); hidden > 0)
     {
-        lines.push_back(more_indicator(palette.matches.size() - visible));
+        lines.push_back(more_indicator(hidden));
     }
 
     lines.push_back("");
@@ -139,7 +141,8 @@ auto render_select_modal_lines(const SelectModalState& modal, int width) -> std:
         lines.push_back("Search: " + modal.query);
     }
 
-    const auto visible = std::min(modal.matches.size(), static_cast<std::size_t>(k_command_palette_page_size));
+    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
+    const auto visible = visible_selection_count(modal.matches.size(), page_size);
     if (modal.matches.empty())
     {
         lines.push_back("No matches");
@@ -160,9 +163,9 @@ auto render_select_modal_lines(const SelectModalState& modal, int width) -> std:
         }
         lines.push_back(trim_to_width(std::move(line), width));
     }
-    if (modal.matches.size() > visible)
+    if (const auto hidden = hidden_selection_count(modal.matches.size(), page_size); hidden > 0)
     {
-        lines.push_back(more_indicator(modal.matches.size() - visible));
+        lines.push_back(more_indicator(hidden));
     }
 
     lines.push_back("");
@@ -299,7 +302,8 @@ auto command_palette_element(const CommandPaletteState& palette, int width) -> E
         rows.push_back(hbox({text("Search: ") | color(TuiTheme::primary()), text(palette.query)}));
     }
 
-    const auto visible = std::min(palette.matches.size(), static_cast<std::size_t>(k_command_palette_page_size));
+    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
+    const auto visible = visible_selection_count(palette.matches.size(), page_size);
     if (palette.matches.empty())
     {
         rows.push_back(text("No matches") | dim);
@@ -320,9 +324,9 @@ auto command_palette_element(const CommandPaletteState& palette, int width) -> E
             text("  " + command.description) | dim,
         }));
     }
-    if (palette.matches.size() > visible)
+    if (const auto hidden = hidden_selection_count(palette.matches.size(), page_size); hidden > 0)
     {
-        rows.push_back(text(more_indicator(palette.matches.size() - visible)) | dim);
+        rows.push_back(text(more_indicator(hidden)) | dim);
     }
 
     rows.push_back(text(" "));
@@ -437,7 +441,8 @@ auto select_modal_element(const SelectModalState& modal, int width) -> Element
         rows.push_back(hbox({text("Search: ") | color(TuiTheme::primary()), text(modal.query)}));
     }
 
-    const auto visible = std::min(modal.matches.size(), static_cast<std::size_t>(k_command_palette_page_size));
+    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
+    const auto visible = visible_selection_count(modal.matches.size(), page_size);
     if (modal.matches.empty())
     {
         rows.push_back(text("No matches") | dim);
@@ -469,9 +474,9 @@ auto select_modal_element(const SelectModalState& modal, int width) -> Element
 
         rows.push_back(hbox(std::move(row_parts)));
     }
-    if (modal.matches.size() > visible)
+    if (const auto hidden = hidden_selection_count(modal.matches.size(), page_size); hidden > 0)
     {
-        rows.push_back(text(more_indicator(modal.matches.size() - visible)) | dim);
+        rows.push_back(text(more_indicator(hidden)) | dim);
     }
 
     rows.push_back(text(" "));

@@ -20,7 +20,7 @@ auto ChatSurface::has_streamed_assistant_output() const noexcept -> bool
 
 auto ChatSurface::begin_prompt(std::string prompt) -> void
 {
-    items_.push_back(TranscriptItem{.kind = HistoryCellKind::user, .text = std::move(prompt)});
+    items_.push_back(make_user_cell(std::move(prompt)));
     streamed_assistant_output_ = false;
 }
 
@@ -32,10 +32,10 @@ auto ChatSurface::apply_engine_event(const EngineEvent& event) -> void
                 streamed_assistant_output_ = true;
                 if (!items_.empty() && items_.back().kind == HistoryCellKind::assistant)
                 {
-                    items_.back().text += delta.text;
+                    append_assistant_delta(items_.back(), delta.text);
                     return;
                 }
-                items_.push_back(TranscriptItem{.kind = HistoryCellKind::assistant, .text = delta.text});
+                items_.push_back(make_assistant_cell(delta.text));
             },
             [this](const EngineToolStarted& started) {
                 if (auto* item = find_tool_item(started.id))
@@ -43,50 +43,28 @@ auto ChatSurface::apply_engine_event(const EngineEvent& event) -> void
                     item->label = started.name;
                     item->is_error = false;
                     item->expanded = false;
-                    update_tool_text(*item, ToolStatus::running);
+                    apply_tool_status(*item, ToolStatus::running);
                     return;
                 }
-                items_.push_back(
-                    TranscriptItem{
-                        .kind = HistoryCellKind::tool,
-                        .text = started.name + " running",
-                        .id = started.id,
-                        .label = started.name,
-                        .tool_status = ToolStatus::running,
-                    });
+                items_.push_back(make_tool_started_cell(started.id, started.name));
             },
             [this](const EngineToolFinished& finished) {
                 if (auto* item = find_tool_item(finished.id))
                 {
-                    update_tool_text(*item, ToolStatus::completed);
+                    apply_tool_status(*item, ToolStatus::completed);
                     return;
                 }
-                items_.push_back(
-                    TranscriptItem{
-                        .kind = HistoryCellKind::tool,
-                        .text = "completed " + finished.id,
-                        .id = finished.id,
-                        .tool_status = ToolStatus::completed,
-                    });
+                items_.push_back(make_tool_finished_cell(finished.id));
             },
             [this](const EngineToolResult& result) {
                 if (auto* item = find_tool_item(result.id))
                 {
                     item->is_error = result.is_error;
                     item->expanded = result.is_error;
-                    update_tool_text(*item, result.is_error ? ToolStatus::failed : ToolStatus::completed, result.content);
+                    apply_tool_status(*item, result.is_error ? ToolStatus::failed : ToolStatus::completed, result.content);
                     return;
                 }
-                items_.push_back(
-                    TranscriptItem{
-                        .kind = HistoryCellKind::tool,
-                        .text = result.is_error ? "failed" : "completed",
-                        .detail = result.content,
-                        .id = result.id,
-                        .tool_status = result.is_error ? ToolStatus::failed : ToolStatus::completed,
-                        .is_error = result.is_error,
-                        .expanded = result.is_error,
-                    });
+                items_.push_back(make_tool_result_cell(result.id, result.content, result.is_error));
             },
             [this](const EngineError& error) {
                 append_error_once(error.message);
@@ -101,7 +79,7 @@ auto ChatSurface::append_system_message(std::string text) -> void
     {
         return;
     }
-    items_.push_back(TranscriptItem{.kind = HistoryCellKind::system, .text = std::move(text)});
+    items_.push_back(make_system_cell(std::move(text)));
 }
 
 auto ChatSurface::append_error_once(std::string text) -> void
@@ -110,7 +88,7 @@ auto ChatSurface::append_error_once(std::string text) -> void
     {
         return;
     }
-    items_.push_back(TranscriptItem{.kind = HistoryCellKind::error, .text = std::move(text), .is_error = true});
+    items_.push_back(make_error_cell(std::move(text)));
 }
 
 auto ChatSurface::toggle_tool_details(std::size_t transcript_index) -> bool
@@ -145,31 +123,6 @@ auto ChatSurface::find_tool_item(std::string_view id) -> TranscriptItem*
         return nullptr;
     }
     return &*item;
-}
-
-auto ChatSurface::update_tool_text(TranscriptItem& item, ToolStatus status, std::string_view detail) -> void
-{
-    item.tool_status = status;
-    if (!detail.empty())
-    {
-        item.detail = std::string{detail};
-    }
-    if (item.label.empty())
-    {
-        return;
-    }
-    if (status == ToolStatus::running)
-    {
-        item.text = item.label + " running";
-    }
-    else if (status == ToolStatus::failed)
-    {
-        item.text = item.label + " failed";
-    }
-    else
-    {
-        item.text = item.label + " completed";
-    }
 }
 
 } // namespace codeharness::tui

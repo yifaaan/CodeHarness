@@ -26,7 +26,6 @@ public:
 private:
     [[nodiscard]] auto last_is_error(std::string_view text) const -> bool;
     [[nodiscard]] auto find_tool_item(std::string_view id) -> TranscriptItem*;
-    auto update_tool_text(TranscriptItem& item, ToolStatus status, std::string_view detail = {}) -> void;
 
     std::vector<TranscriptItem> items_;
     bool streamed_assistant_output_ = false;
