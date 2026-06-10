@@ -5,10 +5,12 @@
 namespace codeharness::tui
 {
 
-auto TuiEventQueue::push(TuiEvent event) -> void
+auto TuiEventQueue::push(TuiEvent event) -> bool
 {
     std::lock_guard lock{mutex_};
+    const auto was_empty = events_.empty();
     events_.push_back(std::move(event));
+    return was_empty;
 }
 
 auto TuiEventQueue::drain() -> std::vector<TuiEvent>
@@ -38,8 +40,8 @@ TuiEventSender::TuiEventSender(TuiEventQueue& queue, WakeCallback wake_callback)
 
 auto TuiEventSender::send(TuiEvent event) const -> void
 {
-    queue_->push(std::move(event));
-    if (wake_callback_)
+    const auto should_wake = queue_->push(std::move(event));
+    if (should_wake && wake_callback_)
     {
         wake_callback_();
     }

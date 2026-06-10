@@ -18,8 +18,8 @@ TEST_CASE("tui event queue preserves fifo order and drains")
 {
     codeharness::tui::TuiEventQueue queue;
 
-    queue.push(codeharness::tui::TuiRefreshRequested{});
-    queue.push(codeharness::tui::TuiRunCompleted{.success = true, .output_text = "done"});
+    CHECK(queue.push(codeharness::tui::TuiRefreshRequested{}));
+    CHECK(!queue.push(codeharness::tui::TuiRunCompleted{.success = true, .output_text = "done"}));
 
     auto events = queue.drain();
     REQUIRE(events.size() == 2);
@@ -29,7 +29,7 @@ TEST_CASE("tui event queue preserves fifo order and drains")
     CHECK(queue.empty());
 }
 
-TEST_CASE("tui event sender wakes once per send")
+TEST_CASE("tui event sender coalesces wakes until drain")
 {
     codeharness::tui::TuiEventQueue queue;
     int wake_count = 0;
@@ -38,16 +38,20 @@ TEST_CASE("tui event sender wakes once per send")
     sender.send(codeharness::tui::TuiRefreshRequested{});
     sender.send(codeharness::tui::TuiRefreshRequested{});
 
-    CHECK(wake_count == 2);
+    CHECK(wake_count == 1);
     CHECK(queue.drain().size() == 2);
+
+    sender.send(codeharness::tui::TuiRefreshRequested{});
+    CHECK(wake_count == 2);
+    CHECK(queue.drain().size() == 1);
 }
 
 TEST_CASE("tui event queue preserves engine event payload")
 {
     codeharness::tui::TuiEventQueue queue;
-    queue.push(codeharness::tui::TuiEngineEvent{
+    CHECK(queue.push(codeharness::tui::TuiEngineEvent{
         .event = codeharness::EngineAssistantTextDelta{.text = "hello"},
-    });
+    }));
 
     auto events = queue.drain();
     REQUIRE(events.size() == 1);

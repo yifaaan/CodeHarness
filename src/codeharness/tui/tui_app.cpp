@@ -948,6 +948,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             cancellation_source = std::make_shared<CancellationSource>();
             cancellation = cancellation_source->token();
         }
+        terminal.post_refresh();
 
         worker = std::thread{[&, prompt = std::move(prompt), cancellation] {
             const auto complete_with_error = [&](std::string message) {
@@ -1287,13 +1288,13 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             if (mouse.button == Mouse::WheelUp)
             {
                 std::lock_guard lock{mutex};
-                model.handle_transcript_wheel(true, false);
+                (void)model.handle_transcript_wheel(true, false);
                 return true;
             }
             if (mouse.button == Mouse::WheelDown)
             {
                 std::lock_guard lock{mutex};
-                model.handle_transcript_wheel(false, true);
+                (void)model.handle_transcript_wheel(false, true);
                 return true;
             }
         }

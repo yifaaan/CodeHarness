@@ -49,7 +49,7 @@ using TuiEvent = std::variant<
 class TuiEventQueue
 {
 public:
-    auto push(TuiEvent event) -> void;
+    [[nodiscard]] auto push(TuiEvent event) -> bool;
     [[nodiscard]] auto drain() -> std::vector<TuiEvent>;
     [[nodiscard]] auto empty() const -> bool;
 
