@@ -4,6 +4,7 @@
 #include "codeharness/engine/engine.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/runtime/runtime.h"
+#include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
 
 #include <functional>
@@ -13,14 +14,6 @@
 
 namespace codeharness::tui
 {
-
-struct ModelOption
-{
-    std::string value;        // profile name
-    std::string label;        // display name
-    std::string description;  // provider type + base_url summary
-    bool is_current = false;
-};
 
 struct TokenUsage
 {
@@ -54,41 +47,6 @@ enum class TuiAction
     DenyPermission,
     Interrupt,
     Quit,
-};
-
-struct CommandPaletteEntry
-{
-    std::string name;
-    std::string description;
-    std::vector<std::string> aliases;
-};
-
-struct CommandPaletteState
-{
-    std::vector<CommandPaletteEntry> commands;
-    std::vector<std::size_t> matches;
-    std::string query;
-    std::size_t cursor = 0;
-};
-
-struct SelectModalState
-{
-    std::string title;
-    std::vector<ModelOption> options;
-    std::string query;
-    std::vector<std::size_t> matches;
-    std::size_t cursor = 0;
-    bool is_searchable = false;
-};
-
-struct QuestionModalState
-{
-    std::string request_id;
-    std::string question;
-    std::string tool_name;
-    std::string reason;
-    std::string answer;
-    std::vector<std::string> extra_lines;
 };
 
 struct TuiState
@@ -169,12 +127,12 @@ public:
     auto append_system_message(std::string text) -> void;
 
 private:
-    auto refresh_command_palette_matches() -> void;
-    auto refresh_select_modal_matches() -> void;
     auto sync_transcript_view() -> void;
+    auto sync_bottom_pane_view() -> void;
 
     TuiState state_;
     ChatSurface chat_;
+    BottomPane bottom_pane_;
 };
 
 using ModelListProvider = std::function<std::vector<ModelOption>()>;

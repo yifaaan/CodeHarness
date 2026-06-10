@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/permissions/permission.h"
+#include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
 #include "codeharness/tui/tui_app.h"
 

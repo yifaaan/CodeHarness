@@ -1,11 +1,210 @@
 #include "codeharness/tui/tui_app.h"
+#include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
 #include "codeharness/tui/tui_composer.h"
+#include "codeharness/tui/tui_event.h"
 #include "codeharness/tui/tui_markdown.h"
 #include "codeharness/tui/tui_render.h"
 #include "test_support.h"
 
 #include <ftxui/component/event.hpp>
+
+TEST_CASE("tui event queue preserves fifo order and drains")
+{
+    codeharness::tui::TuiEventQueue queue;
+
+    queue.push(codeharness::tui::TuiRefreshRequested{});
+    queue.push(codeharness::tui::TuiRunCompleted{.success = true, .output_text = "done"});
+
+    auto events = queue.drain();
+    REQUIRE(events.size() == 2);
+    CHECK(std::holds_alternative<codeharness::tui::TuiRefreshRequested>(events.at(0)));
+    REQUIRE(std::holds_alternative<codeharness::tui::TuiRunCompleted>(events.at(1)));
+    CHECK(std::get<codeharness::tui::TuiRunCompleted>(events.at(1)).output_text == "done");
+    CHECK(queue.empty());
+}
+
+TEST_CASE("tui event sender wakes once per send")
+{
+    codeharness::tui::TuiEventQueue queue;
+    int wake_count = 0;
+    codeharness::tui::TuiEventSender sender{queue, [&] { ++wake_count; }};
+
+    sender.send(codeharness::tui::TuiRefreshRequested{});
+    sender.send(codeharness::tui::TuiRefreshRequested{});
+
+    CHECK(wake_count == 2);
+    CHECK(queue.drain().size() == 2);
+}
+
+TEST_CASE("tui event queue preserves engine event payload")
+{
+    codeharness::tui::TuiEventQueue queue;
+    queue.push(codeharness::tui::TuiEngineEvent{
+        .event = codeharness::EngineAssistantTextDelta{.text = "hello"},
+    });
+
+    auto events = queue.drain();
+    REQUIRE(events.size() == 1);
+    REQUIRE(std::holds_alternative<codeharness::tui::TuiEngineEvent>(events.at(0)));
+    const auto& event = std::get<codeharness::tui::TuiEngineEvent>(events.at(0)).event;
+    REQUIRE(std::holds_alternative<codeharness::EngineAssistantTextDelta>(event));
+    CHECK(std::get<codeharness::EngineAssistantTextDelta>(event).text == "hello");
+}
+
+TEST_CASE("tui run completed event carries result fields")
+{
+    codeharness::tui::TuiRunCompleted completed{
+        .success = false,
+        .error_message = "failed",
+        .output_text = "partial",
+        .input_tokens = 12,
+        .output_tokens = 34,
+    };
+
+    CHECK(!completed.success);
+    CHECK(completed.error_message == "failed");
+    CHECK(completed.output_text == "partial");
+    CHECK(completed.input_tokens == 12);
+    CHECK(completed.output_tokens == 34);
+}
+
+TEST_CASE("tui bottom pane command palette filters cancels and selects")
+{
+    codeharness::tui::BottomPane pane;
+    pane.set_composer("/");
+    pane.open_command_palette({
+                                  codeharness::tui::CommandPaletteEntry{
+                                      .name = "resume",
+                                      .description = "Resume a saved session.",
+                                  },
+                                  codeharness::tui::CommandPaletteEntry{
+                                      .name = "skills",
+                                      .description = "List loaded skills.",
+                                  },
+                              },
+                              false);
+
+    REQUIRE(pane.state().command_palette.has_value());
+    CHECK(pane.state().command_palette->matches.size() == 2);
+
+    pane.command_palette_input('k', false);
+    REQUIRE(pane.state().command_palette.has_value());
+    CHECK(pane.state().composer == "/k");
+    CHECK(pane.state().command_palette->query == "k");
+    CHECK(pane.state().command_palette->matches.size() == 1);
+    CHECK(pane.selected_command_text() == "/skills ");
+
+    pane.handle_command_cancel();
+    REQUIRE(pane.state().command_palette.has_value());
+    CHECK(pane.state().composer == "/");
+    CHECK(pane.state().command_palette->query.empty());
+
+    CHECK(pane.handle_command_select());
+    CHECK(!pane.state().command_palette.has_value());
+    CHECK(pane.state().composer == "/resume ");
+}
+
+TEST_CASE("tui bottom pane select modal searches cancels and quick selects")
+{
+    codeharness::tui::BottomPane pane;
+    pane.open_select_modal("Select model",
+                           {
+                               codeharness::tui::ModelOption{.value = "gpt-4", .label = "GPT-4", .description = "openai"},
+                               codeharness::tui::ModelOption{.value = "echo", .label = "Echo", .description = "echo", .is_current = true},
+                           },
+                           false);
+
+    REQUIRE(pane.state().select_modal.has_value());
+    CHECK(pane.state().select_modal->cursor == 1);
+    auto selected = pane.select_modal_current();
+    REQUIRE(selected.has_value());
+    CHECK(selected->value == "echo");
+
+    pane.select_modal_input('g', false);
+    REQUIRE(pane.state().select_modal.has_value());
+    CHECK(pane.state().select_modal->query == "g");
+    CHECK(pane.state().select_modal->matches.size() == 1);
+    selected = pane.select_modal_current();
+    REQUIRE(selected.has_value());
+    CHECK(selected->value == "gpt-4");
+
+    pane.handle_select_cancel();
+    REQUIRE(pane.state().select_modal.has_value());
+    CHECK(pane.state().select_modal->query.empty());
+    CHECK(pane.state().select_modal->matches.size() == 2);
+
+    auto quick = pane.select_modal_quick_select(2);
+    REQUIRE(quick.has_value());
+    CHECK(quick->value == "echo");
+
+    pane.handle_select_cancel();
+    CHECK(!pane.state().select_modal.has_value());
+}
+
+TEST_CASE("tui bottom pane permission and question flows")
+{
+    codeharness::tui::BottomPane pane;
+    pane.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+    CHECK(pane.has_pending_permission());
+    CHECK(pane.handle_permission_approve());
+    CHECK(!pane.has_pending_permission());
+
+    pane.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-2",
+            .tool_use_id = "tool-use-2",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+    CHECK(pane.handle_permission_approve_for_session());
+
+    pane.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-3",
+            .tool_use_id = "tool-use-3",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+    CHECK(pane.handle_permission_deny());
+
+    pane.show_question("q-1", "Which file?", "ask_user", "Need target");
+    pane.question_modal_input('a');
+    pane.question_modal_input('b');
+    pane.question_modal_newline();
+    pane.question_modal_input('c');
+    CHECK(pane.question_modal_submit() == "ab\nc");
+    pane.close_question();
+    CHECK(!pane.state().question_modal.has_value());
+}
+
+TEST_CASE("tui bottom pane paste handling respects blockers")
+{
+    codeharness::tui::BottomPane pane;
+
+    pane.detect_paste_burst("a");
+    CHECK(!pane.state().paste_burst_active);
+    pane.detect_paste_burst("hello");
+    CHECK(pane.state().paste_burst_active);
+
+    pane.set_composer("base ");
+    pane.apply_paste_to_composer("\x1b[200~paste\x1b[201~", false);
+    CHECK(pane.state().composer == "base paste");
+
+    pane.show_question("q-1", "Question?", "ask_user", "reason");
+    pane.apply_paste_to_composer(" blocked", false);
+    CHECK(pane.state().composer == "base paste");
+    pane.close_question();
+
+    pane.apply_paste_to_composer(" busy", true);
+    CHECK(pane.state().composer == "base paste");
+}
 
 TEST_CASE("tui chat surface streams assistant output and resets on new prompt")
 {
