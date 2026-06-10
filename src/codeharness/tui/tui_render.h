@@ -2,7 +2,8 @@
 
 #include "codeharness/permissions/permission.h"
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
-#include "codeharness/tui/chat_surface.h"
+#include "codeharness/tui/history_cell/history_cell.h"
+#include "codeharness/tui/history_cell/history_cell_render.h"
 #include "codeharness/tui/tui_app.h"
 
 #include <ftxui/dom/elements.hpp>
@@ -14,12 +15,9 @@ namespace codeharness::tui::render
 {
 
 constexpr int k_command_palette_page_size = 8;
-constexpr int k_tool_error_max_lines = 8;
 constexpr std::string_view k_separator = " \xe2\x94\x82 "; // │
 
 [[nodiscard]] auto horizontal_rule(int width) -> std::string;
-[[nodiscard]] auto tool_line_count(std::string_view detail) -> int;
-[[nodiscard]] auto tool_summary_text(const TranscriptItem& item) -> std::string;
 [[nodiscard]] auto format_token_count(int count) -> std::string;
 
 [[nodiscard]] auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>;

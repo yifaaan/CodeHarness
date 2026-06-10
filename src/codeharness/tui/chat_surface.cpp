@@ -20,7 +20,7 @@ auto ChatSurface::has_streamed_assistant_output() const noexcept -> bool
 
 auto ChatSurface::begin_prompt(std::string prompt) -> void
 {
-    items_.push_back(TranscriptItem{.kind = "user", .text = std::move(prompt)});
+    items_.push_back(TranscriptItem{.kind = HistoryCellKind::user, .text = std::move(prompt)});
     streamed_assistant_output_ = false;
 }
 
@@ -30,12 +30,12 @@ auto ChatSurface::apply_engine_event(const EngineEvent& event) -> void
         Overloaded{
             [this](const EngineAssistantTextDelta& delta) {
                 streamed_assistant_output_ = true;
-                if (!items_.empty() && items_.back().kind == "assistant")
+                if (!items_.empty() && items_.back().kind == HistoryCellKind::assistant)
                 {
                     items_.back().text += delta.text;
                     return;
                 }
-                items_.push_back(TranscriptItem{.kind = "assistant", .text = delta.text});
+                items_.push_back(TranscriptItem{.kind = HistoryCellKind::assistant, .text = delta.text});
             },
             [this](const EngineToolStarted& started) {
                 if (auto* item = find_tool_item(started.id))
@@ -48,7 +48,7 @@ auto ChatSurface::apply_engine_event(const EngineEvent& event) -> void
                 }
                 items_.push_back(
                     TranscriptItem{
-                        .kind = "tool",
+                        .kind = HistoryCellKind::tool,
                         .text = started.name + " running",
                         .id = started.id,
                         .label = started.name,
@@ -63,7 +63,7 @@ auto ChatSurface::apply_engine_event(const EngineEvent& event) -> void
                 }
                 items_.push_back(
                     TranscriptItem{
-                        .kind = "tool",
+                        .kind = HistoryCellKind::tool,
                         .text = "completed " + finished.id,
                         .id = finished.id,
                         .tool_status = ToolStatus::completed,
@@ -79,7 +79,7 @@ auto ChatSurface::apply_engine_event(const EngineEvent& event) -> void
                 }
                 items_.push_back(
                     TranscriptItem{
-                        .kind = "tool",
+                        .kind = HistoryCellKind::tool,
                         .text = result.is_error ? "failed" : "completed",
                         .detail = result.content,
                         .id = result.id,
@@ -101,7 +101,7 @@ auto ChatSurface::append_system_message(std::string text) -> void
     {
         return;
     }
-    items_.push_back(TranscriptItem{.kind = "system", .text = std::move(text)});
+    items_.push_back(TranscriptItem{.kind = HistoryCellKind::system, .text = std::move(text)});
 }
 
 auto ChatSurface::append_error_once(std::string text) -> void
@@ -110,7 +110,7 @@ auto ChatSurface::append_error_once(std::string text) -> void
     {
         return;
     }
-    items_.push_back(TranscriptItem{.kind = "error", .text = std::move(text), .is_error = true});
+    items_.push_back(TranscriptItem{.kind = HistoryCellKind::error, .text = std::move(text), .is_error = true});
 }
 
 auto ChatSurface::toggle_tool_details(std::size_t transcript_index) -> bool
@@ -121,7 +121,7 @@ auto ChatSurface::toggle_tool_details(std::size_t transcript_index) -> bool
     }
 
     auto& item = items_.at(transcript_index);
-    if (item.kind != "tool" || item.detail.empty())
+    if (!is_expandable_tool_cell(item))
     {
         return false;
     }
@@ -132,13 +132,13 @@ auto ChatSurface::toggle_tool_details(std::size_t transcript_index) -> bool
 
 auto ChatSurface::last_is_error(std::string_view text) const -> bool
 {
-    return !items_.empty() && items_.back().kind == "error" && items_.back().text == text;
+    return !items_.empty() && items_.back().kind == HistoryCellKind::error && items_.back().text == text;
 }
 
 auto ChatSurface::find_tool_item(std::string_view id) -> TranscriptItem*
 {
     const auto item = std::ranges::find_if(items_, [id](const TranscriptItem& transcript_item) {
-        return transcript_item.kind == "tool" && transcript_item.id == id;
+        return transcript_item.kind == HistoryCellKind::tool && transcript_item.id == id;
     });
     if (item == items_.end())
     {

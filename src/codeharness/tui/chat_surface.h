@@ -1,6 +1,7 @@
 #pragma once
 
 #include "codeharness/engine/engine.h"
+#include "codeharness/tui/history_cell/history_cell.h"
 
 #include <cstddef>
 #include <string>
@@ -9,26 +10,6 @@
 
 namespace codeharness::tui
 {
-
-enum class ToolStatus
-{
-    none,
-    running,
-    completed,
-    failed,
-};
-
-struct TranscriptItem
-{
-    std::string kind;
-    std::string text;
-    std::string detail;
-    std::string id;
-    std::string label;
-    ToolStatus tool_status = ToolStatus::none;
-    bool is_error = false;
-    bool expanded = false;
-};
 
 class ChatSurface
 {

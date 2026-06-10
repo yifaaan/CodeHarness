@@ -1,6 +1,8 @@
 codeharness_add_static_module(codeharness_tui
     bottom_pane/bottom_pane.cpp
     chat_surface.cpp
+    history_cell/history_cell.cpp
+    history_cell/history_cell_render.cpp
     terminal.cpp
     tui_app.cpp
     tui_composer.cpp

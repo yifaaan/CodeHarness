@@ -1,6 +1,7 @@
 #include "codeharness/tui/tui_app.h"
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
+#include "codeharness/tui/history_cell/history_cell.h"
 #include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_event.h"
@@ -121,6 +122,121 @@ TEST_CASE("tui terminal session exit loop is idempotent")
     CHECK(terminal.is_alive());
     terminal.close();
     CHECK(!terminal.is_alive());
+}
+
+TEST_CASE("tui history cell helpers expose stable kind names")
+{
+    CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::user) == "user");
+    CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::assistant) == "assistant");
+    CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::system) == "system");
+    CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::tool) == "tool");
+    CHECK(codeharness::tui::history_cell_kind_name(codeharness::tui::HistoryCellKind::error) == "error");
+}
+
+TEST_CASE("tui history cell expandable helper only accepts tool details")
+{
+    CHECK(codeharness::tui::is_expandable_tool_cell(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::tool,
+            .detail = "output",
+        }));
+    CHECK(!codeharness::tui::is_expandable_tool_cell(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::tool,
+        }));
+    CHECK(!codeharness::tui::is_expandable_tool_cell(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .detail = "not a tool",
+        }));
+    CHECK(!codeharness::tui::is_expandable_tool_cell(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::error,
+            .detail = "not expandable here",
+        }));
+}
+
+TEST_CASE("tui history cell render lines cover basic cell kinds")
+{
+    auto lines = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::user,
+            .text = "hello",
+        },
+        80);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.at(0) == "> hello");
+
+    lines = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "**done**",
+        },
+        80);
+    REQUIRE(!lines.empty());
+    CHECK(lines.at(0).find("done") != std::string::npos);
+
+    lines = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::system,
+            .text = "switched",
+        },
+        80);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.at(0) == "[system] switched");
+
+    lines = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::error,
+            .text = "boom",
+        },
+        80);
+    REQUIRE(lines.size() == 1);
+    CHECK(lines.at(0) == "boom");
+}
+
+TEST_CASE("tui history cell render lines cover tool summaries and truncation")
+{
+    CHECK(codeharness::tui::render::tool_summary_text(
+              codeharness::tui::TranscriptItem{
+                  .kind = codeharness::tui::HistoryCellKind::tool,
+                  .label = "bash",
+                  .tool_status = codeharness::tui::ToolStatus::running,
+              })
+          == "Running bash");
+
+    CHECK(codeharness::tui::render::tool_summary_text(
+              codeharness::tui::TranscriptItem{
+                  .kind = codeharness::tui::HistoryCellKind::tool,
+                  .detail = "one\ntwo",
+                  .label = "bash",
+                  .tool_status = codeharness::tui::ToolStatus::completed,
+              })
+          == "Ran bash 2L");
+
+    CHECK(codeharness::tui::render::tool_summary_text(
+              codeharness::tui::TranscriptItem{
+                  .kind = codeharness::tui::HistoryCellKind::tool,
+                  .label = "bash",
+                  .tool_status = codeharness::tui::ToolStatus::failed,
+                  .is_error = true,
+              })
+          == "Ran bash error");
+
+    const auto lines = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::tool,
+            .detail = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10",
+            .label = "bash",
+            .tool_status = codeharness::tui::ToolStatus::failed,
+            .is_error = true,
+            .expanded = true,
+        },
+        80);
+
+    REQUIRE(lines.size() == 10);
+    CHECK(lines.at(0).find("Ran bash error") != std::string::npos);
+    CHECK(lines.back().find("2 more lines") != std::string::npos);
 }
 
 TEST_CASE("tui bottom pane command palette filters cancels and selects")
@@ -271,8 +387,8 @@ TEST_CASE("tui chat surface streams assistant output and resets on new prompt")
 
     REQUIRE(chat.items().size() == 2);
     CHECK(chat.has_streamed_assistant_output());
-    CHECK(chat.items().at(0).kind == "user");
-    CHECK(chat.items().at(1).kind == "assistant");
+    CHECK(chat.items().at(0).kind == codeharness::tui::HistoryCellKind::user);
+    CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::assistant);
     CHECK(chat.items().at(1).text == "hello world");
 
     chat.begin_prompt("next");
@@ -289,7 +405,7 @@ TEST_CASE("tui chat surface merges tool events and toggles details")
     chat.apply_engine_event(codeharness::EngineToolFinished{.id = "tool-use-1"});
 
     REQUIRE(chat.items().size() == 2);
-    CHECK(chat.items().at(1).kind == "tool");
+    CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-1");
     CHECK(chat.items().at(1).text == "bash completed");
     CHECK(chat.items().at(1).detail == "done");
@@ -309,7 +425,7 @@ TEST_CASE("tui chat surface merges duplicate tool starts")
     chat.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "read_file"});
 
     REQUIRE(chat.items().size() == 2);
-    CHECK(chat.items().at(1).kind == "tool");
+    CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-1");
     CHECK(chat.items().at(1).text == "read_file running");
 }
@@ -322,7 +438,7 @@ TEST_CASE("tui chat surface records orphan and failed tool results")
     chat.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-2", .content = "exit 1", .is_error = true});
 
     REQUIRE(chat.items().size() == 2);
-    CHECK(chat.items().at(1).kind == "tool");
+    CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-2");
     CHECK(chat.items().at(1).text == "failed");
     CHECK(chat.items().at(1).detail == "exit 1");
@@ -339,7 +455,7 @@ TEST_CASE("tui chat surface suppresses duplicate errors")
     chat.apply_engine_event(codeharness::EngineError{.message = "interrupted"});
 
     REQUIRE(chat.items().size() == 1);
-    CHECK(chat.items().at(0).kind == "error");
+    CHECK(chat.items().at(0).kind == codeharness::tui::HistoryCellKind::error);
     CHECK(chat.items().at(0).text == "interrupted");
 }
 
@@ -555,10 +671,10 @@ TEST_CASE("tui model transcript handles engine events")
     model.complete_prompt();
 
     REQUIRE(model.state().transcript.size() == 3);
-    CHECK(model.state().transcript.at(0).kind == "user");
-    CHECK(model.state().transcript.at(1).kind == "assistant");
+    CHECK(model.state().transcript.at(0).kind == codeharness::tui::HistoryCellKind::user);
+    CHECK(model.state().transcript.at(1).kind == codeharness::tui::HistoryCellKind::assistant);
     CHECK(model.state().transcript.at(1).text == "hello world");
-    CHECK(model.state().transcript.at(2).kind == "tool");
+    CHECK(model.state().transcript.at(2).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(model.state().transcript.at(2).id == "tool-use-1");
     CHECK(model.state().transcript.at(2).text == "bash completed");
     CHECK(model.state().transcript.at(2).detail == "done");
@@ -583,7 +699,7 @@ TEST_CASE("tui model merges finished and error tool events")
     model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "exit 1", .is_error = true});
 
     REQUIRE(model.state().transcript.size() == 2);
-    CHECK(model.state().transcript.at(1).kind == "tool");
+    CHECK(model.state().transcript.at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(model.state().transcript.at(1).id == "tool-use-1");
     CHECK(model.state().transcript.at(1).text == "bash failed");
     CHECK(model.state().transcript.at(1).detail == "exit 1");
@@ -598,7 +714,7 @@ TEST_CASE("tui model records missing tool result as a tool row")
     model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-2", .content = "failed", .is_error = true});
 
     REQUIRE(model.state().transcript.size() == 2);
-    CHECK(model.state().transcript.at(1).kind == "tool");
+    CHECK(model.state().transcript.at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(model.state().transcript.at(1).id == "tool-use-2");
     CHECK(model.state().transcript.at(1).text == "failed");
     CHECK(model.state().transcript.at(1).detail == "failed");
