@@ -1,11 +1,11 @@
 #include "codeharness/tui/tui_render.h"
 
-#include "codeharness/tui/selection_list.h"
+#include "codeharness/tui/list_dialog_render.h"
+#include "codeharness/tui/render_primitives.h"
 #include "codeharness/tui/tui_theme.h"
 
 #include <ftxui/dom/elements.hpp>
 
-#include <algorithm>
 #include <iterator>
 #include <sstream>
 #include <string_view>
@@ -17,39 +17,50 @@ namespace
 
 using namespace ftxui;
 
-auto trim_to_width(std::string text, int width) -> std::string
+auto command_palette_spec(const CommandPaletteState& palette) -> ListDialogSpec
 {
-    if (width > 0 && static_cast<int>(text.size()) > width)
+    ListDialogSpec spec{
+        .title = "Select a command",
+        .query = palette.query,
+        .is_searchable = true,
+        .cursor = palette.cursor,
+        .page_size = static_cast<std::size_t>(k_command_palette_page_size),
+    };
+    spec.rows.reserve(palette.matches.size());
+    for (const auto command_index : palette.matches)
     {
-        text.resize(static_cast<std::size_t>(width));
+        const auto& command = palette.commands.at(command_index);
+        spec.rows.push_back(ListDialogRow{
+            .primary = "/" + command.name,
+            .secondary = command.description,
+        });
     }
-    return text;
+    return spec;
 }
 
-auto dialog_hint(bool has_query) -> std::string
+auto select_modal_spec(const SelectModalState& modal) -> ListDialogSpec
 {
-    return has_query ? "\xe2\x86\x91\xe2\x86\x93 navigate \xc2\xb7 Enter select \xc2\xb7 Esc cancel \xc2\xb7 Backspace clear"
-                     : "\xe2\x86\x91\xe2\x86\x93 navigate \xc2\xb7 Enter select \xc2\xb7 Esc cancel";
-}
-
-auto more_indicator(std::size_t hidden_count) -> std::string
-{
-    return "\xe2\x96\xbc " + std::to_string(hidden_count) + " more";
+    ListDialogSpec spec{
+        .title = modal.title,
+        .query = modal.query,
+        .is_searchable = modal.is_searchable,
+        .cursor = modal.cursor,
+        .page_size = static_cast<std::size_t>(k_command_palette_page_size),
+    };
+    spec.rows.reserve(modal.matches.size());
+    for (const auto option_index : modal.matches)
+    {
+        const auto& option = modal.options.at(option_index);
+        spec.rows.push_back(ListDialogRow{
+            .primary = option.label,
+            .secondary = option.description,
+            .is_current = option.is_current,
+        });
+    }
+    return spec;
 }
 
 } // namespace
-
-auto horizontal_rule(int width) -> std::string
-{
-    const auto rule_width = std::max(width, 20);
-    std::string rule;
-    rule.reserve(static_cast<std::size_t>(rule_width) * 3);
-    for (int index = 0; index < rule_width; ++index)
-    {
-        rule += "\xe2\x94\x80";
-    }
-    return rule;
-}
 
 auto format_token_count(int count) -> std::string
 {
@@ -85,92 +96,12 @@ auto render_transcript_lines(const std::vector<TranscriptItem>& transcript, int 
 
 auto render_command_palette_lines(const CommandPaletteState& palette, int width) -> std::vector<std::string>
 {
-    std::vector<std::string> lines;
-    lines.push_back(horizontal_rule(width));
-    auto title = std::string{"Select a command"};
-    if (palette.query.empty())
-    {
-        title += "  (type to search)";
-    }
-    lines.push_back(title);
-    lines.push_back(dialog_hint(!palette.query.empty()));
-    lines.push_back("");
-    if (!palette.query.empty())
-    {
-        lines.push_back("Search: " + palette.query);
-    }
-
-    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
-    const auto visible = visible_selection_count(palette.matches.size(), page_size);
-    for (std::size_t row = 0; row < visible; ++row)
-    {
-        const auto command_index = palette.matches.at(row);
-        const auto& command = palette.commands.at(command_index);
-        const auto pointer = row == palette.cursor ? std::string{k_select_pointer} : "  ";
-        lines.push_back(trim_to_width(pointer + "/" + command.name + "  " + command.description, width));
-    }
-
-    if (palette.matches.empty())
-    {
-        lines.push_back("No matches");
-    }
-    else if (const auto hidden = hidden_selection_count(palette.matches.size(), page_size); hidden > 0)
-    {
-        lines.push_back(more_indicator(hidden));
-    }
-
-    lines.push_back("");
-    lines.push_back(horizontal_rule(width));
-    return lines;
+    return render_list_dialog_lines(command_palette_spec(palette), width);
 }
 
 auto render_select_modal_lines(const SelectModalState& modal, int width) -> std::vector<std::string>
 {
-    std::vector<std::string> lines;
-    lines.push_back(horizontal_rule(width));
-    auto title = modal.title.empty() ? std::string{"Select"} : modal.title;
-    if (modal.is_searchable && modal.query.empty())
-    {
-        title += "  (type to search)";
-    }
-    lines.push_back(title);
-    lines.push_back(dialog_hint(!modal.query.empty()));
-    lines.push_back("");
-    if (!modal.query.empty())
-    {
-        lines.push_back("Search: " + modal.query);
-    }
-
-    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
-    const auto visible = visible_selection_count(modal.matches.size(), page_size);
-    if (modal.matches.empty())
-    {
-        lines.push_back("No matches");
-    }
-    for (std::size_t row = 0; row < visible; ++row)
-    {
-        const auto option_index = modal.matches.at(row);
-        const auto& option = modal.options.at(option_index);
-        const auto pointer = row == modal.cursor ? std::string{k_select_pointer} : "  ";
-        auto line = pointer + option.label;
-        if (!option.description.empty())
-        {
-            line += "  " + option.description;
-        }
-        if (option.is_current)
-        {
-            line += std::string{k_current_mark};
-        }
-        lines.push_back(trim_to_width(std::move(line), width));
-    }
-    if (const auto hidden = hidden_selection_count(modal.matches.size(), page_size); hidden > 0)
-    {
-        lines.push_back(more_indicator(hidden));
-    }
-
-    lines.push_back("");
-    lines.push_back(horizontal_rule(width));
-    return lines;
+    return render_list_dialog_lines(select_modal_spec(modal), width);
 }
 
 auto render_permission_lines(const PermissionPrompt& prompt, int width) -> std::vector<std::string>
@@ -284,54 +215,7 @@ auto transcript_item_element(const TranscriptItem& item, int width) -> Element
 
 auto command_palette_element(const CommandPaletteState& palette, int width) -> Element
 {
-    Elements rows;
-    rows.push_back(text(horizontal_rule(width)) | color(TuiTheme::primary()));
-
-    auto title = std::string{"Select a command"};
-    if (palette.query.empty())
-    {
-        title += "  (type to search)";
-    }
-    rows.push_back(text(title) | color(TuiTheme::primary()) | bold);
-    rows.push_back(text(dialog_hint(!palette.query.empty())) | dim);
-
-    rows.push_back(text(" "));
-
-    if (!palette.query.empty())
-    {
-        rows.push_back(hbox({text("Search: ") | color(TuiTheme::primary()), text(palette.query)}));
-    }
-
-    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
-    const auto visible = visible_selection_count(palette.matches.size(), page_size);
-    if (palette.matches.empty())
-    {
-        rows.push_back(text("No matches") | dim);
-    }
-    for (std::size_t row = 0; row < visible; ++row)
-    {
-        const auto command_index = palette.matches.at(row);
-        const auto& command = palette.commands.at(command_index);
-        const auto pointer = row == palette.cursor ? std::string{k_select_pointer} : "  ";
-        Element name = text("/" + command.name);
-        if (row == palette.cursor)
-        {
-            name = name | color(TuiTheme::primary()) | bold;
-        }
-        rows.push_back(hbox({
-            text(pointer),
-            std::move(name),
-            text("  " + command.description) | dim,
-        }));
-    }
-    if (const auto hidden = hidden_selection_count(palette.matches.size(), page_size); hidden > 0)
-    {
-        rows.push_back(text(more_indicator(hidden)) | dim);
-    }
-
-    rows.push_back(text(" "));
-    rows.push_back(text(horizontal_rule(width)) | color(TuiTheme::primary()));
-    return vbox(std::move(rows));
+    return list_dialog_element(command_palette_spec(palette), width);
 }
 
 auto permission_modal_element(const PermissionPrompt& prompt, int width) -> Element
@@ -424,64 +308,7 @@ auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state
 
 auto select_modal_element(const SelectModalState& modal, int width) -> Element
 {
-    Elements rows;
-    rows.push_back(text(horizontal_rule(width)) | color(TuiTheme::primary()));
-
-    auto title = modal.title.empty() ? std::string{"Select"} : modal.title;
-    if (modal.is_searchable && modal.query.empty())
-    {
-        title += "  (type to search)";
-    }
-    rows.push_back(text(title) | color(TuiTheme::primary()) | bold);
-    rows.push_back(text(dialog_hint(!modal.query.empty())) | dim);
-    rows.push_back(text(" "));
-
-    if (!modal.query.empty())
-    {
-        rows.push_back(hbox({text("Search: ") | color(TuiTheme::primary()), text(modal.query)}));
-    }
-
-    constexpr auto page_size = static_cast<std::size_t>(k_command_palette_page_size);
-    const auto visible = visible_selection_count(modal.matches.size(), page_size);
-    if (modal.matches.empty())
-    {
-        rows.push_back(text("No matches") | dim);
-    }
-    for (std::size_t row = 0; row < visible; ++row)
-    {
-        const auto option_index = modal.matches.at(row);
-        const auto& option = modal.options.at(option_index);
-        const auto is_selected = row == modal.cursor;
-
-        Elements row_parts;
-        row_parts.push_back(text(is_selected ? std::string{k_select_pointer} : std::string{"  "}));
-
-        Element name = text(option.label);
-        if (is_selected)
-        {
-            name = name | color(TuiTheme::primary()) | bold;
-        }
-        row_parts.push_back(std::move(name));
-
-        if (!option.description.empty())
-        {
-            row_parts.push_back(text("  " + option.description) | dim);
-        }
-        if (option.is_current)
-        {
-            row_parts.push_back(text(std::string{k_current_mark}) | color(TuiTheme::success()));
-        }
-
-        rows.push_back(hbox(std::move(row_parts)));
-    }
-    if (const auto hidden = hidden_selection_count(modal.matches.size(), page_size); hidden > 0)
-    {
-        rows.push_back(text(more_indicator(hidden)) | dim);
-    }
-
-    rows.push_back(text(" "));
-    rows.push_back(text(horizontal_rule(width)) | color(TuiTheme::primary()));
-    return vbox(std::move(rows));
+    return list_dialog_element(select_modal_spec(modal), width);
 }
 
 auto question_modal_element(const QuestionModalState& modal, int width) -> Element

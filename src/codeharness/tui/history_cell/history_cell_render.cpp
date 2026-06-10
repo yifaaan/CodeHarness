@@ -1,9 +1,9 @@
 #include "codeharness/tui/history_cell/history_cell_render.h"
 
+#include "codeharness/tui/render_primitives.h"
 #include "codeharness/tui/tui_markdown.h"
 #include "codeharness/tui/tui_theme.h"
 
-#include <algorithm>
 #include <sstream>
 
 namespace codeharness::tui::render
@@ -12,15 +12,6 @@ namespace
 {
 
 using namespace ftxui;
-
-auto trim_to_width(std::string text, int width) -> std::string
-{
-    if (width > 0 && static_cast<int>(text.size()) > width)
-    {
-        text.resize(static_cast<std::size_t>(width));
-    }
-    return text;
-}
 
 auto split_lines(std::string_view text) -> std::vector<std::string>
 {

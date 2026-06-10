@@ -2,6 +2,8 @@
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
 #include "codeharness/tui/history_cell/history_cell.h"
+#include "codeharness/tui/list_dialog_render.h"
+#include "codeharness/tui/render_primitives.h"
 #include "codeharness/tui/selection_list.h"
 #include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
@@ -102,6 +104,72 @@ TEST_CASE("tui selection list maps selected and visible counts")
     CHECK(codeharness::tui::hidden_selection_count(2, 5) == 0);
     CHECK(codeharness::tui::hidden_selection_count(5, 5) == 0);
     CHECK(codeharness::tui::hidden_selection_count(8, 5) == 3);
+}
+
+TEST_CASE("tui list dialog render covers title hint search and empty states")
+{
+    auto lines = codeharness::tui::render::render_list_dialog_lines(
+        codeharness::tui::render::ListDialogSpec{
+            .title = "Select item",
+            .is_searchable = true,
+            .rows = {
+                codeharness::tui::render::ListDialogRow{.primary = "Alpha", .secondary = "one"},
+            },
+        },
+        80);
+
+    CHECK(lines.at(1) == "Select item  (type to search)");
+    CHECK(lines.at(2).find("Backspace clear") == std::string::npos);
+    CHECK(lines.at(4).find("\xe2\x9d\xaf Alpha  one") != std::string::npos);
+
+    lines = codeharness::tui::render::render_list_dialog_lines(
+        codeharness::tui::render::ListDialogSpec{
+            .title = "Select item",
+            .query = "z",
+            .is_searchable = true,
+        },
+        80);
+
+    CHECK(lines.at(1) == "Select item");
+    CHECK(lines.at(2).find("Backspace clear") != std::string::npos);
+    CHECK(lines.at(4) == "Search: z");
+    CHECK(lines.at(5) == "No matches");
+}
+
+TEST_CASE("tui list dialog render covers overflow and current selected row")
+{
+    auto lines = codeharness::tui::render::render_list_dialog_lines(
+        codeharness::tui::render::ListDialogSpec{
+            .title = "Select item",
+            .cursor = 1,
+            .page_size = 2,
+            .rows = {
+                codeharness::tui::render::ListDialogRow{.primary = "Alpha"},
+                codeharness::tui::render::ListDialogRow{.primary = "Beta", .secondary = "two", .is_current = true},
+                codeharness::tui::render::ListDialogRow{.primary = "Gamma"},
+            },
+        },
+        80);
+
+    REQUIRE(lines.size() >= 8);
+    CHECK(lines.at(4).find("  Alpha") != std::string::npos);
+    CHECK(lines.at(5).find("\xe2\x9d\xaf Beta  two \xe2\x86\x90 current") != std::string::npos);
+    CHECK(lines.at(6).find("\xe2\x96\xbc 1 more") != std::string::npos);
+}
+
+TEST_CASE("tui render primitives trim and draw horizontal rules")
+{
+    CHECK(codeharness::tui::render::trim_to_width("abcdef", 3) == "abc");
+    CHECK(codeharness::tui::render::trim_to_width("abcdef", 6) == "abcdef");
+    CHECK(codeharness::tui::render::trim_to_width("abcdef", 0) == "abcdef");
+    CHECK(codeharness::tui::render::trim_to_width("abcdef", -1) == "abcdef");
+
+    const auto min_rule = codeharness::tui::render::horizontal_rule(3);
+    CHECK(min_rule.size() == 20 * std::string{"\xe2\x94\x80"}.size());
+    CHECK(min_rule.find_first_not_of("\xe2\x94\x80") == std::string::npos);
+
+    const auto wide_rule = codeharness::tui::render::horizontal_rule(30);
+    CHECK(wide_rule.size() == 30 * std::string{"\xe2\x94\x80"}.size());
 }
 
 TEST_CASE("tui terminal alive gate starts alive and closes idempotently")
