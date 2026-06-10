@@ -3,18 +3,17 @@
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/core/overloaded.h"
 #include "codeharness/core/strings.h"
+#include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_event.h"
 #include "codeharness/tui/tui_render.h"
 #include "codeharness/tui/tui_theme.h"
 
 #include <ftxui/component/component.hpp>
-#include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <nonstd/expected.hpp>
 
 #include <algorithm>
-#include <atomic>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -531,7 +530,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 {
     using namespace ftxui;
 
-    auto screen = ScreenInteractive::Fullscreen();
+    TuiTerminalSession terminal;
     TuiAppModel model;
     auto command_entries = command_entries_from_registry(runtime.commands());
 
@@ -543,14 +542,8 @@ auto run_tui(runtime::RuntimeBundle& runtime,
     std::unique_ptr<CancellationSource> cancellation_source;
     std::thread worker;
     bool worker_finished = false;
-    auto screen_alive = std::make_shared<std::atomic<bool>>(true);
     TuiEventQueue tui_events;
-    auto wake_ui = [screen_alive, &screen] {
-        if (screen_alive->load(std::memory_order_acquire))
-        {
-            screen.PostEvent(Event::Custom);
-        }
-    };
+    auto wake_ui = [&terminal] { terminal.post_refresh(); };
     TuiEventSender event_sender{tui_events, wake_ui};
     bool follow_transcript = true;
     int spinner_frame = 0;
@@ -940,7 +933,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             }
             if (model.handle_quit() == TuiAction::Quit)
             {
-                screen.ExitLoopClosure()();
+                terminal.exit_loop();
             }
             return true;
         }
@@ -1112,7 +1105,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             last_spinner_tick = std::chrono::steady_clock::now();
         }
 
-        const auto terminal_width = std::max(screen.dimx(), 40);
+        const auto terminal_width = std::max(terminal.screen().dimx(), 40);
         Elements rows;
 
         if (model.state().transcript.empty())
@@ -1181,9 +1174,8 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         return vbox(std::move(rows)) | flex;
     });
 
-    screen.Loop(renderer);
+    terminal.run(renderer);
 
-    screen_alive->store(false, std::memory_order_release);
     drain_tui_events();
 
     {

@@ -1,6 +1,7 @@
 codeharness_add_static_module(codeharness_tui
     bottom_pane/bottom_pane.cpp
     chat_surface.cpp
+    terminal.cpp
     tui_app.cpp
     tui_composer.cpp
     tui_event.cpp

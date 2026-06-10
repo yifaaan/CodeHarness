@@ -1,6 +1,7 @@
 #include "codeharness/tui/tui_app.h"
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
+#include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_event.h"
 #include "codeharness/tui/tui_markdown.h"
@@ -67,6 +68,59 @@ TEST_CASE("tui run completed event carries result fields")
     CHECK(completed.output_text == "partial");
     CHECK(completed.input_tokens == 12);
     CHECK(completed.output_tokens == 34);
+}
+
+TEST_CASE("tui terminal alive gate starts alive and closes idempotently")
+{
+    codeharness::tui::TerminalAliveGate gate;
+
+    CHECK(gate.is_alive());
+    REQUIRE(gate.flag() != nullptr);
+
+    gate.close();
+    CHECK(!gate.is_alive());
+
+    gate.close();
+    CHECK(!gate.is_alive());
+}
+
+TEST_CASE("tui terminal alive gate only posts while alive")
+{
+    codeharness::tui::TerminalAliveGate gate;
+    int post_count = 0;
+
+    CHECK(gate.post_if_alive([&] { ++post_count; }));
+    CHECK(post_count == 1);
+
+    gate.close();
+    CHECK(!gate.post_if_alive([&] { ++post_count; }));
+    CHECK(post_count == 1);
+}
+
+TEST_CASE("tui terminal session exposes alive flag and close is idempotent")
+{
+    codeharness::tui::TuiTerminalSession terminal;
+
+    CHECK(terminal.is_alive());
+    REQUIRE(terminal.alive_flag() != nullptr);
+
+    terminal.close();
+    CHECK(!terminal.is_alive());
+
+    terminal.close();
+    CHECK(!terminal.is_alive());
+}
+
+TEST_CASE("tui terminal session exit loop is idempotent")
+{
+    codeharness::tui::TuiTerminalSession terminal;
+
+    terminal.exit_loop();
+    terminal.exit_loop();
+
+    CHECK(terminal.is_alive());
+    terminal.close();
+    CHECK(!terminal.is_alive());
 }
 
 TEST_CASE("tui bottom pane command palette filters cancels and selects")
