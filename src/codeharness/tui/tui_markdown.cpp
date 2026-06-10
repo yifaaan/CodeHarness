@@ -1,5 +1,6 @@
 #include "codeharness/tui/tui_markdown.h"
 
+#include "codeharness/tui/style.h"
 #include "codeharness/tui/tui_theme.h"
 
 #include <ftxui/dom/elements.hpp>
@@ -309,11 +310,11 @@ auto render_table_element(const TableBlock& table) -> Element
     bot += "\xe2\x94\x98"; // ┘
 
     Elements rows;
-    rows.push_back(text(top) | color(TuiTheme::text_dim()));
+    rows.push_back(text(top) | table_separator_style());
 
     // Header row
     Elements header_parts;
-    header_parts.push_back(text("\xe2\x94\x82") | color(TuiTheme::text_dim())); // │
+    header_parts.push_back(text("\xe2\x94\x82") | table_separator_style()); // │
     for (std::size_t c = 0; c < col_count; ++c)
     {
         auto cell_text = c < table.header.cells.size() ? table.header.cells.at(c).text : std::string{};
@@ -321,17 +322,17 @@ auto render_table_element(const TableBlock& table) -> Element
                            ? col_widths.at(c) - static_cast<int>(cell_text.size())
                            : 0;
         header_parts.push_back(text(" " + cell_text + std::string(static_cast<std::size_t>(padding), ' ') + " ") |
-                               bold | color(TuiTheme::primary()));
-        header_parts.push_back(text("\xe2\x94\x82") | color(TuiTheme::text_dim())); // │
+                               accent_style());
+        header_parts.push_back(text("\xe2\x94\x82") | table_separator_style()); // │
     }
     rows.push_back(hbox(std::move(header_parts)));
-    rows.push_back(text(mid) | color(TuiTheme::text_dim()));
+    rows.push_back(text(mid) | table_separator_style());
 
     // Data rows
     for (const auto& row : table.rows)
     {
         Elements row_parts;
-        row_parts.push_back(text("\xe2\x94\x82") | color(TuiTheme::text_dim())); // │
+        row_parts.push_back(text("\xe2\x94\x82") | table_separator_style()); // │
         for (std::size_t c = 0; c < col_count; ++c)
         {
             auto cell_text = c < row.cells.size() ? row.cells.at(c).text : std::string{};
@@ -339,12 +340,12 @@ auto render_table_element(const TableBlock& table) -> Element
                                ? col_widths.at(c) - static_cast<int>(cell_text.size())
                                : 0;
             row_parts.push_back(text(" " + cell_text + std::string(static_cast<std::size_t>(padding), ' ') + " "));
-            row_parts.push_back(text("\xe2\x94\x82") | color(TuiTheme::text_dim())); // │
+            row_parts.push_back(text("\xe2\x94\x82") | table_separator_style()); // │
         }
         rows.push_back(hbox(std::move(row_parts)));
     }
 
-    rows.push_back(text(bot) | color(TuiTheme::text_dim()));
+    rows.push_back(text(bot) | table_separator_style());
 
     return vbox(std::move(rows));
 }

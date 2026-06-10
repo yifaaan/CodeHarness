@@ -14,6 +14,7 @@ codeharness_add_static_module(codeharness_tui
     tui_event.cpp
     tui_markdown.cpp
     tui_render.cpp
+    tui_theme.cpp
 )
 
 target_link_libraries(codeharness_tui

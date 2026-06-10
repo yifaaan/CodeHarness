@@ -1,6 +1,7 @@
 #include "codeharness/tui/status_footer_render.h"
 
 #include "codeharness/permissions/permission.h"
+#include "codeharness/tui/style.h"
 #include "codeharness/tui/tui_theme.h"
 
 #include <sstream>
@@ -12,6 +13,92 @@ namespace
 {
 
 using namespace ftxui;
+
+/// Format elapsed seconds into compact human-friendly form.
+/// Matches codex-cli fmt_elapsed_compact: 0s, 59s, 1m 00s, 59m 59s, 1h 00m 00s
+auto fmt_elapsed_compact(int elapsed_seconds) -> std::string
+{
+    if (elapsed_seconds < 60)
+    {
+        return std::to_string(elapsed_seconds) + "s";
+    }
+    if (elapsed_seconds < 3600)
+    {
+        const auto minutes = elapsed_seconds / 60;
+        const auto seconds = elapsed_seconds % 60;
+        return std::to_string(minutes) + "m " + (seconds < 10 ? "0" : "") + std::to_string(seconds) + "s";
+    }
+    const auto hours = elapsed_seconds / 3600;
+    const auto minutes = (elapsed_seconds % 3600) / 60;
+    const auto seconds = elapsed_seconds % 60;
+    return std::to_string(hours) + "h " +
+           (minutes < 10 ? "0" : "") + std::to_string(minutes) + "m " +
+           (seconds < 10 ? "0" : "") + std::to_string(seconds) + "s";
+}
+
+/// Build the status line parts for display.
+auto build_status_parts(const TuiDisplayConfig& config, const TuiState& state) -> Elements
+{
+    Elements parts;
+
+    // Model and provider
+    parts.push_back(text("model: ") | color(TuiTheme::primary()) | dim);
+    parts.push_back(text(config.model) | dim);
+    parts.push_back(text(std::string{k_separator}) | dim);
+
+    parts.push_back(text("provider: ") | dim);
+    parts.push_back(text(config.provider_type) | dim);
+
+    // Token usage (if available)
+    if (config.token_usage.input_tokens > 0 || config.token_usage.output_tokens > 0)
+    {
+        parts.push_back(text(std::string{k_separator}) | dim);
+        parts.push_back(text("tokens: ") | dim);
+        parts.push_back(text(format_token_count(config.token_usage.input_tokens) + "\xe2\x86\x93 ") | dim);
+        parts.push_back(text(format_token_count(config.token_usage.output_tokens) + "\xe2\x86\x91") | dim);
+    }
+
+    // Skills count
+    if (config.skill_count > 0)
+    {
+        parts.push_back(text(std::string{k_separator}) | dim);
+        parts.push_back(text("skills: " + std::to_string(config.skill_count)) | dim);
+    }
+
+    // Active session
+    if (state.active_session)
+    {
+        parts.push_back(text(std::string{k_separator}) | dim);
+        parts.push_back(text("session: " + state.active_session->session_id) | dim);
+    }
+
+    // MCP connections
+    if (config.mcp_info.connected > 0)
+    {
+        parts.push_back(text(std::string{k_separator}) | dim);
+        auto mcp_text = "mcp: " + std::to_string(config.mcp_info.connected);
+        if (config.mcp_info.failed > 0)
+        {
+            mcp_text += "/" + std::to_string(config.mcp_info.failed);
+        }
+        parts.push_back(text(mcp_text) | dim);
+    }
+
+    // Permission mode (except Plan mode)
+    if (state.permission_mode != PermissionMode::Plan)
+    {
+        parts.push_back(text(std::string{k_separator}) | dim);
+        parts.push_back(text("mode: " + std::string{codeharness::permission_mode_label(state.permission_mode)}) | dim);
+    }
+
+    // Plan mode indicator
+    if (state.permission_mode == PermissionMode::Plan)
+    {
+        parts.push_back(text(" [PLAN MODE] ") | color(TuiTheme::warning()) | bold);
+    }
+
+    return parts;
+}
 
 } // namespace
 
@@ -74,74 +161,52 @@ auto render_composer_hint(bool busy, int history_index) -> std::string
 
 auto busy_spinner_frame(int frame) -> std::string
 {
-    static constexpr std::string_view frames[] = {
-        "\xe2\xa0\x8b",
-        "\xe2\xa0\x99",
-        "\xe2\xa0\xb9",
-        "\xe2\xa0\xb8",
-        "\xe2\xa0\xbc",
-        "\xe2\xa0\xb4",
-        "\xe2\xa0\xa6",
-        "\xe2\xa0\xa7",
-        "\xe2\xa0\x87",
-        "\xe2\xa0\x8f",
-    };
-    return std::string{frames[static_cast<std::size_t>(frame) % (sizeof(frames) / sizeof(frames[0]))]};
+    return std::string{spinner_frame(static_cast<std::size_t>(frame))};
 }
 
 auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state) -> Element
 {
-    Elements parts;
+    return hbox(build_status_parts(config, state));
+}
 
-    parts.push_back(text("model: ") | color(TuiTheme::primary()) | dim);
-    parts.push_back(text(config.model) | dim);
-    parts.push_back(text(std::string{k_separator}) | dim);
+/// Create a working status indicator with elapsed time and interrupt hint.
+/// Matches codex-cli StatusIndicatorWidget styling.
+auto working_status_element(int elapsed_seconds, const std::string& header) -> Element
+{
+    auto elapsed_str = fmt_elapsed_compact(elapsed_seconds);
 
-    parts.push_back(text("provider: ") | dim);
-    parts.push_back(text(config.provider_type) | dim);
+    return hbox({
+        text(busy_spinner_frame(elapsed_seconds % spinner_frame_count())) | color(TuiTheme::primary()),
+        text(" "),
+        text(header) | accent_style(),
+        text(" "),
+        text("(" + elapsed_str + " \xe2\x80\xa2 Esc to interrupt)") | muted_style(),
+    });
+}
 
-    if (config.token_usage.input_tokens > 0 || config.token_usage.output_tokens > 0)
+/// Create a complete status footer with working indicator when busy.
+auto full_status_footer_element(const TuiDisplayConfig& config, const TuiState& state, int elapsed_seconds) -> Element
+{
+    using namespace ftxui;
+
+    Elements rows;
+
+    // Working indicator when busy
+    if (state.busy && !state.interrupt_requested)
     {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("tokens: ") | dim);
-        parts.push_back(text(format_token_count(config.token_usage.input_tokens) + "\xe2\x86\x93 ") | dim);
-        parts.push_back(text(format_token_count(config.token_usage.output_tokens) + "\xe2\x86\x91") | dim);
+        rows.push_back(working_status_element(elapsed_seconds, "Working"));
+    }
+    else if (state.interrupt_requested)
+    {
+        rows.push_back(hbox({
+            text("Interrupting...") | color(TuiTheme::warning()) | bold,
+        }));
     }
 
-    if (config.skill_count > 0)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("skills: " + std::to_string(config.skill_count)) | dim);
-    }
+    // Status info line
+    rows.push_back(status_footer_element(config, state));
 
-    if (state.active_session)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("session: " + state.active_session->session_id) | dim);
-    }
-
-    if (config.mcp_info.connected > 0)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        auto mcp_text = "mcp: " + std::to_string(config.mcp_info.connected);
-        if (config.mcp_info.failed > 0)
-        {
-            mcp_text += "/" + std::to_string(config.mcp_info.failed);
-        }
-        parts.push_back(text(mcp_text) | dim);
-    }
-
-    if (state.permission_mode != PermissionMode::Plan)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("mode: " + std::string{codeharness::permission_mode_label(state.permission_mode)}) | dim);
-    }
-
-    if (state.permission_mode == PermissionMode::Plan)
-    {
-        parts.push_back(text(" [PLAN MODE] ") | color(TuiTheme::warning()) | bold);
-    }
-    return hbox(std::move(parts));
+    return vbox(std::move(rows));
 }
 
 } // namespace codeharness::tui::render

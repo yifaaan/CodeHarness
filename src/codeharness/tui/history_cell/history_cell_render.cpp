@@ -1,6 +1,7 @@
 #include "codeharness/tui/history_cell/history_cell_render.h"
 
 #include "codeharness/tui/render_primitives.h"
+#include "codeharness/tui/style.h"
 #include "codeharness/tui/tui_markdown.h"
 #include "codeharness/tui/tui_theme.h"
 
@@ -52,6 +53,81 @@ auto tool_status_suffix(const TranscriptItem& item) -> std::string
 auto should_show_live_tool_input(const TranscriptItem& item) -> bool
 {
     return item.kind == HistoryCellKind::tool && item.live && !item.input_json.empty() && item.detail.empty();
+}
+
+/// Get the color for a tool based on its status.
+auto tool_status_color(const TranscriptItem& item) -> ftxui::Color
+{
+    if (item.tool_status == ToolStatus::running)
+    {
+        return TuiTheme::tool_running();
+    }
+    if (item.is_error || item.tool_status == ToolStatus::failed)
+    {
+        return TuiTheme::tool_failed();
+    }
+    return TuiTheme::tool_completed();
+}
+
+/// Create a tree prefix for tool details display.
+auto tool_tree_prefix(std::size_t index, std::size_t total, std::size_t max_lines) -> std::string
+{
+    const auto visible = std::min(total, max_lines);
+    if (index + 1 == visible)
+    {
+        return std::string{k_tree_last};
+    }
+    return std::string{k_tree_branch};
+}
+
+/// Render tool details with tree-drawing characters, limited to max lines.
+auto render_tool_details(const TranscriptItem& item, int width) -> Elements
+{
+    Elements rows;
+
+    // Show live tool input if applicable
+    if (should_show_live_tool_input(item))
+    {
+        rows.push_back(hbox({
+            text("  input: ") | muted_style(),
+            text(item.input_json) | dim,
+        }));
+        return rows;
+    }
+
+    // Show error details with tree lines (limited)
+    if (item.is_error && item.expanded && !item.detail.empty())
+    {
+        const auto error_lines = split_lines(item.detail);
+        const auto visible = std::min(error_lines.size(), static_cast<std::size_t>(k_tool_error_max_lines));
+        for (std::size_t i = 0; i < visible; ++i)
+        {
+            rows.push_back(hbox({
+                text(tool_tree_prefix(i, error_lines.size(), k_tool_error_max_lines)) | color(TuiTheme::error()),
+                text(error_lines.at(i)) | color(TuiTheme::error()),
+            }));
+        }
+        if (error_lines.size() > visible)
+        {
+            rows.push_back(
+                text(std::string{k_tree_last} + " ... (" + std::to_string(error_lines.size() - visible) +
+                     " more lines)") |
+                dim);
+        }
+        return rows;
+    }
+
+    // Show expanded tool output
+    if (item.expanded && !item.detail.empty())
+    {
+        for (const auto& line : split_lines(item.detail))
+        {
+            rows.push_back(text(trim_to_width(line, width)) | dim);
+        }
+        return rows;
+    }
+
+    return rows;
 }
 
 } // namespace
@@ -147,55 +223,52 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
         Elements rows;
         for (const auto& line : split_lines(item.text))
         {
-            rows.push_back(hbox({text("> ") | dim, text(line)}));
+            rows.push_back(hbox({text("> "), text(line)}));
         }
         return rows.empty() ? text("") : vbox(std::move(rows));
     }
+
     if (item.kind == HistoryCellKind::assistant)
     {
         return markdown::render_text(item.text, width);
     }
+
     if (item.kind == HistoryCellKind::system)
     {
         return hbox({text("[system]") | color(TuiTheme::warning()), text(" " + item.text)});
     }
+
     if (item.kind == HistoryCellKind::tool)
     {
         Elements rows;
-        auto summary = text("• " + tool_summary_text(item)) | dim;
-        if (item.is_error)
+
+        // Tool header with status-appropriate color and bullet
+        const auto status_color = tool_status_color(item);
+        auto summary = styled_bullet(tool_summary_text(item), item.is_error);
+        if (item.tool_status == ToolStatus::running)
         {
-            summary = summary | color(TuiTheme::error());
+            summary = hbox({
+                text("\xe2\x80\xa2 ") | color(status_color),
+                text(tool_summary_text(item)) | color(status_color),
+            });
         }
         rows.push_back(summary);
-        if (should_show_live_tool_input(item))
+
+        // Render details subtree
+        const auto detail_rows = render_tool_details(item, width);
+        for (const auto& detail : detail_rows)
         {
-            rows.push_back(text("  input: " + item.input_json) | dim);
+            rows.push_back(detail);
         }
-        if (item.is_error && item.expanded && !item.detail.empty())
-        {
-            const auto error_lines = split_lines(item.detail);
-            const auto visible = std::min(error_lines.size(), static_cast<std::size_t>(k_tool_error_max_lines));
-            for (std::size_t index = 0; index < visible; ++index)
-            {
-                const auto prefix = index + 1 == visible ? "└ " : "├ ";
-                rows.push_back(text(prefix + error_lines.at(index)) | color(TuiTheme::error()));
-            }
-            if (error_lines.size() > visible)
-            {
-                rows.push_back(text("└ ... (" + std::to_string(error_lines.size() - visible) + " more lines)") | dim);
-            }
-        }
-        else if (!item.detail.empty() && item.expanded)
-        {
-            rows.push_back(paragraphAlignLeft(item.detail) | dim);
-        }
+
         return vbox(std::move(rows));
     }
+
     if (item.kind == HistoryCellKind::error)
     {
-        return text(item.text) | color(TuiTheme::error());
+        return text(item.text) | error_style();
     }
+
     return text(std::string{history_cell_kind_name(item.kind)} + ": " + item.text);
 }
 
