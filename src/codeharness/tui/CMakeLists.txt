@@ -6,8 +6,10 @@ codeharness_add_static_module(codeharness_tui
     list_dialog_render.cpp
     render_primitives.cpp
     selection_list.cpp
+    status_footer_render.cpp
     terminal.cpp
     tui_app.cpp
+    tui_app_event.cpp
     tui_composer.cpp
     tui_event.cpp
     tui_markdown.cpp

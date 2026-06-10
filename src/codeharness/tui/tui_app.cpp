@@ -1,7 +1,6 @@
 #include "codeharness/tui/tui_app.h"
 
 #include "codeharness/commands/command_registry.h"
-#include "codeharness/core/overloaded.h"
 #include "codeharness/core/strings.h"
 #include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
@@ -24,6 +23,7 @@
 #include <sstream>
 #include <thread>
 #include <utility>
+#include <variant>
 
 namespace codeharness::tui
 {
@@ -46,26 +46,72 @@ auto command_entries_from_registry(const CommandRegistry& registry) -> std::vect
     return entries;
 }
 
-auto is_permission_approve_key(const ftxui::Event& event) -> bool
+auto is_printable_ascii(char character) -> bool
 {
-    return event == ftxui::Event::Character("y") || event == ftxui::Event::Character("Y");
+    return std::isprint(static_cast<unsigned char>(character)) != 0;
 }
 
-auto is_permission_approve_session_key(const ftxui::Event& event) -> bool
+auto is_permission_approve_input(const TuiInput& input) -> bool
 {
-    return event == ftxui::Event::Character("a") || event == ftxui::Event::Character("A");
+    return input.kind == TuiInputKind::character && (input.character == 'y' || input.character == 'Y');
 }
 
-auto is_permission_deny_key(const ftxui::Event& event) -> bool
+auto is_permission_approve_session_input(const TuiInput& input) -> bool
 {
-    return event == ftxui::Event::Character("d") || event == ftxui::Event::Character("D")
-        || event == ftxui::Event::Character("n") || event == ftxui::Event::Character("N")
-        || event == ftxui::Event::Escape;
+    return input.kind == TuiInputKind::character && (input.character == 'a' || input.character == 'A');
+}
+
+auto is_permission_deny_input(const TuiInput& input) -> bool
+{
+    return input.kind == TuiInputKind::escape
+        || (input.kind == TuiInputKind::character
+            && (input.character == 'd' || input.character == 'D' || input.character == 'n' || input.character == 'N'));
 }
 
 auto is_submit_key(const ftxui::Event& event) -> bool
 {
     return event == ftxui::Event::Return || event == ftxui::Event::CtrlM;
+}
+
+auto tui_input_from_event(const ftxui::Event& event) -> TuiInput
+{
+    if (event == ftxui::Event::ArrowUp)
+    {
+        return TuiInput{.kind = TuiInputKind::arrow_up};
+    }
+    if (event == ftxui::Event::ArrowDown)
+    {
+        return TuiInput{.kind = TuiInputKind::arrow_down};
+    }
+    if (event == ftxui::Event::Backspace)
+    {
+        return TuiInput{.kind = TuiInputKind::backspace};
+    }
+    if (event == ftxui::Event::Escape)
+    {
+        return TuiInput{.kind = TuiInputKind::escape};
+    }
+    if (event == ftxui::Event::CtrlC || event == ftxui::Event::CtrlD)
+    {
+        return TuiInput{.kind = TuiInputKind::interrupt};
+    }
+    if (is_composer_newline_event(event))
+    {
+        return TuiInput{.kind = TuiInputKind::newline};
+    }
+    if (is_submit_key(event))
+    {
+        return TuiInput{.kind = TuiInputKind::submit};
+    }
+    if (event.is_character())
+    {
+        const auto input = event.input();
+        if (input.size() == 1 && is_printable_ascii(input.front()))
+        {
+            return TuiInput{.kind = TuiInputKind::character, .character = input.front()};
+        }
+    }
+    return TuiInput{.kind = TuiInputKind::unknown};
 }
 
 auto resolve_submit_prompt(runtime::RuntimeBundle& runtime,
@@ -160,13 +206,20 @@ auto TuiAppModel::state() const noexcept -> const TuiState&
 
 auto TuiAppModel::sync_transcript_view() -> void
 {
+    const auto previous_revision = state_.transcript_revision;
     state_.transcript = chat_.items();
+    state_.transcript_revision = chat_.revision();
+    if (state_.transcript_revision != previous_revision)
+    {
+        state_.follow_transcript = true;
+    }
 }
 
 auto TuiAppModel::sync_bottom_pane_view() -> void
 {
     const auto& bottom = bottom_pane_.state();
     state_.composer = bottom.composer;
+    state_.bottom_pane_focus = bottom.focus;
     state_.pending_permission = bottom.pending_permission;
     state_.command_palette = bottom.command_palette;
     state_.select_modal = bottom.select_modal;
@@ -192,31 +245,41 @@ auto TuiAppModel::render_text(int width) const -> std::string
         }
     }
 
-    if (state_.pending_permission)
+    if (state_.bottom_pane_focus == BottomPaneFocus::permission_prompt && state_.pending_permission)
     {
         for (const auto& line : render::render_permission_lines(*state_.pending_permission, width))
         {
             output << line << '\n';
         }
     }
-    if (state_.command_palette)
+    else if (state_.bottom_pane_focus == BottomPaneFocus::command_palette && state_.command_palette)
     {
         for (const auto& line : render::render_command_palette_lines(*state_.command_palette, width))
         {
             output << line << '\n';
         }
     }
-    if (state_.select_modal)
+    else if (state_.bottom_pane_focus == BottomPaneFocus::select_modal && state_.select_modal)
     {
         for (const auto& line : render::render_select_modal_lines(*state_.select_modal, width))
         {
             output << line << '\n';
         }
     }
+    else if (state_.bottom_pane_focus == BottomPaneFocus::question_modal && state_.question_modal)
+    {
+        for (const auto& line : render::render_question_lines(*state_.question_modal, width))
+        {
+            output << line << '\n';
+        }
+    }
 
     output << render::render_status_footer_line({}, state_) << '\n';
-    output << (state_.busy ? "Working" : "Ready") << '\n';
-    output << "> " << state_.composer;
+    if (bottom_pane_accepts_composer_input(state_.bottom_pane_focus))
+    {
+        output << (state_.busy ? "Working" : "Ready") << '\n';
+        output << "> " << state_.composer;
+    }
     return output.str();
 }
 
@@ -282,6 +345,44 @@ auto TuiAppModel::handle_submit() -> TuiAction
     return TuiAction::SubmitPrompt;
 }
 
+auto TuiAppModel::handle_composer_submit(std::string content) -> TuiComposerSubmitResult
+{
+    TuiComposerSubmitResult result{.handled = true};
+    set_composer(std::move(content));
+
+    const auto trimmed = std::string{trim(state_.composer)};
+    if (trimmed == "/model")
+    {
+        set_composer("");
+        result.request_model_selector = true;
+        result.composer_changed = true;
+        return result;
+    }
+
+    if (handle_submit() != TuiAction::SubmitPrompt)
+    {
+        return result;
+    }
+
+    result.action = TuiAction::SubmitPrompt;
+    result.prompt = state_.composer;
+    set_composer("");
+    result.composer_changed = true;
+    return result;
+}
+
+auto TuiAppModel::handle_composer_slash_start(std::vector<CommandPaletteEntry> commands) -> bool
+{
+    if (state_.busy || !state_.composer.empty())
+    {
+        return false;
+    }
+
+    set_composer("/");
+    open_command_palette(std::move(commands));
+    return state_.bottom_pane_focus == BottomPaneFocus::command_palette;
+}
+
 auto TuiAppModel::handle_quit() -> TuiAction
 {
     if (state_.busy || !bottom_pane_.can_quit())
@@ -324,6 +425,20 @@ auto TuiAppModel::handle_interrupt() -> TuiAction
     return TuiAction::Interrupt;
 }
 
+auto TuiAppModel::request_interrupt() -> TuiInterruptResult
+{
+    TuiInterruptResult result;
+    if (handle_interrupt() != TuiAction::Interrupt)
+    {
+        return result;
+    }
+
+    result.interrupted = true;
+    result.permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
+    result.cancel_user_question = true;
+    return result;
+}
+
 auto TuiAppModel::handle_permission_approve() -> TuiAction
 {
     const auto approved = bottom_pane_.handle_permission_approve();
@@ -364,6 +479,8 @@ auto TuiAppModel::begin_prompt(std::string prompt) -> void
 
 auto TuiAppModel::complete_prompt() -> void
 {
+    chat_.finish_active_response();
+    sync_transcript_view();
     state_.busy = false;
     state_.interrupt_requested = false;
 }
@@ -377,6 +494,11 @@ auto TuiAppModel::apply_engine_event(const EngineEvent& event) -> void
 auto TuiAppModel::has_streamed_assistant_output() const noexcept -> bool
 {
     return chat_.has_streamed_assistant_output();
+}
+
+auto TuiAppModel::has_active_response() const noexcept -> bool
+{
+    return chat_.has_active_response();
 }
 
 auto TuiAppModel::show_permission(const PermissionPrompt& prompt) -> void
@@ -490,6 +612,191 @@ auto TuiAppModel::question_modal_submit() -> std::string
     return bottom_pane_.question_modal_submit();
 }
 
+auto TuiAppModel::handle_focused_bottom_pane_input(const TuiInput& input) -> TuiFocusedInputResult
+{
+    TuiFocusedInputResult result;
+
+    if (state_.bottom_pane_focus == BottomPaneFocus::permission_prompt && state_.pending_permission)
+    {
+        result.handled = true;
+        if (input.kind == TuiInputKind::interrupt)
+        {
+            result.interrupt = request_interrupt();
+            if (result.interrupt.interrupted)
+            {
+                result.action = TuiAction::Interrupt;
+            }
+            return result;
+        }
+        if (is_permission_approve_input(input))
+        {
+            if (handle_permission_approve() == TuiAction::ApprovePermission)
+            {
+                result.action = TuiAction::ApprovePermission;
+                result.permission_response = PermissionResponse{.allowed = true};
+            }
+            return result;
+        }
+        if (is_permission_approve_session_input(input))
+        {
+            if (handle_permission_approve_for_session() == TuiAction::ApprovePermissionForSession)
+            {
+                result.action = TuiAction::ApprovePermissionForSession;
+                result.permission_response = PermissionResponse{.allowed = true, .remember_session = true};
+            }
+            return result;
+        }
+        if (is_permission_deny_input(input))
+        {
+            if (handle_permission_deny() == TuiAction::DenyPermission)
+            {
+                result.action = TuiAction::DenyPermission;
+                result.permission_response = PermissionResponse{.allowed = false, .reason = "user denied permission"};
+            }
+            return result;
+        }
+        return result;
+    }
+
+    if (state_.bottom_pane_focus == BottomPaneFocus::select_modal && state_.select_modal)
+    {
+        result.handled = true;
+        if (input.kind == TuiInputKind::arrow_up)
+        {
+            select_modal_up();
+            return result;
+        }
+        if (input.kind == TuiInputKind::arrow_down)
+        {
+            select_modal_down();
+            return result;
+        }
+        if (input.kind == TuiInputKind::submit)
+        {
+            result.selected_model = select_modal_current();
+            close_select_modal();
+            if (result.selected_model)
+            {
+                result.action = TuiAction::SelectModel;
+            }
+            return result;
+        }
+        if (input.kind == TuiInputKind::escape)
+        {
+            handle_select_cancel();
+            return result;
+        }
+        if (input.kind == TuiInputKind::backspace)
+        {
+            select_modal_backspace();
+            return result;
+        }
+        if (input.kind == TuiInputKind::character)
+        {
+            const auto digit = input.character;
+            if (digit >= '1' && digit <= '9')
+            {
+                result.selected_model = select_modal_quick_select(digit - '0');
+                if (result.selected_model)
+                {
+                    close_select_modal();
+                    result.action = TuiAction::SelectModel;
+                }
+                return result;
+            }
+            if (is_printable_ascii(digit))
+            {
+                select_modal_input(digit);
+                return result;
+            }
+        }
+        return result;
+    }
+
+    if (state_.bottom_pane_focus == BottomPaneFocus::question_modal && state_.question_modal)
+    {
+        result.handled = true;
+        if (input.kind == TuiInputKind::interrupt || input.kind == TuiInputKind::escape)
+        {
+            result.interrupt = request_interrupt();
+            if (result.interrupt.interrupted)
+            {
+                result.action = TuiAction::Interrupt;
+            }
+            return result;
+        }
+        if (input.kind == TuiInputKind::submit)
+        {
+            result.action = TuiAction::SubmitQuestion;
+            result.user_question_response = UserQuestionResponse{.answer = question_modal_submit()};
+            close_question();
+            return result;
+        }
+        if (input.kind == TuiInputKind::backspace)
+        {
+            question_modal_backspace();
+            return result;
+        }
+        if (input.kind == TuiInputKind::newline)
+        {
+            question_modal_newline();
+            return result;
+        }
+        if (input.kind == TuiInputKind::character && is_printable_ascii(input.character))
+        {
+            question_modal_input(input.character);
+            return result;
+        }
+        return result;
+    }
+
+    if (state_.bottom_pane_focus == BottomPaneFocus::command_palette && state_.command_palette)
+    {
+        if (input.kind == TuiInputKind::arrow_up)
+        {
+            command_palette_up();
+            result.handled = true;
+            return result;
+        }
+        if (input.kind == TuiInputKind::arrow_down)
+        {
+            command_palette_down();
+            result.handled = true;
+            return result;
+        }
+        if (input.kind == TuiInputKind::escape)
+        {
+            handle_command_cancel();
+            result.handled = true;
+            result.composer_changed = true;
+            return result;
+        }
+        if (input.kind == TuiInputKind::backspace)
+        {
+            command_palette_backspace();
+            result.handled = true;
+            result.composer_changed = true;
+            return result;
+        }
+        if (input.kind == TuiInputKind::submit)
+        {
+            handle_command_select();
+            result.handled = true;
+            result.composer_changed = true;
+            return result;
+        }
+        if (input.kind == TuiInputKind::character && is_printable_ascii(input.character))
+        {
+            command_palette_input(input.character);
+            result.handled = true;
+            result.composer_changed = true;
+            return result;
+        }
+    }
+
+    return result;
+}
+
 auto TuiAppModel::set_active_session(std::optional<SessionCommandSummary> summary) -> void
 {
     state_.active_session = std::move(summary);
@@ -509,6 +816,22 @@ auto TuiAppModel::apply_paste_to_composer(const std::string& paste_text) -> void
     sync_bottom_pane_view();
 }
 
+auto TuiAppModel::handle_composer_paste(std::string paste_text) -> TuiComposerPasteResult
+{
+    const auto before = state_.composer;
+    detect_paste_burst(paste_text);
+    if (!state_.paste_burst_active)
+    {
+        return {};
+    }
+
+    apply_paste_to_composer(paste_text);
+    return TuiComposerPasteResult{
+        .handled = true,
+        .composer_changed = state_.composer != before,
+    };
+}
+
 auto apply_transcript_follow_wheel(bool current_follow, bool wheel_up, bool wheel_down) -> bool
 {
     if (wheel_up)
@@ -520,6 +843,17 @@ auto apply_transcript_follow_wheel(bool current_follow, bool wheel_up, bool whee
         return true;
     }
     return current_follow;
+}
+
+auto TuiAppModel::handle_transcript_wheel(bool wheel_up, bool wheel_down) -> bool
+{
+    if (!wheel_up && !wheel_down)
+    {
+        return false;
+    }
+
+    state_.follow_transcript = apply_transcript_follow_wheel(state_.follow_transcript, wheel_up, wheel_down);
+    return true;
 }
 
 auto run_tui(runtime::RuntimeBundle& runtime,
@@ -539,16 +873,14 @@ auto run_tui(runtime::RuntimeBundle& runtime,
     std::condition_variable user_question_cv;
     std::optional<PermissionResponse> permission_response;
     std::optional<UserQuestionResponse> user_question_response;
-    std::unique_ptr<CancellationSource> cancellation_source;
+    std::shared_ptr<CancellationSource> cancellation_source;
     std::thread worker;
     bool worker_finished = false;
     TuiEventQueue tui_events;
     auto wake_ui = [&terminal] { terminal.post_refresh(); };
     TuiEventSender event_sender{tui_events, wake_ui};
-    bool follow_transcript = true;
     int spinner_frame = 0;
     auto last_spinner_tick = std::chrono::steady_clock::now();
-    int last_transcript_count = 0;
 
     auto drain_tui_events = [&] {
         auto events = tui_events.drain();
@@ -558,53 +890,38 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         }
 
         std::lock_guard lock{mutex};
-        for (auto& event : events)
+        for (const auto& event : events)
         {
-            std::visit(
-                Overloaded{
-                    [&](TuiEngineEvent& engine_event) {
-                        model.apply_engine_event(engine_event.event);
-                    },
-                    [&](TuiRunCompleted& completed) {
-                        if (!completed.success)
-                        {
-                            model.apply_engine_event(EngineError{.message = completed.error_message});
-                        }
-                        else if (!completed.output_text.empty() && !model.has_streamed_assistant_output())
-                        {
-                            model.apply_engine_event(EngineAssistantTextDelta{.text = completed.output_text});
-                        }
-                        if (completed.success)
-                        {
-                            display_config.token_usage = TokenUsage{
-                                .input_tokens = completed.input_tokens,
-                                .output_tokens = completed.output_tokens,
-                            };
-                        }
-                        model.clear_permission();
-                        model.close_question();
-                        model.complete_prompt();
-                        model.set_permission_mode(runtime.permission_mode());
-                        model.set_active_session(runtime.active_session_summary());
-                        user_question_response.reset();
-                        cancellation_source.reset();
-                        worker_finished = true;
-                    },
-                    [&](TuiPermissionRequested& requested) {
-                        permission_response.reset();
-                        model.show_permission(requested.prompt);
-                    },
-                    [&](TuiQuestionRequested& requested) {
-                        user_question_response.reset();
-                        model.show_question(
-                            requested.prompt.id,
-                            requested.prompt.question,
-                            "ask_user",
-                            requested.prompt.reason);
-                    },
-                    [](TuiRefreshRequested&) {},
-                },
-                event);
+            auto context = TuiAppEventContext{};
+            if (std::holds_alternative<TuiRunCompleted>(event))
+            {
+                context = TuiAppEventContext{
+                    .permission_mode = runtime.permission_mode(),
+                    .active_session = runtime.active_session_summary(),
+                };
+            }
+
+            const auto result = model.apply_tui_event(event, context);
+            if (result.token_usage)
+            {
+                display_config.token_usage = *result.token_usage;
+            }
+            if (result.clear_permission_response)
+            {
+                permission_response.reset();
+            }
+            if (result.clear_user_question_response)
+            {
+                user_question_response.reset();
+            }
+            if (result.release_cancellation)
+            {
+                cancellation_source.reset();
+            }
+            if (result.run_completed)
+            {
+                worker_finished = true;
+            }
         }
     };
 
@@ -628,8 +945,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         {
             std::lock_guard lock{mutex};
             model.begin_prompt(prompt);
-            follow_transcript = true;
-            cancellation_source = std::make_unique<CancellationSource>();
+            cancellation_source = std::make_shared<CancellationSource>();
             cancellation = cancellation_source->token();
         }
 
@@ -712,6 +1028,47 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         }};
     };
 
+    auto apply_selected_model = [&](const ModelOption& selected) {
+        if (!model_select_callback)
+        {
+            return;
+        }
+
+        auto switched = model_select_callback(selected);
+        std::lock_guard lock{mutex};
+        if (switched)
+        {
+            display_config.model = switched->value;
+            display_config.provider_type = switched->description;
+            model.append_system_message("Switched model to " + switched->label);
+        }
+        else
+        {
+            model.append_system_message(switched.error().message);
+        }
+    };
+
+    auto apply_interrupt_result = [&](const TuiInterruptResult& interrupt,
+                                      std::shared_ptr<CancellationSource>& source_to_cancel,
+                                      bool& notify_permission,
+                                      bool& notify_question) {
+        if (!interrupt.interrupted)
+        {
+            return;
+        }
+        source_to_cancel = cancellation_source;
+        if (interrupt.permission_response)
+        {
+            permission_response = *interrupt.permission_response;
+            notify_permission = true;
+        }
+        if (interrupt.cancel_user_question)
+        {
+            user_question_response.reset();
+            notify_question = true;
+        }
+    };
+
     ComposerState composer_state;
     auto composer_component = make_multiline_composer(composer_state);
     auto component = CatchEvent(composer_component, [&](Event event) {
@@ -727,189 +1084,58 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             if (input.size() > 1)
             {
                 std::lock_guard lock{mutex};
-                model.detect_paste_burst(input);
-                model.apply_paste_to_composer(input);
-                composer_state.set_content(model.state().composer);
-                return true;
+                const auto paste_result = model.handle_composer_paste(input);
+                if (paste_result.composer_changed)
+                {
+                    composer_state.set_content(model.state().composer);
+                }
+                return paste_result.handled;
             }
         }
 
         {
-            bool handled_permission = false;
+            auto focused_result = TuiFocusedInputResult{};
+            std::shared_ptr<CancellationSource> source_to_cancel;
             bool notify_permission = false;
+            bool notify_question = false;
+            std::optional<ModelOption> selected_model;
             {
                 std::lock_guard lock{mutex};
-                if (model.state().pending_permission)
+                focused_result = model.handle_focused_bottom_pane_input(tui_input_from_event(event));
+                apply_interrupt_result(focused_result.interrupt, source_to_cancel, notify_permission, notify_question);
+                if (focused_result.permission_response)
                 {
-                    handled_permission = true;
-                    if (event == Event::CtrlC)
-                    {
-                        if (cancellation_source)
-                        {
-                            cancellation_source->cancel();
-                        }
-                        model.handle_interrupt();
-                        permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
-                        notify_permission = true;
-                    }
-                    else if (is_permission_approve_key(event))
-                    {
-                        if (model.handle_permission_approve() == TuiAction::ApprovePermission)
-                        {
-                            permission_response = PermissionResponse{.allowed = true};
-                            notify_permission = true;
-                        }
-                    }
-                    else if (is_permission_approve_session_key(event))
-                    {
-                        if (model.handle_permission_approve_for_session() == TuiAction::ApprovePermissionForSession)
-                        {
-                            permission_response = PermissionResponse{.allowed = true, .remember_session = true};
-                            notify_permission = true;
-                        }
-                    }
-                    else if (is_permission_deny_key(event))
-                    {
-                        if (model.handle_permission_deny() == TuiAction::DenyPermission)
-                        {
-                            permission_response = PermissionResponse{.allowed = false, .reason = "user denied permission"};
-                            notify_permission = true;
-                        }
-                    }
+                    permission_response = *focused_result.permission_response;
+                    notify_permission = true;
                 }
+                if (focused_result.user_question_response)
+                {
+                    user_question_response = *focused_result.user_question_response;
+                    notify_question = true;
+                }
+                if (focused_result.composer_changed)
+                {
+                    composer_state.set_content(model.state().composer);
+                }
+                selected_model = focused_result.selected_model;
             }
-            if (handled_permission)
+            if (focused_result.handled)
             {
+                if (source_to_cancel)
+                {
+                    source_to_cancel->cancel();
+                }
+                if (selected_model)
+                {
+                    apply_selected_model(*selected_model);
+                }
                 if (notify_permission)
                 {
                     permission_cv.notify_one();
                 }
-                return true;
-            }
-        }
-
-        // --- Select modal (/model) ---
-        {
-            std::lock_guard lock{mutex};
-            if (model.state().select_modal)
-            {
-                if (event == Event::ArrowUp)
+                if (notify_question)
                 {
-                    model.select_modal_up();
-                    return true;
-                }
-                if (event == Event::ArrowDown)
-                {
-                    model.select_modal_down();
-                    return true;
-                }
-                if (is_submit_key(event))
-                {
-                    auto selected = model.select_modal_current();
-                    model.close_select_modal();
-                    if (selected && model_select_callback)
-                    {
-                        auto switched = model_select_callback(*selected);
-                        if (switched)
-                        {
-                            display_config.model = switched->value;
-                            display_config.provider_type = switched->description;
-                            model.append_system_message("Switched model to " + switched->label);
-                        }
-                        else
-                        {
-                            model.append_system_message(switched.error().message);
-                        }
-                    }
-                    return true;
-                }
-                if (event == Event::Escape)
-                {
-                    model.handle_select_cancel();
-                    return true;
-                }
-                if (event == Event::Backspace)
-                {
-                    model.select_modal_backspace();
-                    return true;
-                }
-                // Number keys 1-9 for quick selection
-                if (event.is_character())
-                {
-                    const auto& input = event.input();
-                    if (input.size() == 1)
-                    {
-                        const auto digit = input.front();
-                        if (digit >= '1' && digit <= '9')
-                        {
-                            auto selected = model.select_modal_quick_select(digit - '0');
-                            if (selected)
-                            {
-                                model.close_select_modal();
-                                if (model_select_callback)
-                                {
-                                    auto switched = model_select_callback(*selected);
-                                    if (switched)
-                                    {
-                                        display_config.model = switched->value;
-                                        display_config.provider_type = switched->description;
-                                        model.append_system_message("Switched model to " + switched->label);
-                                    }
-                                    else
-                                    {
-                                        model.append_system_message(switched.error().message);
-                                    }
-                                }
-                            }
-                            return true;
-                        }
-                        if (std::isprint(static_cast<unsigned char>(digit)) != 0)
-                        {
-                            model.select_modal_input(digit);
-                            return true;
-                        }
-                    }
-                }
-                return true;
-            }
-        }
-
-        // --- Question modal (AskUser) ---
-        {
-            std::lock_guard lock{mutex};
-            if (model.state().question_modal)
-            {
-                if (is_submit_key(event))
-                {
-                    // Shift+Enter = newline in question modal
-                    if (is_composer_newline_event(event))
-                    {
-                        model.question_modal_newline();
-                        return true;
-                    }
-                    user_question_response = UserQuestionResponse{.answer = model.question_modal_submit()};
-                    model.close_question();
                     user_question_cv.notify_one();
-                    return true;
-                }
-                if (event == Event::Backspace)
-                {
-                    model.question_modal_backspace();
-                    return true;
-                }
-                if (is_composer_newline_event(event))
-                {
-                    model.question_modal_newline();
-                    return true;
-                }
-                if (event.is_character())
-                {
-                    const auto& input = event.input();
-                    if (input.size() == 1 && std::isprint(static_cast<unsigned char>(input.front())) != 0)
-                    {
-                        model.question_modal_input(input.front());
-                    }
-                    return true;
                 }
                 return true;
             }
@@ -917,39 +1143,77 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
         if (event == Event::CtrlC || event == Event::CtrlD)
         {
-            std::lock_guard lock{mutex};
-            if (model.state().busy)
+            bool handled_interrupt = false;
+            std::shared_ptr<CancellationSource> source_to_cancel;
+            bool notify_permission = false;
+            bool notify_question = false;
             {
-                if (cancellation_source)
+                std::lock_guard lock{mutex};
+                if (model.state().busy)
                 {
-                    cancellation_source->cancel();
+                    const auto interrupt = model.request_interrupt();
+                    handled_interrupt = interrupt.interrupted;
+                    apply_interrupt_result(interrupt, source_to_cancel, notify_permission, notify_question);
                 }
-                model.handle_interrupt();
-                permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
-                permission_cv.notify_all();
-                user_question_response.reset();
-                user_question_cv.notify_all();
-                return true;
+                else if (model.handle_quit() == TuiAction::Quit)
+                {
+                    terminal.exit_loop();
+                }
             }
-            if (model.handle_quit() == TuiAction::Quit)
+            if (handled_interrupt)
             {
-                terminal.exit_loop();
+                if (source_to_cancel)
+                {
+                    source_to_cancel->cancel();
+                }
+                if (notify_permission)
+                {
+                    permission_cv.notify_all();
+                }
+                if (notify_question)
+                {
+                    user_question_cv.notify_all();
+                }
             }
             return true;
         }
 
-        if (event == Event::Escape && model.state().busy)
+        if (event == Event::Escape)
         {
-            std::lock_guard lock{mutex};
-            if (cancellation_source)
+            bool handled_interrupt = false;
+            bool was_busy = false;
+            std::shared_ptr<CancellationSource> source_to_cancel;
+            bool notify_permission = false;
+            bool notify_question = false;
             {
-                cancellation_source->cancel();
+                std::lock_guard lock{mutex};
+                was_busy = model.state().busy;
+                if (was_busy)
+                {
+                    const auto interrupt = model.request_interrupt();
+                    handled_interrupt = interrupt.interrupted;
+                    apply_interrupt_result(interrupt, source_to_cancel, notify_permission, notify_question);
+                }
             }
-            model.handle_interrupt();
-            permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
-            permission_cv.notify_all();
-            user_question_response.reset();
-            user_question_cv.notify_all();
+            if (!was_busy)
+            {
+                return false;
+            }
+            if (handled_interrupt)
+            {
+                if (source_to_cancel)
+                {
+                    source_to_cancel->cancel();
+                }
+                if (notify_permission)
+                {
+                    permission_cv.notify_all();
+                }
+                if (notify_question)
+                {
+                    user_question_cv.notify_all();
+                }
+            }
             return true;
         }
 
@@ -958,51 +1222,6 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             if (model.state().busy)
             {
                 return true;
-            }
-        }
-
-        {
-            std::lock_guard lock{mutex};
-            if (model.state().command_palette)
-            {
-                if (event == Event::ArrowUp)
-                {
-                    model.command_palette_up();
-                    return true;
-                }
-                if (event == Event::ArrowDown)
-                {
-                    model.command_palette_down();
-                    return true;
-                }
-                if (event == Event::Escape)
-                {
-                    model.handle_command_cancel();
-                    composer_state.set_content(model.state().composer);
-                    return true;
-                }
-                if (event == Event::Backspace)
-                {
-                    model.command_palette_backspace();
-                    composer_state.set_content(model.state().composer);
-                    return true;
-                }
-                if (is_submit_key(event))
-                {
-                    model.handle_command_select();
-                    composer_state.set_content(model.state().composer);
-                    return true;
-                }
-                if (event.is_character())
-                {
-                    const auto characters = event.input();
-                    if (characters.size() == 1 && std::isprint(static_cast<unsigned char>(characters.front())) != 0)
-                    {
-                        model.command_palette_input(characters.front());
-                        composer_state.set_content(model.state().composer);
-                        return true;
-                    }
-                }
             }
         }
 
@@ -1014,44 +1233,38 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
         if (is_submit_key(event))
         {
-            std::string prompt;
+            TuiComposerSubmitResult submit_result;
             {
                 std::lock_guard lock{mutex};
-                model.set_composer(composer_state.content());
-
-                // Intercept /model to open the select modal
-                auto trimmed = std::string{trim(model.state().composer)};
-                if (trimmed == "/model" && model_list_provider)
+                submit_result = model.handle_composer_submit(composer_state.content());
+                if (submit_result.composer_changed)
                 {
-                    auto options = model_list_provider();
-                    if (!options.empty())
-                    {
-                        model.open_select_modal("Select model", std::move(options));
-                    }
-                    else
-                    {
-                        model.append_system_message("No models available.");
-                    }
-                    composer_state.clear();
-                    model.set_composer("");
-                    return true;
+                    composer_state.set_content(model.state().composer);
                 }
-
-                if (model.handle_submit() != TuiAction::SubmitPrompt)
-                {
-                    return true;
-                }
-                prompt = composer_state.content();
             }
 
-            composer_state.push_history(prompt);
-            composer_state.clear();
+            if (submit_result.request_model_selector)
             {
+                auto options = model_list_provider ? model_list_provider() : std::vector<ModelOption>{};
                 std::lock_guard lock{mutex};
-                model.set_composer("");
+                if (!options.empty())
+                {
+                    model.open_select_modal("Select model", std::move(options));
+                }
+                else
+                {
+                    model.append_system_message("No models available.");
+                }
+                return true;
             }
 
-            if (auto engine_prompt = resolve_submit_prompt(runtime, model, display_config, std::move(prompt)))
+            if (submit_result.action != TuiAction::SubmitPrompt)
+            {
+                return true;
+            }
+
+            composer_state.push_history(submit_result.prompt);
+            if (auto engine_prompt = resolve_submit_prompt(runtime, model, display_config, std::move(submit_result.prompt)))
             {
                 run_prompt(std::move(*engine_prompt));
             }
@@ -1061,10 +1274,11 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         if (event == Event::Character("/") && composer_state.content().empty())
         {
             std::lock_guard lock{mutex};
-            composer_state.set_content("/");
-            model.set_composer("/");
-            model.open_command_palette(command_entries);
-            return true;
+            if (model.handle_composer_slash_start(command_entries))
+            {
+                composer_state.set_content(model.state().composer);
+                return true;
+            }
         }
 
         if (event.is_mouse())
@@ -1072,12 +1286,14 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             const auto& mouse = event.mouse();
             if (mouse.button == Mouse::WheelUp)
             {
-                follow_transcript = apply_transcript_follow_wheel(follow_transcript, true, false);
+                std::lock_guard lock{mutex};
+                model.handle_transcript_wheel(true, false);
                 return true;
             }
             if (mouse.button == Mouse::WheelDown)
             {
-                follow_transcript = apply_transcript_follow_wheel(follow_transcript, false, true);
+                std::lock_guard lock{mutex};
+                model.handle_transcript_wheel(false, true);
                 return true;
             }
         }
@@ -1121,29 +1337,29 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             }
 
             auto transcript_box = vbox(std::move(transcript_rows)) | flex;
-            if (follow_transcript)
+            if (model.state().follow_transcript)
             {
                 transcript_box = transcript_box | focusPositionRelative(0.f, 1.f);
             }
             rows.push_back(transcript_box | yframe | vscroll_indicator);
         }
 
-        if (model.state().pending_permission)
+        if (model.state().bottom_pane_focus == BottomPaneFocus::permission_prompt && model.state().pending_permission)
         {
             rows.push_back(text(" "));
             rows.push_back(render::permission_modal_element(*model.state().pending_permission, terminal_width));
         }
-        else if (model.state().select_modal)
+        else if (model.state().bottom_pane_focus == BottomPaneFocus::select_modal && model.state().select_modal)
         {
             rows.push_back(text(" "));
             rows.push_back(render::select_modal_element(*model.state().select_modal, terminal_width));
         }
-        else if (model.state().question_modal)
+        else if (model.state().bottom_pane_focus == BottomPaneFocus::question_modal && model.state().question_modal)
         {
             rows.push_back(text(" "));
             rows.push_back(render::question_modal_element(*model.state().question_modal, terminal_width));
         }
-        else if (model.state().command_palette)
+        else if (model.state().bottom_pane_focus == BottomPaneFocus::command_palette && model.state().command_palette)
         {
             rows.push_back(text(" "));
             rows.push_back(render::command_palette_element(*model.state().command_palette, terminal_width));
@@ -1153,7 +1369,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         rows.push_back(text(render::horizontal_rule(terminal_width)) | dim);
         rows.push_back(render::status_footer_element(display_config, model.state()));
 
-        if (!model.state().pending_permission && !model.state().select_modal && !model.state().question_modal)
+        if (bottom_pane_accepts_composer_input(model.state().bottom_pane_focus))
         {
             const auto status_text = model.state().busy ? render::busy_spinner_frame(spinner_frame) + " Working"
                                                         : "Ready";
@@ -1165,12 +1381,6 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             rows.push_back(text(render::render_composer_hint(model.state().busy, composer_state.history_index())) | dim);
         }
 
-        if (static_cast<int>(model.state().transcript.size()) != last_transcript_count)
-        {
-            follow_transcript = true;
-            last_transcript_count = static_cast<int>(model.state().transcript.size());
-        }
-
         return vbox(std::move(rows)) | flex;
     });
 
@@ -1178,14 +1388,16 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
     drain_tui_events();
 
+    std::shared_ptr<CancellationSource> source_to_cancel;
     {
         std::lock_guard lock{mutex};
-        if (cancellation_source)
-        {
-            cancellation_source->cancel();
-        }
+        source_to_cancel = cancellation_source;
         permission_response = PermissionResponse{.allowed = false, .reason = "interrupted"};
         model.handle_interrupt();
+    }
+    if (source_to_cancel)
+    {
+        source_to_cancel->cancel();
     }
     permission_cv.notify_all();
     user_question_cv.notify_all();

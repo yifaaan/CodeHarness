@@ -6,6 +6,7 @@
 #include "codeharness/runtime/runtime.h"
 #include "codeharness/tui/bottom_pane/bottom_pane.h"
 #include "codeharness/tui/chat_surface.h"
+#include "codeharness/tui/tui_event.h"
 
 #include <functional>
 #include <optional>
@@ -37,11 +38,29 @@ struct TuiDisplayConfig
     McpConnectionInfo mcp_info;
 };
 
+struct TuiAppEventContext
+{
+    PermissionMode permission_mode = PermissionMode::Default;
+    std::optional<SessionCommandSummary> active_session;
+};
+
+struct TuiAppEventResult
+{
+    bool refresh_requested = false;
+    bool clear_permission_response = false;
+    bool clear_user_question_response = false;
+    bool release_cancellation = false;
+    bool run_completed = false;
+    std::optional<TokenUsage> token_usage;
+};
+
 enum class TuiAction
 {
     None,
     SubmitPrompt,
     InsertCommand,
+    SelectModel,
+    SubmitQuestion,
     ApprovePermission,
     ApprovePermissionForSession,
     DenyPermission,
@@ -49,15 +68,70 @@ enum class TuiAction
     Quit,
 };
 
+enum class TuiInputKind
+{
+    unknown,
+    arrow_up,
+    arrow_down,
+    backspace,
+    escape,
+    submit,
+    newline,
+    interrupt,
+    character,
+};
+
+struct TuiInput
+{
+    TuiInputKind kind = TuiInputKind::unknown;
+    char character = '\0';
+};
+
+struct TuiInterruptResult
+{
+    bool interrupted = false;
+    std::optional<PermissionResponse> permission_response;
+    bool cancel_user_question = false;
+};
+
+struct TuiFocusedInputResult
+{
+    bool handled = false;
+    TuiAction action = TuiAction::None;
+    bool composer_changed = false;
+    std::optional<PermissionResponse> permission_response;
+    std::optional<UserQuestionResponse> user_question_response;
+    std::optional<ModelOption> selected_model;
+    TuiInterruptResult interrupt;
+};
+
+struct TuiComposerSubmitResult
+{
+    bool handled = false;
+    TuiAction action = TuiAction::None;
+    bool request_model_selector = false;
+    bool composer_changed = false;
+    std::string prompt;
+};
+
+struct TuiComposerPasteResult
+{
+    bool handled = false;
+    bool composer_changed = false;
+};
+
 struct TuiState
 {
     std::vector<TranscriptItem> transcript;
+    std::size_t transcript_revision = 0;
+    bool follow_transcript = true;
     std::string composer;
     std::optional<SessionCommandSummary> active_session;
     bool busy = false;
     bool interrupt_requested = false;
     bool should_quit = false;
     PermissionMode permission_mode = PermissionMode::Default;
+    BottomPaneFocus bottom_pane_focus = BottomPaneFocus::composer;
     std::optional<PermissionPrompt> pending_permission;
     std::optional<CommandPaletteState> command_palette;
     std::optional<SelectModalState> select_modal;
@@ -81,10 +155,13 @@ public:
     auto command_palette_down() -> void;
     auto selected_command_text() const -> std::optional<std::string>;
     auto handle_submit() -> TuiAction;
+    [[nodiscard]] auto handle_composer_submit(std::string content) -> TuiComposerSubmitResult;
+    [[nodiscard]] auto handle_composer_slash_start(std::vector<CommandPaletteEntry> commands) -> bool;
     auto handle_quit() -> TuiAction;
     auto handle_command_select() -> TuiAction;
     auto handle_command_cancel() -> TuiAction;
     auto handle_interrupt() -> TuiAction;
+    [[nodiscard]] auto request_interrupt() -> TuiInterruptResult;
     auto handle_permission_approve() -> TuiAction;
     auto handle_permission_approve_for_session() -> TuiAction;
     auto handle_permission_deny() -> TuiAction;
@@ -108,15 +185,21 @@ public:
     auto question_modal_backspace() -> void;
     auto question_modal_newline() -> void;
     [[nodiscard]] auto question_modal_submit() -> std::string;
+    [[nodiscard]] auto handle_focused_bottom_pane_input(const TuiInput& input) -> TuiFocusedInputResult;
     auto set_active_session(std::optional<SessionCommandSummary> summary) -> void;
 
     // Paste burst detection
     auto detect_paste_burst(const std::string& input) -> void;
     auto apply_paste_to_composer(const std::string& paste_text) -> void;
+    [[nodiscard]] auto handle_composer_paste(std::string paste_text) -> TuiComposerPasteResult;
+    [[nodiscard]] auto handle_transcript_wheel(bool wheel_up, bool wheel_down) -> bool;
 
     auto begin_prompt(std::string prompt) -> void;
     auto complete_prompt() -> void;
     auto apply_engine_event(const EngineEvent& event) -> void;
+    [[nodiscard]] auto has_active_response() const noexcept -> bool;
+    [[nodiscard]] auto apply_tui_event(const TuiEvent& event, const TuiAppEventContext& context = {})
+        -> TuiAppEventResult;
     [[nodiscard]] auto has_streamed_assistant_output() const noexcept -> bool;
     auto show_permission(const PermissionPrompt& prompt) -> void;
     auto clear_permission() -> void;

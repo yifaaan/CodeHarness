@@ -49,6 +49,11 @@ auto tool_status_suffix(const TranscriptItem& item) -> std::string
     return "";
 }
 
+auto should_show_live_tool_input(const TranscriptItem& item) -> bool
+{
+    return item.kind == HistoryCellKind::tool && item.live && !item.input_json.empty() && item.detail.empty();
+}
+
 } // namespace
 
 auto tool_line_count(std::string_view detail) -> int
@@ -98,6 +103,10 @@ auto render_history_cell_lines(const TranscriptItem& item, int width) -> std::ve
     if (item.kind == HistoryCellKind::tool)
     {
         lines.push_back("• " + trim_to_width(tool_summary_text(item), width > 2 ? width - 2 : width));
+        if (should_show_live_tool_input(item))
+        {
+            lines.push_back("  input: " + trim_to_width(item.input_json, width > 9 ? width - 9 : width));
+        }
         if (item.expanded && !item.detail.empty())
         {
             if (item.is_error)
@@ -159,6 +168,10 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
             summary = summary | color(TuiTheme::error());
         }
         rows.push_back(summary);
+        if (should_show_live_tool_input(item))
+        {
+            rows.push_back(text("  input: " + item.input_json) | dim);
+        }
         if (item.is_error && item.expanded && !item.detail.empty())
         {
             const auto error_lines = split_lines(item.detail);

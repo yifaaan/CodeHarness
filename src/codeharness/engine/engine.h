@@ -87,6 +87,12 @@ struct EngineToolStarted
     std::string name;
 };
 
+struct EngineToolInputDelta
+{
+    std::string id;
+    std::string input_json_delta;
+};
+
 struct EngineToolFinished
 {
     std::string id;
@@ -106,8 +112,13 @@ struct EngineError
 
 // Events emitted by the engine during a run, which can be consumed by the caller to get intermediate results or update
 // UI.
-using EngineEvent =
-    std::variant<EngineAssistantTextDelta, EngineToolStarted, EngineToolFinished, EngineToolResult, EngineError>;
+using EngineEvent = std::variant<
+    EngineAssistantTextDelta,
+    EngineToolStarted,
+    EngineToolInputDelta,
+    EngineToolFinished,
+    EngineToolResult,
+    EngineError>;
 
 using EngineEventSink = std::function<void(const EngineEvent&)>;
 

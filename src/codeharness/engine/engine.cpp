@@ -29,8 +29,8 @@ auto emit_engine_event(const EngineEventSink& sink, EngineEvent event) -> void
     }
 }
 
-// 把 ProviderEvent 翻译成对应的 EngineEvent。
-// ToolUseInputDelta / MessageFinished 没有对应的引擎事件，返回 nullopt。
+// Translate ProviderEvent values into the EngineEvent stream exposed to UI layers.
+// MessageFinished and ProviderUsage are consumed by the engine and are not forwarded.
 auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<EngineEvent>
 {
     return std::visit(
@@ -41,7 +41,9 @@ auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<Engi
             [](const ToolUseStarted& started) -> std::optional<EngineEvent> {
                 return EngineToolStarted{.id = started.id, .name = started.name};
             },
-            [](const ToolUseInputDelta&) -> std::optional<EngineEvent> { return std::nullopt; },
+            [](const ToolUseInputDelta& delta) -> std::optional<EngineEvent> {
+                return EngineToolInputDelta{.id = delta.id, .input_json_delta = delta.input_json_delta};
+            },
             [](const ToolUseFinished& finished) -> std::optional<EngineEvent> {
                 return EngineToolFinished{.id = finished.id};
             },

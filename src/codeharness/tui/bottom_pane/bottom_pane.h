@@ -53,15 +53,27 @@ struct QuestionModalState
     std::vector<std::string> extra_lines;
 };
 
+enum class BottomPaneFocus
+{
+    composer,
+    command_palette,
+    permission_prompt,
+    select_modal,
+    question_modal,
+};
+
 struct BottomPaneState
 {
     std::string composer;
+    BottomPaneFocus focus = BottomPaneFocus::composer;
     std::optional<PermissionPrompt> pending_permission;
     std::optional<CommandPaletteState> command_palette;
     std::optional<SelectModalState> select_modal;
     std::optional<QuestionModalState> question_modal;
     bool paste_burst_active = false;
 };
+
+[[nodiscard]] auto bottom_pane_accepts_composer_input(BottomPaneFocus focus) -> bool;
 
 class BottomPane
 {

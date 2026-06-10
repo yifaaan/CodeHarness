@@ -359,6 +359,16 @@ TEST_CASE("ui backend formats OHJSON events")
     CHECK(event.at("type") == "assistant_delta");
     CHECK(event.at("text") == "hello");
 
+    const auto tool_input = codeharness::ui_backend::format_backend_event(
+        codeharness::ui_backend::BackendToolInputDelta{
+            .id = "tool-use-1",
+            .input_json_delta = R"({"path":"hello.txt"})",
+        });
+    const auto tool_input_event = nlohmann::json::parse(tool_input.substr(kBackendPrefix.size()));
+    CHECK(tool_input_event.at("type") == "tool_input_delta");
+    CHECK(tool_input_event.at("id") == "tool-use-1");
+    CHECK(tool_input_event.at("input_json_delta") == R"({"path":"hello.txt"})");
+
     const auto modal = codeharness::ui_backend::format_backend_event(
         codeharness::ui_backend::BackendPermissionModal{
             .id = "perm-tool-use-1",
@@ -719,9 +729,16 @@ TEST_CASE("ui backend ask_user response continues run")
         "\n");
 
     bool saw_modal = false;
+    bool saw_tool_input = false;
     bool saw_answer = false;
     for (const auto& event : events)
     {
+        if (event.at("type") == "tool_input_delta")
+        {
+            saw_tool_input = true;
+            CHECK(event.at("id") == "tool-use-ask");
+            CHECK(event.at("input_json_delta").get<std::string>().find("Which file?") != std::string::npos);
+        }
         if (event.at("type") == "modal_request" &&
             event.at("modal").at("kind") == "ask_user")
         {
@@ -736,6 +753,7 @@ TEST_CASE("ui backend ask_user response continues run")
         }
     }
 
+    CHECK(saw_tool_input);
     CHECK(saw_modal);
     CHECK(saw_answer);
     CHECK(events.back().at("type") == "line_complete");

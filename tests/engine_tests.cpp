@@ -493,6 +493,30 @@ TEST_CASE("engine streaming emits assistant text delta")
     CHECK(result->output_text == "hello");
 }
 
+TEST_CASE("engine streaming emits tool input deltas")
+{
+    ToolThenTextProvider provider;
+    codeharness::ToolRegistry tools;
+    codeharness::Engine engine{provider, tools};
+
+    codeharness::RunRequest request;
+    request.prompt = "read";
+    request.options.max_turns = 1;
+
+    std::string streamed_input;
+    auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
+        if (const auto* delta = std::get_if<codeharness::EngineToolInputDelta>(&event))
+        {
+            CHECK(delta->id == "tool-use-1");
+            streamed_input += delta->input_json_delta;
+        }
+    });
+
+    REQUIRE(!result.has_value());
+    CHECK(result.error().message == "max turns exceeded");
+    CHECK(streamed_input == R"({"path":"hello.txt"})");
+}
+
 TEST_CASE("engine aggregates usage events into run result")
 {
     UsageProvider provider;

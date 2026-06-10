@@ -54,7 +54,33 @@ auto strip_marker(std::string& value, std::string_view marker) -> void
     }
 }
 
+auto current_focus(const BottomPaneState& state) -> BottomPaneFocus
+{
+    if (state.pending_permission)
+    {
+        return BottomPaneFocus::permission_prompt;
+    }
+    if (state.question_modal)
+    {
+        return BottomPaneFocus::question_modal;
+    }
+    if (state.select_modal)
+    {
+        return BottomPaneFocus::select_modal;
+    }
+    if (state.command_palette)
+    {
+        return BottomPaneFocus::command_palette;
+    }
+    return BottomPaneFocus::composer;
+}
+
 } // namespace
+
+auto bottom_pane_accepts_composer_input(BottomPaneFocus focus) -> bool
+{
+    return focus == BottomPaneFocus::composer || focus == BottomPaneFocus::command_palette;
+}
 
 auto BottomPane::state() const noexcept -> const BottomPaneState&
 {
@@ -71,16 +97,17 @@ auto BottomPane::clear_prompt_entry() -> void
 {
     state_.composer.clear();
     state_.command_palette.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::can_submit_prompt() const -> bool
 {
-    return !state_.composer.empty() && !state_.pending_permission && !state_.command_palette;
+    return !state_.composer.empty() && state_.focus == BottomPaneFocus::composer;
 }
 
 auto BottomPane::can_quit() const -> bool
 {
-    return !state_.pending_permission && !state_.command_palette;
+    return state_.focus == BottomPaneFocus::composer;
 }
 
 auto BottomPane::has_pending_permission() const -> bool
@@ -92,17 +119,20 @@ auto BottomPane::clear_for_interrupt() -> void
 {
     state_.pending_permission.reset();
     state_.command_palette.reset();
+    state_.select_modal.reset();
     state_.question_modal.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::open_command_palette(std::vector<CommandPaletteEntry> commands, bool busy) -> void
 {
-    if (busy || state_.pending_permission)
+    if (busy || !bottom_pane_accepts_composer_input(state_.focus))
     {
         return;
     }
 
     state_.command_palette = CommandPaletteState{.commands = std::move(commands)};
+    state_.focus = BottomPaneFocus::command_palette;
     update_command_palette_from_composer();
     refresh_command_palette_matches();
 }
@@ -110,6 +140,7 @@ auto BottomPane::open_command_palette(std::vector<CommandPaletteEntry> commands,
 auto BottomPane::close_command_palette() -> void
 {
     state_.command_palette.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::update_command_palette_from_composer() -> void
@@ -128,12 +159,13 @@ auto BottomPane::update_command_palette_from_composer() -> void
     auto query = std::string_view{state_.composer};
     query.remove_prefix(1);
     state_.command_palette->query = std::string{query};
+    state_.focus = BottomPaneFocus::command_palette;
     refresh_command_palette_matches();
 }
 
 auto BottomPane::command_palette_input(char character, bool busy) -> void
 {
-    if (!state_.command_palette || busy || state_.pending_permission)
+    if (!state_.command_palette || busy || state_.focus != BottomPaneFocus::command_palette)
     {
         return;
     }
@@ -144,7 +176,7 @@ auto BottomPane::command_palette_input(char character, bool busy) -> void
 
 auto BottomPane::command_palette_backspace(bool busy) -> void
 {
-    if (!state_.command_palette || busy || state_.pending_permission || state_.composer.empty())
+    if (!state_.command_palette || busy || state_.focus != BottomPaneFocus::command_palette || state_.composer.empty())
     {
         return;
     }
@@ -229,12 +261,15 @@ auto BottomPane::handle_command_cancel() -> void
 auto BottomPane::show_permission(const PermissionPrompt& prompt) -> void
 {
     state_.command_palette.reset();
+    state_.select_modal.reset();
     state_.pending_permission = prompt;
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::clear_permission() -> void
 {
     state_.pending_permission.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::handle_permission_approve() -> bool
@@ -244,6 +279,7 @@ auto BottomPane::handle_permission_approve() -> bool
         return false;
     }
     state_.pending_permission.reset();
+    state_.focus = current_focus(state_);
     return true;
 }
 
@@ -254,6 +290,7 @@ auto BottomPane::handle_permission_approve_for_session() -> bool
         return false;
     }
     state_.pending_permission.reset();
+    state_.focus = current_focus(state_);
     return true;
 }
 
@@ -264,12 +301,13 @@ auto BottomPane::handle_permission_deny() -> bool
         return false;
     }
     state_.pending_permission.reset();
+    state_.focus = current_focus(state_);
     return true;
 }
 
 auto BottomPane::open_select_modal(std::string title, std::vector<ModelOption> options, bool busy) -> void
 {
-    if (busy || state_.pending_permission)
+    if (busy || !bottom_pane_accepts_composer_input(state_.focus))
     {
         return;
     }
@@ -293,11 +331,13 @@ auto BottomPane::open_select_modal(std::string title, std::vector<ModelOption> o
     }
     state_.command_palette.reset();
     state_.question_modal.reset();
+    state_.focus = BottomPaneFocus::select_modal;
 }
 
 auto BottomPane::close_select_modal() -> void
 {
     state_.select_modal.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::select_modal_up() -> void
@@ -321,7 +361,7 @@ auto BottomPane::select_modal_down() -> void
 
 auto BottomPane::select_modal_input(char character, bool busy) -> void
 {
-    if (!state_.select_modal || !state_.select_modal->is_searchable || busy || state_.pending_permission)
+    if (!state_.select_modal || !state_.select_modal->is_searchable || busy || state_.focus != BottomPaneFocus::select_modal)
     {
         return;
     }
@@ -332,7 +372,8 @@ auto BottomPane::select_modal_input(char character, bool busy) -> void
 
 auto BottomPane::select_modal_backspace(bool busy) -> void
 {
-    if (!state_.select_modal || !state_.select_modal->is_searchable || busy || state_.pending_permission || state_.select_modal->query.empty())
+    if (!state_.select_modal || !state_.select_modal->is_searchable || busy
+        || state_.focus != BottomPaneFocus::select_modal || state_.select_modal->query.empty())
     {
         return;
     }
@@ -399,16 +440,18 @@ auto BottomPane::show_question(std::string request_id, std::string question, std
     };
     state_.command_palette.reset();
     state_.select_modal.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::close_question() -> void
 {
     state_.question_modal.reset();
+    state_.focus = current_focus(state_);
 }
 
 auto BottomPane::question_modal_input(char character) -> void
 {
-    if (!state_.question_modal)
+    if (!state_.question_modal || state_.focus != BottomPaneFocus::question_modal)
     {
         return;
     }
@@ -417,7 +460,7 @@ auto BottomPane::question_modal_input(char character) -> void
 
 auto BottomPane::question_modal_backspace() -> void
 {
-    if (!state_.question_modal || state_.question_modal->answer.empty())
+    if (!state_.question_modal || state_.focus != BottomPaneFocus::question_modal || state_.question_modal->answer.empty())
     {
         return;
     }
@@ -426,7 +469,7 @@ auto BottomPane::question_modal_backspace() -> void
 
 auto BottomPane::question_modal_newline() -> void
 {
-    if (!state_.question_modal)
+    if (!state_.question_modal || state_.focus != BottomPaneFocus::question_modal)
     {
         return;
     }
@@ -464,7 +507,7 @@ auto BottomPane::detect_paste_burst(const std::string& input) -> void
 
 auto BottomPane::apply_paste_to_composer(const std::string& paste_text, bool busy) -> void
 {
-    if (busy || state_.pending_permission || state_.select_modal || state_.question_modal)
+    if (busy || !bottom_pane_accepts_composer_input(state_.focus))
     {
         return;
     }

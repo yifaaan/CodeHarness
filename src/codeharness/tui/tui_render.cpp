@@ -7,8 +7,6 @@
 #include <ftxui/dom/elements.hpp>
 
 #include <iterator>
-#include <sstream>
-#include <string_view>
 
 namespace codeharness::tui::render
 {
@@ -62,17 +60,6 @@ auto select_modal_spec(const SelectModalState& modal) -> ListDialogSpec
 
 } // namespace
 
-auto format_token_count(int count) -> std::string
-{
-    if (count >= 1000)
-    {
-        auto whole = count / 1000;
-        auto tenths = (count % 1000) / 100;
-        return std::to_string(whole) + "." + std::to_string(tenths) + "k";
-    }
-    return std::to_string(count);
-}
-
 auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>
 {
     return {
@@ -124,67 +111,32 @@ auto render_permission_lines(const PermissionPrompt& prompt, int width) -> std::
     return lines;
 }
 
-auto render_status_footer_line(const TuiDisplayConfig& config, const TuiState& state) -> std::string
+auto render_question_lines(const QuestionModalState& modal, int width) -> std::vector<std::string>
 {
-    std::ostringstream output;
-    output << "model: " << config.model << " \xe2\x94\x82 provider: " << config.provider_type;
-    if (config.token_usage.input_tokens > 0 || config.token_usage.output_tokens > 0)
+    std::vector<std::string> lines;
+    lines.push_back("Agent is waiting for your input...");
+    lines.push_back("");
+    lines.push_back("? " + trim_to_width(modal.question, width > 2 ? width - 2 : width));
+    if (!modal.tool_name.empty())
     {
-        output << " \xe2\x94\x82 tokens: " << format_token_count(config.token_usage.input_tokens)
-               << "\xe2\x86\x93 " << format_token_count(config.token_usage.output_tokens) << "\xe2\x86\x91";
+        lines.push_back("Tool: " + trim_to_width(modal.tool_name, width > 6 ? width - 6 : width));
     }
-    if (config.skill_count > 0)
+    if (!modal.reason.empty())
     {
-        output << " \xe2\x94\x82 skills: " << config.skill_count;
+        lines.push_back("Reason: " + trim_to_width(modal.reason, width > 8 ? width - 8 : width));
     }
-    if (state.active_session)
+    if (!modal.extra_lines.empty())
     {
-        output << " \xe2\x94\x82 session: " << state.active_session->session_id;
-    }
-    if (config.mcp_info.connected > 0)
-    {
-        output << " \xe2\x94\x82 mcp: " << config.mcp_info.connected;
-        if (config.mcp_info.failed > 0)
+        lines.push_back("");
+        for (const auto& line : modal.extra_lines)
         {
-            output << "/" << config.mcp_info.failed;
+            lines.push_back("  " + trim_to_width(line, width > 2 ? width - 2 : width));
         }
     }
-    if (state.permission_mode != PermissionMode::Plan)
-    {
-        output << " \xe2\x94\x82 mode: " << codeharness::permission_mode_label(state.permission_mode);
-    }
-    return output.str();
-}
-
-auto render_composer_hint(bool busy, int history_index) -> std::string
-{
-    if (busy)
-    {
-        return "Esc stop \xc2\xb7 Ctrl+C stop";
-    }
-    auto hint = std::string{"Shift+Enter newline \xc2\xb7 Enter send \xc2\xb7 / commands \xc2\xb7 Ctrl+P/N history \xc2\xb7 Ctrl+C exit"};
-    if (history_index >= 0)
-    {
-        hint += " \xc2\xb7 history " + std::to_string(history_index + 1);
-    }
-    return hint;
-}
-
-auto busy_spinner_frame(int frame) -> std::string
-{
-    static constexpr std::string_view frames[] = {
-        "\xe2\xa0\x8b",
-        "\xe2\xa0\x99",
-        "\xe2\xa0\xb9",
-        "\xe2\xa0\xb8",
-        "\xe2\xa0\xbc",
-        "\xe2\xa0\xb4",
-        "\xe2\xa0\xa6",
-        "\xe2\xa0\xa7",
-        "\xe2\xa0\x87",
-        "\xe2\xa0\x8f",
-    };
-    return std::string{frames[static_cast<std::size_t>(frame) % (sizeof(frames) / sizeof(frames[0]))]};
+    lines.push_back("");
+    lines.push_back("> " + trim_to_width(modal.answer, width > 2 ? width - 2 : width));
+    lines.push_back("Shift+Enter newline \xc2\xb7 Enter submit");
+    return lines;
 }
 
 auto welcome_banner_element(const TuiDisplayConfig& config) -> Element
@@ -249,61 +201,6 @@ auto permission_modal_element(const PermissionPrompt& prompt, int width) -> Elem
         text("Esc cancel") | dim,
     }));
     return vbox(std::move(rows));
-}
-
-auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state) -> Element
-{
-    Elements parts;
-
-    parts.push_back(text("model: ") | color(TuiTheme::primary()) | dim);
-    parts.push_back(text(config.model) | dim);
-    parts.push_back(text(std::string{k_separator}) | dim);
-
-    parts.push_back(text("provider: ") | dim);
-    parts.push_back(text(config.provider_type) | dim);
-
-    if (config.token_usage.input_tokens > 0 || config.token_usage.output_tokens > 0)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("tokens: ") | dim);
-        parts.push_back(text(format_token_count(config.token_usage.input_tokens) + "\xe2\x86\x93 ") | dim);
-        parts.push_back(text(format_token_count(config.token_usage.output_tokens) + "\xe2\x86\x91") | dim);
-    }
-
-    if (config.skill_count > 0)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("skills: " + std::to_string(config.skill_count)) | dim);
-    }
-
-    if (state.active_session)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("session: " + state.active_session->session_id) | dim);
-    }
-
-    if (config.mcp_info.connected > 0)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        auto mcp_text = "mcp: " + std::to_string(config.mcp_info.connected);
-        if (config.mcp_info.failed > 0)
-        {
-            mcp_text += "/" + std::to_string(config.mcp_info.failed);
-        }
-        parts.push_back(text(mcp_text) | dim);
-    }
-
-    if (state.permission_mode != PermissionMode::Plan)
-    {
-        parts.push_back(text(std::string{k_separator}) | dim);
-        parts.push_back(text("mode: " + std::string{codeharness::permission_mode_label(state.permission_mode)}) | dim);
-    }
-
-    if (state.permission_mode == PermissionMode::Plan)
-    {
-        parts.push_back(text(" [PLAN MODE] ") | color(TuiTheme::warning()) | bold);
-    }
-    return hbox(std::move(parts));
 }
 
 auto select_modal_element(const SelectModalState& modal, int width) -> Element

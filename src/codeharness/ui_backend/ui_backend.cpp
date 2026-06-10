@@ -37,6 +37,9 @@ auto engine_event_to_backend_event(const EngineEvent& event) -> BackendEvent
             [](const EngineToolStarted& started) -> BackendEvent {
                 return BackendToolStarted{.id = started.id, .name = started.name};
             },
+            [](const EngineToolInputDelta& delta) -> BackendEvent {
+                return BackendToolInputDelta{.id = delta.id, .input_json_delta = delta.input_json_delta};
+            },
             [](const EngineToolFinished& finished) -> BackendEvent {
                 return BackendToolCompleted{.id = finished.id};
             },
@@ -233,6 +236,14 @@ auto format_backend_event(const BackendEvent& event) -> std::string
             [](const BackendToolStarted& started) {
                 return prefixed_json_line(
                     nlohmann::json{{"type", "tool_started"}, {"id", started.id}, {"name", started.name}});
+            },
+            [](const BackendToolInputDelta& delta) {
+                return prefixed_json_line(
+                    nlohmann::json{
+                        {"type", "tool_input_delta"},
+                        {"id", delta.id},
+                        {"input_json_delta", delta.input_json_delta},
+                    });
             },
             [](const BackendToolCompleted& completed) {
                 return prefixed_json_line(nlohmann::json{{"type", "tool_completed"}, {"id", completed.id}});

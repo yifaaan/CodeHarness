@@ -74,6 +74,107 @@ TEST_CASE("tui run completed event carries result fields")
     CHECK(completed.output_tokens == 34);
 }
 
+TEST_CASE("tui app event reducer applies engine and completion events")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("hello");
+
+    auto result = model.apply_tui_event(
+        codeharness::tui::TuiEvent{codeharness::tui::TuiEngineEvent{
+            .event = codeharness::EngineAssistantTextDelta{.text = "streamed"},
+        }});
+
+    CHECK(!result.run_completed);
+    CHECK(model.has_active_response());
+    REQUIRE(model.state().transcript.size() == 2);
+    CHECK(model.state().transcript.at(1).kind == codeharness::tui::HistoryCellKind::assistant);
+    CHECK(model.state().transcript.at(1).text == "streamed");
+    CHECK(model.state().transcript.at(1).live);
+
+    result = model.apply_tui_event(
+        codeharness::tui::TuiEvent{codeharness::tui::TuiRunCompleted{
+            .success = true,
+            .output_text = "fallback",
+            .input_tokens = 12,
+            .output_tokens = 34,
+        }},
+        codeharness::tui::TuiAppEventContext{
+            .permission_mode = codeharness::PermissionMode::Plan,
+            .active_session = codeharness::SessionCommandSummary{
+                .session_id = "session-1",
+                .model = "gpt",
+                .summary = "active",
+                .message_count = 3,
+            },
+        });
+
+    CHECK(result.run_completed);
+    CHECK(result.release_cancellation);
+    CHECK(result.clear_user_question_response);
+    REQUIRE(result.token_usage.has_value());
+    CHECK(result.token_usage->input_tokens == 12);
+    CHECK(result.token_usage->output_tokens == 34);
+    CHECK(!model.state().busy);
+    CHECK(model.state().permission_mode == codeharness::PermissionMode::Plan);
+    REQUIRE(model.state().active_session.has_value());
+    CHECK(model.state().active_session->session_id == "session-1");
+    REQUIRE(model.state().transcript.size() == 2);
+    CHECK(model.state().transcript.at(1).text == "streamed");
+    CHECK(!model.state().transcript.at(1).live);
+    CHECK(!model.has_active_response());
+}
+
+TEST_CASE("tui app event reducer surfaces requests and refresh")
+{
+    codeharness::tui::TuiAppModel model;
+
+    auto result = model.apply_tui_event(
+        codeharness::tui::TuiEvent{codeharness::tui::TuiPermissionRequested{
+            .prompt = codeharness::PermissionPrompt{
+                .id = "perm-1",
+                .tool_use_id = "tool-1",
+                .tool_name = "write_file",
+                .reason = "confirm",
+            },
+        }});
+
+    CHECK(result.clear_permission_response);
+    REQUIRE(model.state().pending_permission.has_value());
+    CHECK(model.state().pending_permission->id == "perm-1");
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::permission_prompt);
+
+    result = model.apply_tui_event(
+        codeharness::tui::TuiEvent{codeharness::tui::TuiQuestionRequested{
+            .prompt = codeharness::UserQuestionPrompt{
+                .id = "question-1",
+                .tool_use_id = "tool-2",
+                .question = "Which file?",
+                .reason = "Need a target",
+            },
+        }});
+
+    CHECK(result.clear_user_question_response);
+    REQUIRE(model.state().question_modal.has_value());
+    CHECK(model.state().question_modal->request_id == "question-1");
+    CHECK(model.state().question_modal->tool_name == "ask_user");
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::permission_prompt);
+
+    result = model.apply_tui_event(codeharness::tui::TuiEvent{codeharness::tui::TuiRefreshRequested{}});
+    CHECK(result.refresh_requested);
+
+    result = model.apply_tui_event(
+        codeharness::tui::TuiEvent{codeharness::tui::TuiRunCompleted{.success = false, .error_message = "failed"}});
+
+    CHECK(result.run_completed);
+    CHECK(!result.token_usage.has_value());
+    CHECK(!model.state().pending_permission.has_value());
+    CHECK(!model.state().question_modal.has_value());
+    CHECK(!model.state().busy);
+    REQUIRE(!model.state().transcript.empty());
+    CHECK(model.state().transcript.back().kind == codeharness::tui::HistoryCellKind::error);
+    CHECK(model.state().transcript.back().text == "failed");
+}
+
 TEST_CASE("tui selection list moves and clamps cursor")
 {
     CHECK(codeharness::tui::move_selection_up(4, 0) == 4);
@@ -433,6 +534,7 @@ TEST_CASE("tui bottom pane command palette filters cancels and selects")
                               false);
 
     REQUIRE(pane.state().command_palette.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::command_palette);
     CHECK(pane.state().command_palette->matches.size() == 2);
 
     pane.command_palette_input('k', false);
@@ -449,6 +551,7 @@ TEST_CASE("tui bottom pane command palette filters cancels and selects")
 
     CHECK(pane.handle_command_select());
     CHECK(!pane.state().command_palette.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::composer);
     CHECK(pane.state().composer == "/resume ");
 }
 
@@ -463,6 +566,7 @@ TEST_CASE("tui bottom pane select modal searches cancels and quick selects")
                            false);
 
     REQUIRE(pane.state().select_modal.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::select_modal);
     CHECK(pane.state().select_modal->cursor == 1);
     auto selected = pane.select_modal_current();
     REQUIRE(selected.has_value());
@@ -487,6 +591,7 @@ TEST_CASE("tui bottom pane select modal searches cancels and quick selects")
 
     pane.handle_select_cancel();
     CHECK(!pane.state().select_modal.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::composer);
 }
 
 TEST_CASE("tui bottom pane permission and question flows")
@@ -500,8 +605,10 @@ TEST_CASE("tui bottom pane permission and question flows")
             .reason = "confirm",
         });
     CHECK(pane.has_pending_permission());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::permission_prompt);
     CHECK(pane.handle_permission_approve());
     CHECK(!pane.has_pending_permission());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::composer);
 
     pane.show_permission(
         codeharness::PermissionPrompt{
@@ -522,6 +629,7 @@ TEST_CASE("tui bottom pane permission and question flows")
     CHECK(pane.handle_permission_deny());
 
     pane.show_question("q-1", "Which file?", "ask_user", "Need target");
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::question_modal);
     pane.question_modal_input('a');
     pane.question_modal_input('b');
     pane.question_modal_newline();
@@ -529,6 +637,52 @@ TEST_CASE("tui bottom pane permission and question flows")
     CHECK(pane.question_modal_submit() == "ab\nc");
     pane.close_question();
     CHECK(!pane.state().question_modal.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::composer);
+}
+
+TEST_CASE("tui bottom pane preserves a single active overlay focus")
+{
+    codeharness::tui::BottomPane pane;
+    pane.set_composer("/");
+    pane.open_command_palette({
+                                  codeharness::tui::CommandPaletteEntry{
+                                      .name = "model",
+                                      .description = "Switch model.",
+                                  },
+                              },
+                              false);
+
+    pane.open_select_modal("Select model",
+                           {
+                               codeharness::tui::ModelOption{.value = "echo", .label = "Echo"},
+                           },
+                           false);
+
+    CHECK(!pane.state().command_palette.has_value());
+    REQUIRE(pane.state().select_modal.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::select_modal);
+
+    pane.show_question("q-1", "Which file?", "ask_user", "Need target");
+    CHECK(!pane.state().select_modal.has_value());
+    REQUIRE(pane.state().question_modal.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::question_modal);
+
+    pane.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+
+    REQUIRE(pane.state().question_modal.has_value());
+    REQUIRE(pane.state().pending_permission.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::permission_prompt);
+
+    CHECK(pane.handle_permission_deny());
+    CHECK(!pane.state().pending_permission.has_value());
+    CHECK(pane.state().question_modal.has_value());
+    CHECK(pane.state().focus == codeharness::tui::BottomPaneFocus::question_modal);
 }
 
 TEST_CASE("tui bottom pane paste handling respects blockers")
@@ -557,19 +711,63 @@ TEST_CASE("tui chat surface streams assistant output and resets on new prompt")
 {
     codeharness::tui::ChatSurface chat;
 
+    const auto initial_revision = chat.revision();
     chat.begin_prompt("run tool");
     CHECK(!chat.has_streamed_assistant_output());
+    CHECK(chat.revision() > initial_revision);
+    auto previous_revision = chat.revision();
+
     chat.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "hello"});
+    CHECK(chat.revision() > previous_revision);
+    previous_revision = chat.revision();
+
     chat.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = " world"});
+    CHECK(chat.revision() > previous_revision);
 
     REQUIRE(chat.items().size() == 2);
     CHECK(chat.has_streamed_assistant_output());
+    CHECK(chat.has_active_response());
     CHECK(chat.items().at(0).kind == codeharness::tui::HistoryCellKind::user);
     CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::assistant);
     CHECK(chat.items().at(1).text == "hello world");
+    CHECK(chat.items().at(1).live);
 
+    previous_revision = chat.revision();
     chat.begin_prompt("next");
+    CHECK(chat.revision() > previous_revision);
     CHECK(!chat.has_streamed_assistant_output());
+    CHECK(!chat.has_active_response());
+    REQUIRE(chat.items().size() == 3);
+    CHECK(!chat.items().at(1).live);
+}
+
+TEST_CASE("tui chat surface commits live assistant before tool and error rows")
+{
+    codeharness::tui::ChatSurface chat;
+    chat.begin_prompt("run tool");
+    chat.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "I will inspect"});
+
+    REQUIRE(chat.items().size() == 2);
+    CHECK(chat.has_active_response());
+    CHECK(chat.items().at(1).live);
+
+    chat.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "read_file"});
+    REQUIRE(chat.items().size() == 3);
+    CHECK(chat.has_active_response());
+    CHECK(!chat.items().at(1).live);
+    CHECK(chat.items().at(2).kind == codeharness::tui::HistoryCellKind::tool);
+    CHECK(chat.items().at(2).live);
+
+    chat.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "done"});
+    REQUIRE(chat.items().size() == 4);
+    CHECK(chat.has_active_response());
+    CHECK(chat.items().at(3).live);
+
+    chat.append_error_once("interrupted");
+    REQUIRE(chat.items().size() == 5);
+    CHECK(!chat.has_active_response());
+    CHECK(!chat.items().at(3).live);
+    CHECK(chat.items().at(4).kind == codeharness::tui::HistoryCellKind::error);
 }
 
 TEST_CASE("tui chat surface merges tool events and toggles details")
@@ -587,6 +785,8 @@ TEST_CASE("tui chat surface merges tool events and toggles details")
     CHECK(chat.items().at(1).text == "bash completed");
     CHECK(chat.items().at(1).detail == "done");
     CHECK(!chat.items().at(1).expanded);
+    CHECK(!chat.items().at(1).live);
+    CHECK(!chat.has_active_response());
 
     CHECK(!chat.toggle_tool_details(0));
     CHECK(chat.toggle_tool_details(1));
@@ -605,6 +805,50 @@ TEST_CASE("tui chat surface merges duplicate tool starts")
     CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-1");
     CHECK(chat.items().at(1).text == "read_file running");
+    CHECK(chat.items().at(1).live);
+    CHECK(chat.has_active_response());
+}
+
+TEST_CASE("tui chat surface merges streamed tool input")
+{
+    codeharness::tui::ChatSurface chat;
+    chat.begin_prompt("run tool");
+
+    auto previous_revision = chat.revision();
+    chat.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "read_file"});
+    CHECK(chat.revision() > previous_revision);
+    previous_revision = chat.revision();
+
+    chat.apply_engine_event(
+        codeharness::EngineToolInputDelta{.id = "tool-use-1", .input_json_delta = R"({"path":)"});
+    CHECK(chat.revision() > previous_revision);
+    previous_revision = chat.revision();
+
+    chat.apply_engine_event(
+        codeharness::EngineToolInputDelta{.id = "tool-use-1", .input_json_delta = R"("hello.txt"})"});
+    CHECK(chat.revision() > previous_revision);
+
+    REQUIRE(chat.items().size() == 2);
+    CHECK(chat.items().at(1).input_json == R"({"path":"hello.txt"})");
+    CHECK(chat.items().at(1).live);
+    CHECK(chat.has_active_response());
+
+    auto lines = codeharness::tui::render::render_history_cell_lines(chat.items().at(1), 80);
+    REQUIRE(lines.size() == 2);
+    CHECK(lines.at(0).find("Running read_file") != std::string::npos);
+    CHECK(lines.at(1).find(R"(input: {"path":"hello.txt"})") != std::string::npos);
+
+    previous_revision = chat.revision();
+    chat.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "done", .is_error = false});
+    CHECK(chat.revision() > previous_revision);
+    CHECK(chat.items().at(1).detail == "done");
+    CHECK(chat.items().at(1).input_json == R"({"path":"hello.txt"})");
+    CHECK(!chat.items().at(1).live);
+    CHECK(!chat.has_active_response());
+
+    lines = codeharness::tui::render::render_history_cell_lines(chat.items().at(1), 80);
+    CHECK(lines.size() == 1);
+    CHECK(lines.at(0).find("Ran read_file 1L") != std::string::npos);
 }
 
 TEST_CASE("tui chat surface records orphan and failed tool results")
@@ -697,6 +941,56 @@ TEST_CASE("tui model composer submit and quit states")
     CHECK(model.state().should_quit);
 }
 
+TEST_CASE("tui model routes base composer submit intents")
+{
+    codeharness::tui::TuiAppModel model;
+
+    auto submitted = model.handle_composer_submit("hello tui");
+    CHECK(submitted.handled);
+    CHECK(submitted.action == codeharness::tui::TuiAction::SubmitPrompt);
+    CHECK(submitted.prompt == "hello tui");
+    CHECK(submitted.composer_changed);
+    CHECK(model.state().composer.empty());
+
+    auto model_picker = model.handle_composer_submit("  /model  ");
+    CHECK(model_picker.handled);
+    CHECK(model_picker.action == codeharness::tui::TuiAction::None);
+    CHECK(model_picker.request_model_selector);
+    CHECK(model_picker.composer_changed);
+    CHECK(model.state().composer.empty());
+
+    auto empty = model.handle_composer_submit("");
+    CHECK(empty.handled);
+    CHECK(empty.action == codeharness::tui::TuiAction::None);
+    CHECK(!empty.request_model_selector);
+    CHECK(!empty.composer_changed);
+}
+
+TEST_CASE("tui model opens command palette from leading slash")
+{
+    codeharness::tui::TuiAppModel model;
+
+    CHECK(model.handle_composer_slash_start({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    }));
+    CHECK(model.state().composer == "/");
+    REQUIRE(model.state().command_palette.has_value());
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::command_palette);
+
+    CHECK(!model.handle_composer_slash_start({}));
+
+    model.close_command_palette();
+    model.set_composer("draft");
+    CHECK(!model.handle_composer_slash_start({}));
+
+    model.begin_prompt("busy");
+    model.set_composer("");
+    CHECK(!model.handle_composer_slash_start({}));
+}
+
 TEST_CASE("tui busy state suppresses prompt submit but allows interrupt")
 {
     codeharness::tui::TuiAppModel model;
@@ -739,6 +1033,21 @@ TEST_CASE("tui model interrupt clears pending permission")
 
     CHECK(model.handle_interrupt() == codeharness::tui::TuiAction::Interrupt);
     CHECK(!model.state().pending_permission.has_value());
+    CHECK(model.state().interrupt_requested);
+}
+
+TEST_CASE("tui model request interrupt returns cancellation intents")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("running");
+
+    const auto interrupted = model.request_interrupt();
+
+    CHECK(interrupted.interrupted);
+    REQUIRE(interrupted.permission_response.has_value());
+    CHECK(!interrupted.permission_response->allowed);
+    CHECK(interrupted.permission_response->reason == "interrupted");
+    CHECK(interrupted.cancel_user_question);
     CHECK(model.state().interrupt_requested);
 }
 
@@ -838,14 +1147,31 @@ TEST_CASE("tui model transcript handles engine events")
 {
     codeharness::tui::TuiAppModel model;
 
+    const auto initial_revision = model.state().transcript_revision;
     model.begin_prompt("run tool");
+    CHECK(model.state().transcript_revision > initial_revision);
+    auto previous_revision = model.state().transcript_revision;
+
     CHECK(!model.has_streamed_assistant_output());
     model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "hello"});
+    CHECK(model.state().transcript_revision > previous_revision);
+    previous_revision = model.state().transcript_revision;
+
     CHECK(model.has_streamed_assistant_output());
     model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = " world"});
+    CHECK(model.state().transcript_revision > previous_revision);
+    previous_revision = model.state().transcript_revision;
+
     model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+    CHECK(model.state().transcript_revision > previous_revision);
+    previous_revision = model.state().transcript_revision;
+
     model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "done", .is_error = false});
+    CHECK(model.state().transcript_revision > previous_revision);
+    previous_revision = model.state().transcript_revision;
+
     model.complete_prompt();
+    CHECK(model.state().transcript_revision >= previous_revision);
 
     REQUIRE(model.state().transcript.size() == 3);
     CHECK(model.state().transcript.at(0).kind == codeharness::tui::HistoryCellKind::user);
@@ -856,14 +1182,36 @@ TEST_CASE("tui model transcript handles engine events")
     CHECK(model.state().transcript.at(2).text == "bash completed");
     CHECK(model.state().transcript.at(2).detail == "done");
     CHECK(!model.state().transcript.at(2).expanded);
+    CHECK(!model.state().transcript.at(2).live);
+    CHECK(!model.has_active_response());
     CHECK(model.render_text().find("done") == std::string::npos);
+    previous_revision = model.state().transcript_revision;
     CHECK(model.toggle_tool_details(2));
+    CHECK(model.state().transcript_revision > previous_revision);
     CHECK(model.state().transcript.at(2).expanded);
     CHECK(model.render_text().find("Ran bash 1L") != std::string::npos);
     CHECK(model.render_text().find("done") != std::string::npos);
 
     model.begin_prompt("next prompt");
     CHECK(!model.has_streamed_assistant_output());
+}
+
+TEST_CASE("tui model completes live tool rows when run ends")
+{
+    codeharness::tui::TuiAppModel model;
+
+    model.begin_prompt("run long tool");
+    model.apply_engine_event(codeharness::EngineToolStarted{.id = "tool-use-1", .name = "bash"});
+
+    REQUIRE(model.state().transcript.size() == 2);
+    CHECK(model.state().transcript.at(1).live);
+    CHECK(model.has_active_response());
+
+    model.complete_prompt();
+
+    REQUIRE(model.state().transcript.size() == 2);
+    CHECK(!model.state().transcript.at(1).live);
+    CHECK(!model.has_active_response());
 }
 
 TEST_CASE("tui model merges finished and error tool events")
@@ -1155,6 +1503,7 @@ TEST_CASE("tui select modal is suppressed while busy or permission pending")
             .tool_name = "bash",
             .reason = "test",
         });
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::permission_prompt);
 
     model.open_select_modal("Select model", {
         codeharness::tui::ModelOption{.value = "echo", .label = "Echo"},
@@ -1168,9 +1517,15 @@ TEST_CASE("tui question modal accepts input and submits")
     model.show_question("q-1", "What file to edit?", "ask_user", "Need user input");
 
     REQUIRE(model.state().question_modal.has_value());
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::question_modal);
     CHECK(model.state().question_modal->question == "What file to edit?");
     CHECK(model.state().question_modal->tool_name == "ask_user");
     CHECK(model.state().question_modal->answer.empty());
+
+    auto rendered = model.render_text();
+    CHECK(rendered.find("Agent is waiting for your input") != std::string::npos);
+    CHECK(rendered.find("What file to edit?") != std::string::npos);
+    CHECK(rendered.find("Ready\n>") == std::string::npos);
 
     // Type answer
     model.question_modal_input('h');
@@ -1196,6 +1551,104 @@ TEST_CASE("tui question modal accepts input and submits")
     // Close
     model.close_question();
     CHECK(!model.state().question_modal.has_value());
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::composer);
+}
+
+TEST_CASE("tui model restores question focus after permission prompt")
+{
+    codeharness::tui::TuiAppModel model;
+    model.show_question("q-1", "Which file?", "ask_user", "Need target");
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::permission_prompt);
+    REQUIRE(model.state().question_modal.has_value());
+
+    model.question_modal_input('x');
+    CHECK(model.state().question_modal->answer.empty());
+
+    CHECK(model.handle_permission_deny() == codeharness::tui::TuiAction::DenyPermission);
+    CHECK(model.state().bottom_pane_focus == codeharness::tui::BottomPaneFocus::question_modal);
+    REQUIRE(model.state().question_modal.has_value());
+
+    model.question_modal_input('x');
+    CHECK(model.state().question_modal->answer == "x");
+
+    const auto rendered = model.render_text();
+    CHECK(rendered.find("Which file?") != std::string::npos);
+    CHECK(rendered.find("write_file") == std::string::npos);
+}
+
+TEST_CASE("tui model routes focused bottom pane input")
+{
+    codeharness::tui::TuiAppModel model;
+    model.set_composer("/");
+    model.open_command_palette({
+        codeharness::tui::CommandPaletteEntry{
+            .name = "skills",
+            .description = "List loaded skills.",
+        },
+    });
+
+    auto routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::character, .character = 's'});
+    CHECK(routed.handled);
+    CHECK(routed.composer_changed);
+    CHECK(model.state().composer == "/s");
+
+    routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::submit});
+    CHECK(routed.handled);
+    CHECK(routed.composer_changed);
+    CHECK(model.state().composer == "/skills ");
+    CHECK(!model.state().command_palette.has_value());
+
+    model.open_select_modal("Select model", {
+        codeharness::tui::ModelOption{.value = "echo", .label = "Echo", .description = "echo"},
+        codeharness::tui::ModelOption{.value = "gpt", .label = "GPT", .description = "openai"},
+    });
+    routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::character, .character = '2'});
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::SelectModel);
+    REQUIRE(routed.selected_model.has_value());
+    CHECK(routed.selected_model->value == "gpt");
+    CHECK(!model.state().select_modal.has_value());
+
+    model.show_question("q-1", "Which file?", "ask_user", "Need target");
+    routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::character, .character = 'a'});
+    CHECK(routed.handled);
+    CHECK(model.state().question_modal->answer == "a");
+    routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::submit});
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::SubmitQuestion);
+    REQUIRE(routed.user_question_response.has_value());
+    CHECK(routed.user_question_response->answer == "a");
+    CHECK(!model.state().question_modal.has_value());
+
+    model.begin_prompt("write");
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+    routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::character, .character = 'a'});
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::ApprovePermissionForSession);
+    REQUIRE(routed.permission_response.has_value());
+    CHECK(routed.permission_response->allowed);
+    CHECK(routed.permission_response->remember_session);
+    CHECK(!model.state().pending_permission.has_value());
 }
 
 TEST_CASE("tui interrupt clears question modal")
@@ -1206,6 +1659,69 @@ TEST_CASE("tui interrupt clears question modal")
 
     CHECK(model.handle_interrupt() == codeharness::tui::TuiAction::Interrupt);
     CHECK(!model.state().question_modal.has_value());
+    CHECK(model.state().interrupt_requested);
+}
+
+TEST_CASE("tui focused question modal interrupt returns cancellation intents")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("ask");
+    model.show_question("ask-1", "Which file?", "ask_user", "Need target");
+
+    const auto routed =
+        model.handle_focused_bottom_pane_input(codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::interrupt});
+
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::Interrupt);
+    CHECK(routed.interrupt.interrupted);
+    REQUIRE(routed.interrupt.permission_response.has_value());
+    CHECK(!routed.interrupt.permission_response->allowed);
+    CHECK(routed.interrupt.permission_response->reason == "interrupted");
+    CHECK(routed.interrupt.cancel_user_question);
+    CHECK(!model.state().question_modal.has_value());
+    CHECK(model.state().interrupt_requested);
+}
+
+TEST_CASE("tui focused question modal escape interrupts busy run")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("ask");
+    model.show_question("ask-1", "Which file?", "ask_user", "Need target");
+
+    const auto routed =
+        model.handle_focused_bottom_pane_input(codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::escape});
+
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::Interrupt);
+    CHECK(routed.interrupt.interrupted);
+    CHECK(routed.interrupt.cancel_user_question);
+    CHECK(!model.state().question_modal.has_value());
+    CHECK(model.state().interrupt_requested);
+}
+
+TEST_CASE("tui focused permission prompt interrupt returns cancellation intents")
+{
+    codeharness::tui::TuiAppModel model;
+    model.begin_prompt("write");
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-1",
+            .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+
+    const auto routed =
+        model.handle_focused_bottom_pane_input(codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::interrupt});
+
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::Interrupt);
+    CHECK(routed.interrupt.interrupted);
+    REQUIRE(routed.interrupt.permission_response.has_value());
+    CHECK(!routed.interrupt.permission_response->allowed);
+    CHECK(routed.interrupt.permission_response->reason == "interrupted");
+    CHECK(routed.interrupt.cancel_user_question);
+    CHECK(!model.state().pending_permission.has_value());
     CHECK(model.state().interrupt_requested);
 }
 
@@ -1252,12 +1768,60 @@ TEST_CASE("tui paste is suppressed while busy")
     CHECK(model.state().composer.empty());
 }
 
+TEST_CASE("tui model routes composer paste bursts")
+{
+    codeharness::tui::TuiAppModel model;
+    model.set_composer("existing ");
+
+    auto routed = model.handle_composer_paste("pasted text");
+    CHECK(routed.handled);
+    CHECK(routed.composer_changed);
+    CHECK(model.state().paste_burst_active);
+    CHECK(model.state().composer == "existing pasted text");
+
+    routed = model.handle_composer_paste("x");
+    CHECK(!routed.handled);
+    CHECK(!routed.composer_changed);
+    CHECK(!model.state().paste_burst_active);
+
+    model.begin_prompt("busy");
+    routed = model.handle_composer_paste("blocked paste");
+    CHECK(routed.handled);
+    CHECK(!routed.composer_changed);
+    CHECK(model.state().paste_burst_active);
+    CHECK(model.state().composer.empty());
+}
+
 TEST_CASE("tui transcript follow wheel behavior")
 {
     CHECK(!codeharness::tui::apply_transcript_follow_wheel(true, true, false));
     CHECK(codeharness::tui::apply_transcript_follow_wheel(false, false, true));
     CHECK(codeharness::tui::apply_transcript_follow_wheel(true, false, false));
     CHECK(!codeharness::tui::apply_transcript_follow_wheel(false, false, false));
+}
+
+TEST_CASE("tui model owns transcript follow state")
+{
+    codeharness::tui::TuiAppModel model;
+
+    CHECK(model.state().follow_transcript);
+    CHECK(!model.handle_transcript_wheel(false, false));
+    CHECK(model.state().follow_transcript);
+
+    CHECK(model.handle_transcript_wheel(true, false));
+    CHECK(!model.state().follow_transcript);
+    CHECK(model.handle_transcript_wheel(false, true));
+    CHECK(model.state().follow_transcript);
+
+    CHECK(model.handle_transcript_wheel(true, false));
+    CHECK(!model.state().follow_transcript);
+    model.begin_prompt("hello");
+    CHECK(model.state().follow_transcript);
+
+    CHECK(model.handle_transcript_wheel(true, false));
+    CHECK(!model.state().follow_transcript);
+    model.apply_engine_event(codeharness::EngineAssistantTextDelta{.text = "streamed"});
+    CHECK(model.state().follow_transcript);
 }
 
 TEST_CASE("tui footer shows token usage and mcp connections")
@@ -1344,6 +1908,13 @@ TEST_CASE("tui format token count")
     CHECK(codeharness::tui::render::format_token_count(1000) == "1.0k");
     CHECK(codeharness::tui::render::format_token_count(1500) == "1.5k");
     CHECK(codeharness::tui::render::format_token_count(12345) == "12.3k");
+}
+
+TEST_CASE("tui busy spinner frames cycle")
+{
+    CHECK(codeharness::tui::render::busy_spinner_frame(0) == codeharness::tui::render::busy_spinner_frame(10));
+    CHECK(codeharness::tui::render::busy_spinner_frame(1) == codeharness::tui::render::busy_spinner_frame(11));
+    CHECK(codeharness::tui::render::busy_spinner_frame(0) != codeharness::tui::render::busy_spinner_frame(1));
 }
 
 TEST_CASE("tui markdown parses tables")

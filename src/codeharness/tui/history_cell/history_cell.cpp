@@ -55,6 +55,7 @@ auto make_tool_started_cell(std::string id, std::string label) -> TranscriptItem
         .id = std::move(id),
         .label = std::move(label),
         .tool_status = ToolStatus::running,
+        .live = true,
     };
     apply_tool_status(item, ToolStatus::running);
     return item;
@@ -86,6 +87,11 @@ auto make_tool_result_cell(std::string id, std::string detail, bool is_error) ->
 auto append_assistant_delta(TranscriptItem& item, std::string_view delta) -> void
 {
     item.text += delta;
+}
+
+auto append_tool_input_delta(TranscriptItem& item, std::string_view delta) -> void
+{
+    item.input_json += delta;
 }
 
 auto apply_tool_status(TranscriptItem& item, ToolStatus status, std::string_view detail) -> void

@@ -83,6 +83,12 @@ struct BackendToolStarted
     std::string name;
 };
 
+struct BackendToolInputDelta
+{
+    std::string id;
+    std::string input_json_delta;
+};
+
 struct BackendToolCompleted
 {
     std::string id;
@@ -162,6 +168,7 @@ struct BackendShutdown
 using BackendEvent = std::variant<BackendReady,
                                   BackendAssistantDelta,
                                   BackendToolStarted,
+                                  BackendToolInputDelta,
                                   BackendToolCompleted,
                                   BackendToolResult,
                                   BackendPermissionModal,
