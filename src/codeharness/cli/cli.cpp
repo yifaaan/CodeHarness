@@ -182,6 +182,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     {
         return nonstd::make_unexpected(model_profiles.error());
     }
+    const auto has_explicit_provider_config = !provider_type.empty() || !model.empty() || !base_url.empty();
 
     auto runtime_bundle = runtime::create_runtime_bundle(
         runtime::RuntimeBundleOptions{
@@ -197,7 +198,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
                 .base_url = settings->base_url,
             },
             .model_profiles = *model_profiles,
-            .active_model_profile_id = settings->active_profile,
+            .active_model_profile_id = has_explicit_provider_config ? std::string{} : settings->active_profile,
         });
     if (!runtime_bundle)
     {

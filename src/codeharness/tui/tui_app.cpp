@@ -14,6 +14,7 @@
 #include <nonstd/expected.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
@@ -472,6 +473,7 @@ auto TuiAppModel::begin_prompt(std::string prompt) -> void
 {
     chat_.begin_prompt(std::move(prompt));
     sync_transcript_view();
+    assert(!state_.transcript.empty() && "begin_prompt must produce at least one transcript item");
     bottom_pane_.clear_prompt_entry();
     sync_bottom_pane_view();
     state_.interrupt_requested = false;
@@ -482,6 +484,7 @@ auto TuiAppModel::complete_prompt() -> void
 {
     chat_.finish_active_response();
     sync_transcript_view();
+    assert(!state_.transcript.empty() && "complete_prompt should preserve transcript items from begin_prompt");
     state_.busy = false;
     state_.interrupt_requested = false;
 }
@@ -1219,6 +1222,15 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             return true;
         }
 
+        // Allow Event::Custom through even when busy — it is a repaint request
+        // from terminal.post_refresh(), not user input. Without this, the
+        // renderer never paints the user message added by begin_prompt() until
+        // the worker completes, making it appear as if the message was lost.
+        if (event == Event::Custom)
+        {
+            return false;
+        }
+
         {
             std::lock_guard lock{mutex};
             if (model.state().busy)
@@ -1332,18 +1344,13 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         }
         else
         {
-            Elements transcript_rows;
-            for (const auto& item : model.state().transcript)
-            {
-                transcript_rows.push_back(render::transcript_item_element(item, terminal_width));
-            }
-
-            auto transcript_box = vbox(std::move(transcript_rows));
-            if (model.state().follow_transcript)
-            {
-                transcript_box = transcript_box | focusPositionRelative(0.f, 1.f);
-            }
-            rows.push_back(transcript_box | yframe | vscroll_indicator | flex);
+            constexpr auto kFixedComposerRows = 7;
+            const auto transcript_height = std::max(1, terminal.screen().dimy() - kFixedComposerRows);
+            rows.push_back(render::transcript_view_element(
+                model.state().transcript,
+                terminal_width,
+                transcript_height,
+                model.state().follow_transcript));
         }
 
         if (model.state().bottom_pane_focus == BottomPaneFocus::permission_prompt && model.state().pending_permission)

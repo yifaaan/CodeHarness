@@ -27,6 +27,10 @@ constexpr int k_command_palette_page_size = 8;
 [[nodiscard]] auto render_question_lines(const QuestionModalState& modal, int width) -> std::vector<std::string>;
 
 [[nodiscard]] auto welcome_banner_element(const TuiDisplayConfig& config) -> ftxui::Element;
+[[nodiscard]] auto transcript_view_element(const std::vector<TranscriptItem>& transcript,
+                                           int width,
+                                           int height,
+                                           bool follow_transcript) -> ftxui::Element;
 [[nodiscard]] auto transcript_item_element(const TranscriptItem& item, int width) -> ftxui::Element;
 [[nodiscard]] auto command_palette_element(const CommandPaletteState& palette, int width) -> ftxui::Element;
 [[nodiscard]] auto permission_modal_element(const PermissionPrompt& prompt, int width) -> ftxui::Element;

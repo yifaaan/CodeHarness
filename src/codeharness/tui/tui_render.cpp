@@ -6,6 +6,7 @@
 
 #include <ftxui/dom/elements.hpp>
 
+#include <cstddef>
 #include <iterator>
 
 namespace codeharness::tui::render
@@ -56,6 +57,27 @@ auto select_modal_spec(const SelectModalState& modal) -> ListDialogSpec
         });
     }
     return spec;
+}
+
+auto transcript_view_lines(const std::vector<TranscriptItem>& transcript,
+                           int width,
+                           int height,
+                           bool follow_transcript) -> std::vector<std::string>
+{
+    auto lines = render_transcript_lines(transcript, width);
+    if (height <= 0 || static_cast<std::size_t>(height) >= lines.size())
+    {
+        return lines;
+    }
+
+    if (follow_transcript)
+    {
+        const auto first = lines.end() - height;
+        return std::vector<std::string>{first, lines.end()};
+    }
+
+    const auto last = lines.begin() + height;
+    return std::vector<std::string>{lines.begin(), last};
 }
 
 } // namespace
@@ -169,6 +191,27 @@ auto welcome_banner_element(const TuiDisplayConfig& config) -> Element
 auto transcript_item_element(const TranscriptItem& item, int width) -> Element
 {
     return history_cell_element(item, width);
+}
+
+auto transcript_view_element(const std::vector<TranscriptItem>& transcript,
+                             int width,
+                             int height,
+                             bool follow_transcript) -> Element
+{
+    Elements rows;
+    auto lines = transcript_view_lines(transcript, width, height, follow_transcript);
+    rows.reserve(lines.size() + 1);
+
+    if (follow_transcript)
+    {
+        rows.push_back(filler());
+    }
+    for (const auto& line : lines)
+    {
+        rows.push_back(text(line));
+    }
+
+    return vbox(std::move(rows)) | flex;
 }
 
 auto command_palette_element(const CommandPaletteState& palette, int width) -> Element

@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cctype>
 #include <cstdint>
 #include <limits>
@@ -39,6 +40,20 @@ namespace beast = boost::beast;
 namespace http = beast::http;
 namespace ssl = boost::asio::ssl;
 using Tcp = asio::ip::tcp;
+
+constexpr auto kHttpOperationTimeout = std::chrono::seconds{120};
+
+struct ReadResponseResult
+{
+    HttpResponse response;
+    bool stopped_early = false;
+};
+
+template <typename Stream>
+auto set_stream_timeout(Stream& stream) -> void
+{
+    beast::get_lowest_layer(stream).expires_after(kHttpOperationTimeout);
+}
 
 #ifdef _WIN32
 struct CertStoreDeleter
@@ -203,16 +218,17 @@ auto make_request(http::verb method,
 
 template <typename Stream>
 auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on_chunk, std::string_view label)
-    -> Result<HttpResponse>
+    -> Result<ReadResponseResult>
 {
     beast::error_code error;
     http::response_parser<http::buffer_body> parser;
     parser.body_limit(std::numeric_limits<std::uint64_t>::max());
 
+    set_stream_timeout(stream);
     http::read_header(stream, buffer, parser, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, std::string{label} + " read headers failed: " + error.message());
+        return fail<ReadResponseResult>(ErrorKind::Network, std::string{label} + " read headers failed: " + error.message());
     }
 
     std::string body;
@@ -223,7 +239,8 @@ auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on
         parser.get().body().size = chunk_buffer.size();
 
         error = {};
-        http::read(stream, buffer, parser, error);
+        set_stream_timeout(stream);
+        http::read_some(stream, buffer, parser, error);
 
         const auto bytes_read = chunk_buffer.size() - parser.get().body().size;
         if (bytes_read > 0)
@@ -232,7 +249,13 @@ auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on
             body.append(chunk);
             if (on_chunk)
             {
-                on_chunk(chunk);
+                if (!on_chunk(chunk))
+                {
+                    return ReadResponseResult{
+                        .response = response_to_http_response(parser.get(), std::move(body)),
+                        .stopped_early = true,
+                    };
+                }
             }
         }
 
@@ -243,11 +266,11 @@ auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on
 
         if (error)
         {
-            return fail<HttpResponse>(ErrorKind::Network, std::string{label} + " read body failed: " + error.message());
+            return fail<ReadResponseResult>(ErrorKind::Network, std::string{label} + " read body failed: " + error.message());
         }
     }
 
-    return response_to_http_response(parser.get(), std::move(body));
+    return ReadResponseResult{.response = response_to_http_response(parser.get(), std::move(body))};
 }
 
 auto run_plain_request(asio::io_context& io,
@@ -265,12 +288,14 @@ auto run_plain_request(asio::io_context& io,
         return fail<HttpResponse>(ErrorKind::Network, "HTTP resolve failed: " + error.message());
     }
 
+    set_stream_timeout(stream);
     stream.connect(endpoints, error);
     if (error)
     {
         return fail<HttpResponse>(ErrorKind::Network, "HTTP connect failed: " + error.message());
     }
 
+    set_stream_timeout(stream);
     http::write(stream, request, error);
     if (error)
     {
@@ -279,9 +304,20 @@ auto run_plain_request(asio::io_context& io,
 
     beast::flat_buffer buffer;
     auto response = read_response(stream, buffer, on_chunk, "HTTP");
+    if (!response)
+    {
+        return nonstd::make_unexpected(response.error());
+    }
 
-    stream.socket().shutdown(Tcp::socket::shutdown_both, error);
-    return response;
+    if (response->stopped_early)
+    {
+        stream.socket().close(error);
+    }
+    else
+    {
+        stream.socket().shutdown(Tcp::socket::shutdown_both, error);
+    }
+    return std::move(response->response);
 }
 
 auto run_tls_request(asio::io_context& io,
@@ -305,18 +341,21 @@ auto run_tls_request(asio::io_context& io,
         return fail<HttpResponse>(ErrorKind::Network, "HTTPS resolve failed: " + error.message());
     }
 
+    set_stream_timeout(stream);
     beast::get_lowest_layer(stream).connect(endpoints, error);
     if (error)
     {
         return fail<HttpResponse>(ErrorKind::Network, "HTTPS connect failed: " + error.message());
     }
 
+    set_stream_timeout(stream);
     stream.handshake(ssl::stream_base::client, error);
     if (error)
     {
         return fail<HttpResponse>(ErrorKind::Network, "HTTPS handshake failed: " + error.message());
     }
 
+    set_stream_timeout(stream);
     http::write(stream, request, error);
     if (error)
     {
@@ -325,14 +364,25 @@ auto run_tls_request(asio::io_context& io,
 
     beast::flat_buffer buffer;
     auto response = read_response(stream, buffer, on_chunk, "HTTPS");
+    if (!response)
+    {
+        return nonstd::make_unexpected(response.error());
+    }
 
+    if (response->stopped_early)
+    {
+        beast::get_lowest_layer(stream).socket().close(error);
+        return std::move(response->response);
+    }
+
+    set_stream_timeout(stream);
     stream.shutdown(error);
     if (error == asio::error::eof || error == ssl::error::stream_truncated)
     {
         error = {};
     }
 
-    return response;
+    return std::move(response->response);
 }
 
 } // namespace

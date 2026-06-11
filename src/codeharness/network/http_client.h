@@ -19,7 +19,8 @@ struct HttpResponse
     std::string body;
 };
 
-using OnChunk = std::function<void(std::string_view)>;
+// Return false to stop reading the response body after the current chunk.
+using OnChunk = std::function<bool(std::string_view)>;
 
 class HttpClient
 {

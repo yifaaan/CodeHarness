@@ -60,13 +60,20 @@ auto AnthropicProvider::stream(std::span<const Message> messages, const Provider
 
     AnthropicStreamParser stream_parser;
     std::string stream_error;
+    bool stream_done = false;
 
     auto response = provider_http_post_with_retry("Anthropic", [&]() -> Result<network::HttpResponse> {
         // Reset stream-parser state so a fresh attempt starts clean.
         stream_parser = AnthropicStreamParser{};
         stream_error.clear();
+        stream_done = false;
 
         return http_.post(url, headers, body_str, [&](std::string_view chunk) {
+            if (stream_done)
+            {
+                return false;
+            }
+
             auto parsed = stream_parser.feed(chunk);
             if (!parsed.error.empty() && stream_error.empty())
             {
@@ -76,6 +83,9 @@ auto AnthropicProvider::stream(std::span<const Message> messages, const Provider
             {
                 sink(event);
             }
+
+            stream_done = parsed.done;
+            return !stream_done;
         });
     });
 

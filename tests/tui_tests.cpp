@@ -13,6 +13,8 @@
 #include "test_support.h"
 
 #include <ftxui/component/event.hpp>
+#include <ftxui/dom/node.hpp>
+#include <ftxui/screen/screen.hpp>
 
 TEST_CASE("tui event queue preserves fifo order and drains")
 {
@@ -480,6 +482,60 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
         80);
     REQUIRE(lines.size() == 1);
     CHECK(lines.at(0) == "  ✕ boom");
+}
+
+TEST_CASE("tui transcript viewport keeps the submitted prompt visible")
+{
+    const std::vector<codeharness::tui::TranscriptItem> transcript{
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "older line 1\nolder line 2\nolder line 3",
+        },
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::user,
+            .text = "222",
+        },
+    };
+
+    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(40), ftxui::Dimension::Fixed(3));
+    ftxui::Render(
+        screen,
+        codeharness::tui::render::transcript_view_element(transcript, 40, 3, true));
+
+    CHECK(screen.ToString().find("222") != std::string::npos);
+    CHECK(screen.ToString().find("older line 1") == std::string::npos);
+}
+
+TEST_CASE("tui full page keeps submitted prompt visible while working")
+{
+    using namespace ftxui;
+
+    codeharness::tui::TuiState state;
+    state.busy = true;
+    state.transcript = {
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::user,
+            .text = "222",
+        },
+    };
+
+    Elements rows;
+    rows.push_back(codeharness::tui::render::transcript_view_element(state.transcript, 80, 1, true));
+    rows.push_back(text(" "));
+    rows.push_back(text(codeharness::tui::render::horizontal_rule(80)));
+    rows.push_back(codeharness::tui::render::status_footer_element({}, state));
+    rows.push_back(hbox({
+        text("Working"),
+        text(" "),
+        text("") | borderRounded | size(HEIGHT, GREATER_THAN, 3) | flex,
+    }));
+    rows.push_back(text(codeharness::tui::render::render_composer_hint(true, -1)));
+
+    auto screen = Screen::Create(Dimension::Fixed(80), Dimension::Fixed(8));
+    Render(screen, vbox(std::move(rows)) | flex);
+
+    CHECK(screen.ToString().find("> 222") != std::string::npos);
+    CHECK(screen.ToString().find("Working") != std::string::npos);
 }
 
 TEST_CASE("tui history cell render lines cover tool summaries and truncation")
@@ -973,6 +1029,32 @@ TEST_CASE("tui model routes base composer submit intents")
     CHECK(empty.action == codeharness::tui::TuiAction::None);
     CHECK(!empty.request_model_selector);
     CHECK(!empty.composer_changed);
+}
+
+TEST_CASE("tui model keeps submitted prompt visible through empty completion")
+{
+    codeharness::tui::TuiAppModel model;
+
+    auto submitted = model.handle_composer_submit("222");
+    REQUIRE(submitted.action == codeharness::tui::TuiAction::SubmitPrompt);
+    CHECK(submitted.prompt == "222");
+    CHECK(model.state().composer.empty());
+
+    model.begin_prompt(submitted.prompt);
+
+    REQUIRE(model.state().transcript.size() == 1);
+    CHECK(model.state().transcript.at(0).kind == codeharness::tui::HistoryCellKind::user);
+    CHECK(model.state().transcript.at(0).text == "222");
+    CHECK(model.render_text().find("> 222") != std::string::npos);
+
+    auto result = model.apply_tui_event(
+        codeharness::tui::TuiEvent{codeharness::tui::TuiRunCompleted{.success = true}});
+
+    CHECK(result.run_completed);
+    CHECK(!model.state().busy);
+    REQUIRE(model.state().transcript.size() == 1);
+    CHECK(model.state().transcript.at(0).text == "222");
+    CHECK(model.render_text().find("> 222") != std::string::npos);
 }
 
 TEST_CASE("tui model opens command palette from leading slash")
