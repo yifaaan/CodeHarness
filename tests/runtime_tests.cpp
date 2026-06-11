@@ -62,6 +62,35 @@ auto make_profile_bundle(TempDir& temp) -> codeharness::Result<std::unique_ptr<c
         });
 }
 
+auto make_explicit_provider_bundle(TempDir& temp)
+    -> codeharness::Result<std::unique_ptr<codeharness::runtime::RuntimeBundle>>
+{
+    const auto repo = temp.path / "explicit-provider-repo";
+    const auto memory_root = temp.path / "explicit-provider-memory";
+    std::filesystem::create_directories(repo);
+
+    return codeharness::runtime::create_runtime_bundle(
+        codeharness::runtime::RuntimeBundleOptions{
+            .cwd = repo,
+            .memory_root = memory_root,
+            .load_default_user_plugins = false,
+            .provider_config = codeharness::ProviderConfig{.type = "echo", .model = "cli-echo"},
+            .model_profiles =
+                {
+                    codeharness::runtime::RuntimeModelProfile{
+                        .id = "default",
+                        .label = "Default OpenAI",
+                        .description = "openai / configured",
+                        .provider_config = codeharness::ProviderConfig{
+                            .type = "openai",
+                            .model = "configured",
+                            .api_key = "sk-test",
+                        },
+                    },
+                },
+        });
+}
+
 auto contains_tool(const codeharness::ToolRegistry& tools, std::string_view name) -> bool
 {
     const auto names = tools.names();
@@ -408,6 +437,20 @@ TEST_CASE("runtime model profile switch updates current model and saved session"
     REQUIRE(loaded.has_value());
     REQUIRE(loaded->has_value());
     CHECK((*loaded)->model == "echo-b");
+}
+
+TEST_CASE("runtime explicit provider config is not overridden by inactive profiles")
+{
+    TempDir temp{"codeharness-runtime-explicit-provider-test"};
+    auto bundle = make_explicit_provider_bundle(temp);
+    REQUIRE(bundle.has_value());
+
+    CHECK((*bundle)->current_model_profile().provider_config.type == "echo");
+    CHECK((*bundle)->current_model_profile().provider_config.model == "cli-echo");
+
+    auto result = (*bundle)->run_prompt("143", 1, {});
+    REQUIRE(result.has_value());
+    CHECK(result->output_text == "143");
 }
 
 TEST_CASE("runtime model profile switch failure preserves current provider")

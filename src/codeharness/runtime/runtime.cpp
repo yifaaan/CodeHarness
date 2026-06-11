@@ -791,10 +791,8 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
                                            options.provider_config.type.empty() ? std::string{"echo"}
                                                                                 : options.provider_config.type,
                                            options.provider_config.base_url,
-                                           options.active_model_profile_id.empty() ? std::string{"default"}
-                                                                                  : options.active_model_profile_id,
-                                           options.active_model_profile_id.empty() ? std::string{"Default"}
-                                                                                  : options.active_model_profile_id,
+                                           options.active_model_profile_id,
+                                           options.active_model_profile_id,
                                            std::move(options.model_profiles));
 }
 
