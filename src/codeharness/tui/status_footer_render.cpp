@@ -9,32 +9,11 @@
 
 namespace codeharness::tui::render
 {
-namespace
-{
 
 using namespace ftxui;
 
-/// Format elapsed seconds into compact human-friendly form.
-/// Matches codex-cli fmt_elapsed_compact: 0s, 59s, 1m 00s, 59m 59s, 1h 00m 00s
-auto fmt_elapsed_compact(int elapsed_seconds) -> std::string
+namespace
 {
-    if (elapsed_seconds < 60)
-    {
-        return std::to_string(elapsed_seconds) + "s";
-    }
-    if (elapsed_seconds < 3600)
-    {
-        const auto minutes = elapsed_seconds / 60;
-        const auto seconds = elapsed_seconds % 60;
-        return std::to_string(minutes) + "m " + (seconds < 10 ? "0" : "") + std::to_string(seconds) + "s";
-    }
-    const auto hours = elapsed_seconds / 3600;
-    const auto minutes = (elapsed_seconds % 3600) / 60;
-    const auto seconds = elapsed_seconds % 60;
-    return std::to_string(hours) + "h " +
-           (minutes < 10 ? "0" : "") + std::to_string(minutes) + "m " +
-           (seconds < 10 ? "0" : "") + std::to_string(seconds) + "s";
-}
 
 /// Build the status line parts for display.
 auto build_status_parts(const TuiDisplayConfig& config, const TuiState& state) -> Elements
@@ -169,6 +148,28 @@ auto status_footer_element(const TuiDisplayConfig& config, const TuiState& state
     return hbox(build_status_parts(config, state));
 }
 
+/// Format elapsed seconds into compact human-friendly form.
+/// Matches codex-cli fmt_elapsed_compact: 0s, 59s, 1m 00s, 59m 59s, 1h 00m 00s
+auto fmt_elapsed_compact(int elapsed_seconds) -> std::string
+{
+    if (elapsed_seconds < 60)
+    {
+        return std::to_string(elapsed_seconds) + "s";
+    }
+    if (elapsed_seconds < 3600)
+    {
+        const auto minutes = elapsed_seconds / 60;
+        const auto seconds = elapsed_seconds % 60;
+        return std::to_string(minutes) + "m " + (seconds < 10 ? "0" : "") + std::to_string(seconds) + "s";
+    }
+    const auto hours = elapsed_seconds / 3600;
+    const auto minutes = (elapsed_seconds % 3600) / 60;
+    const auto seconds = elapsed_seconds % 60;
+    return std::to_string(hours) + "h " +
+           (minutes < 10 ? "0" : "") + std::to_string(minutes) + "m " +
+           (seconds < 10 ? "0" : "") + std::to_string(seconds) + "s";
+}
+
 /// Create a working status indicator with elapsed time and interrupt hint.
 /// Matches codex-cli StatusIndicatorWidget styling.
 auto working_status_element(int elapsed_seconds, const std::string& header) -> Element
@@ -176,7 +177,7 @@ auto working_status_element(int elapsed_seconds, const std::string& header) -> E
     auto elapsed_str = fmt_elapsed_compact(elapsed_seconds);
 
     return hbox({
-        text(busy_spinner_frame(elapsed_seconds % spinner_frame_count())) | color(TuiTheme::primary()),
+        text(busy_spinner_frame(elapsed_seconds % static_cast<int>(spinner_frame_count()))) | color(TuiTheme::primary()),
         text(" "),
         text(header) | accent_style(),
         text(" "),
@@ -187,8 +188,6 @@ auto working_status_element(int elapsed_seconds, const std::string& header) -> E
 /// Create a complete status footer with working indicator when busy.
 auto full_status_footer_element(const TuiDisplayConfig& config, const TuiState& state, int elapsed_seconds) -> Element
 {
-    using namespace ftxui;
-
     Elements rows;
 
     // Working indicator when busy
@@ -208,5 +207,9 @@ auto full_status_footer_element(const TuiDisplayConfig& config, const TuiState& 
 
     return vbox(std::move(rows));
 }
+
+// Note: status_footer_element, working_status_element and full_status_footer_element
+// use ftxui types (hbox, text, Element, color, bold, dim) through ADL / ftxui:: prefix.
+// The anonymous namespace above provides using namespace ftxui for build_status_parts.
 
 } // namespace codeharness::tui::render

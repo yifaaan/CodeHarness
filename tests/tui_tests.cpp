@@ -452,7 +452,7 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
         },
         80);
     REQUIRE(lines.size() == 1);
-    CHECK(lines.at(0) == "> hello");
+    CHECK(lines.at(0) == "  > hello");
 
     lines = codeharness::tui::render::render_history_cell_lines(
         codeharness::tui::TranscriptItem{
@@ -470,7 +470,7 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
         },
         80);
     REQUIRE(lines.size() == 1);
-    CHECK(lines.at(0) == "[system] switched");
+    CHECK(lines.at(0) == "  ○ switched");
 
     lines = codeharness::tui::render::render_history_cell_lines(
         codeharness::tui::TranscriptItem{
@@ -479,7 +479,7 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
         },
         80);
     REQUIRE(lines.size() == 1);
-    CHECK(lines.at(0) == "boom");
+    CHECK(lines.at(0) == "  ✕ boom");
 }
 
 TEST_CASE("tui history cell render lines cover tool summaries and truncation")
@@ -1267,7 +1267,7 @@ TEST_CASE("tui render uses codex style transcript and command palette")
     const auto rendered = model.render_text();
     CHECK(rendered.find("> fix bug") != std::string::npos);
     CHECK(rendered.find("Done.") != std::string::npos);
-    CHECK(rendered.find("• Ran bash 1L") != std::string::npos);
+    CHECK(rendered.find("▸ Ran bash 1L") != std::string::npos);
 
     model.set_composer("/");
     model.open_command_palette({
@@ -1316,7 +1316,7 @@ TEST_CASE("tui render auto expands failed tool output")
     model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "exit 1", .is_error = true});
 
     CHECK(model.state().transcript.at(1).expanded);
-    CHECK(model.render_text().find("• Ran bash error") != std::string::npos);
+    CHECK(model.render_text().find("▸ Ran bash error") != std::string::npos);
     CHECK(model.render_text().find("exit 1") != std::string::npos);
 }
 
@@ -1400,7 +1400,7 @@ TEST_CASE("tui model system messages and plan mode footer")
     model.set_permission_mode(codeharness::PermissionMode::Plan);
 
     const auto rendered = model.render_text();
-    CHECK(rendered.find("[system] Entered plan mode.") != std::string::npos);
+    CHECK(rendered.find("○ Entered plan mode.") != std::string::npos);
 
     const auto footer = codeharness::tui::render::render_status_footer_line(
         codeharness::tui::TuiDisplayConfig{.skill_count = 3},

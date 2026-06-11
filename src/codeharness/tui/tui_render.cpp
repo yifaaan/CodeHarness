@@ -66,7 +66,7 @@ auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::st
         "CodeHarness",
         "An AI-powered coding assistant  v" + config.version,
         "",
-        "/help commands  |  /skills list  |  Ctrl+C exit",
+        "  /help commands  |  /skills list  |  Ctrl+C exit",
     };
 }
 
@@ -141,13 +141,18 @@ auto render_question_lines(const QuestionModalState& modal, int width) -> std::v
 
 auto welcome_banner_element(const TuiDisplayConfig& config) -> Element
 {
-    const auto lines = render_welcome_lines(config);
+    using namespace ftxui;
+
     Elements rows;
-    rows.push_back(text(std::string{lines.at(0)}) | color(TuiTheme::primary()) | bold);
-    rows.push_back(text(lines.at(1)) | dim);
+
+    // Title
+    rows.push_back(text("CodeHarness") | color(TuiTheme::primary()) | bold);
+    rows.push_back(text("An AI-powered coding assistant  v" + config.version) | dim);
     rows.push_back(text(" "));
+
+    // Key bindings hint row
     rows.push_back(hbox({
-        text(" "),
+        text("  "),
         text("/help") | color(TuiTheme::primary()),
         text(" commands") | dim,
         text("  |  ") | dim,
@@ -157,6 +162,7 @@ auto welcome_banner_element(const TuiDisplayConfig& config) -> Element
         text("Ctrl+C") | color(TuiTheme::primary()),
         text(" exit") | dim,
     }));
+
     return vbox(std::move(rows));
 }
 

@@ -34,6 +34,10 @@ constexpr std::string_view k_separator = " \xe2\x94\x82 ";
 /// Shows animated spinner + "Working" + elapsed time + interrupt hint.
 [[nodiscard]] auto working_status_element(int elapsed_seconds, const std::string& header) -> ftxui::Element;
 
+/// Format elapsed seconds into compact human-friendly form.
+/// Matches codex-cli fmt_elapsed_compact: 0s, 59s, 1m 00s, 59m 59s, 1h 00m 00s
+[[nodiscard]] auto fmt_elapsed_compact(int elapsed_seconds) -> std::string;
+
 /// Render the complete status footer with working indicator when busy.
 [[nodiscard]] auto full_status_footer_element(const TuiDisplayConfig& config, const TuiState& state, int elapsed_seconds) -> ftxui::Element;
 

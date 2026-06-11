@@ -154,34 +154,40 @@ auto tool_summary_text(const TranscriptItem& item) -> std::string
 auto render_history_cell_lines(const TranscriptItem& item, int width) -> std::vector<std::string>
 {
     std::vector<std::string> lines;
+
+    // Left prefix bar for Codex-style alignment
+    std::string prefix = "  ";
+    std::string type_marker;
+
     if (item.kind == HistoryCellKind::user)
     {
+        type_marker = "> ";
         for (const auto& line : split_lines(item.text))
         {
-            lines.push_back("> " + trim_to_width(line, width > 2 ? width - 2 : width));
+            lines.push_back(prefix + type_marker + trim_to_width(line, width > 4 ? width - 4 : width));
         }
         return lines;
     }
     if (item.kind == HistoryCellKind::assistant)
     {
-        const auto rendered = markdown::render_plain_text(item.text, width);
+        const auto rendered = markdown::render_plain_text(item.text, width - 2);
         for (const auto& line : split_lines(rendered))
         {
-            lines.push_back(trim_to_width(line, width));
+            lines.push_back(prefix + trim_to_width(line, width > 2 ? width - 2 : width));
         }
         return lines;
     }
     if (item.kind == HistoryCellKind::system)
     {
-        lines.push_back("[system] " + trim_to_width(item.text, width > 9 ? width - 9 : width));
+        lines.push_back(prefix + "\xe2\x97\x8b " + trim_to_width(item.text, width > 5 ? width - 5 : width));
         return lines;
     }
     if (item.kind == HistoryCellKind::tool)
     {
-        lines.push_back("• " + trim_to_width(tool_summary_text(item), width > 2 ? width - 2 : width));
+        lines.push_back(prefix + "\xe2\x96\xb8 " + trim_to_width(tool_summary_text(item), width > 4 ? width - 4 : width));
         if (should_show_live_tool_input(item))
         {
-            lines.push_back("  input: " + trim_to_width(item.input_json, width > 9 ? width - 9 : width));
+            lines.push_back(prefix + "  input: " + trim_to_width(item.input_json, width > 11 ? width - 11 : width));
         }
         if (item.expanded && !item.detail.empty())
         {
@@ -191,19 +197,19 @@ auto render_history_cell_lines(const TranscriptItem& item, int width) -> std::ve
                 const auto visible = std::min(error_lines.size(), static_cast<std::size_t>(k_tool_error_max_lines));
                 for (std::size_t index = 0; index < visible; ++index)
                 {
-                    const auto prefix = index + 1 == visible ? "└ " : "├ ";
-                    lines.push_back(prefix + trim_to_width(error_lines.at(index), width > 2 ? width - 2 : width));
+                    const auto tree_prefix = index + 1 == visible ? "  \xe2\x94\x94 " : "  \xe2\x94\x9c ";
+                    lines.push_back(prefix + tree_prefix + trim_to_width(error_lines.at(index), width > 6 ? width - 6 : width));
                 }
                 if (error_lines.size() > visible)
                 {
-                    lines.push_back("└ ... (" + std::to_string(error_lines.size() - visible) + " more lines)");
+                    lines.push_back(prefix + "  \xe2\x94\x94 ... (" + std::to_string(error_lines.size() - visible) + " more lines)");
                 }
             }
             else
             {
                 for (const auto& line : split_lines(item.detail))
                 {
-                    lines.push_back(trim_to_width(line, width));
+                    lines.push_back(prefix + trim_to_width(line, width > 2 ? width - 2 : width));
                 }
             }
         }
@@ -211,7 +217,7 @@ auto render_history_cell_lines(const TranscriptItem& item, int width) -> std::ve
     }
     if (item.kind == HistoryCellKind::error)
     {
-        lines.push_back(trim_to_width(item.text, width));
+        lines.push_back(prefix + "\xe2\x9c\x95 " + trim_to_width(item.text, width > 4 ? width - 4 : width));
     }
     return lines;
 }
@@ -223,7 +229,10 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
         Elements rows;
         for (const auto& line : split_lines(item.text))
         {
-            rows.push_back(hbox({text("> "), text(line)}));
+            rows.push_back(hbox({
+                text("  > ") | color(TuiTheme::primary()),
+                text(line),
+            }));
         }
         return rows.empty() ? text("") : vbox(std::move(rows));
     }
@@ -235,7 +244,10 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
 
     if (item.kind == HistoryCellKind::system)
     {
-        return hbox({text("[system]") | color(TuiTheme::warning()), text(" " + item.text)});
+        return hbox({
+            text("  \xe2\x97\x8b ") | color(TuiTheme::warning()),
+            text(item.text),
+        });
     }
 
     if (item.kind == HistoryCellKind::tool)
@@ -244,14 +256,24 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
 
         // Tool header with status-appropriate color and bullet
         const auto status_color = tool_status_color(item);
-        auto summary = styled_bullet(tool_summary_text(item), item.is_error);
+        std::string bullet;
         if (item.tool_status == ToolStatus::running)
         {
-            summary = hbox({
-                text("\xe2\x80\xa2 ") | color(status_color),
-                text(tool_summary_text(item)) | color(status_color),
-            });
+            bullet = "  \xe2\x96\xb8";  // ▸
         }
+        else if (item.is_error)
+        {
+            bullet = "  \xe2\x9c\x95";  // ✕
+        }
+        else
+        {
+            bullet = "  \xe2\x9c\x93";  // ✓
+        }
+
+        auto summary = hbox({
+            text(bullet + " ") | color(status_color),
+            text(tool_summary_text(item)) | color(status_color),
+        });
         rows.push_back(summary);
 
         // Render details subtree
@@ -266,7 +288,10 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
 
     if (item.kind == HistoryCellKind::error)
     {
-        return text(item.text) | error_style();
+        return hbox({
+            text("  \xe2\x9c\x95 ") | error_style(),
+            text(item.text) | error_style(),
+        });
     }
 
     return text(std::string{history_cell_kind_name(item.kind)} + ": " + item.text);

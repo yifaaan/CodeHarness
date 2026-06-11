@@ -7,6 +7,7 @@
 #include "codeharness/tui/tui_event.h"
 #include "codeharness/tui/tui_render.h"
 #include "codeharness/tui/tui_theme.h"
+#include "codeharness/tui/style.h"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/dom/elements.hpp>
@@ -1337,12 +1338,12 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                 transcript_rows.push_back(render::transcript_item_element(item, terminal_width));
             }
 
-            auto transcript_box = vbox(std::move(transcript_rows)) | flex;
+            auto transcript_box = vbox(std::move(transcript_rows));
             if (model.state().follow_transcript)
             {
                 transcript_box = transcript_box | focusPositionRelative(0.f, 1.f);
             }
-            rows.push_back(transcript_box | yframe | vscroll_indicator);
+            rows.push_back(transcript_box | yframe | vscroll_indicator | flex);
         }
 
         if (model.state().bottom_pane_focus == BottomPaneFocus::permission_prompt && model.state().pending_permission)
