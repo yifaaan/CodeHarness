@@ -15,10 +15,10 @@ namespace ch_config = codeharness::config;
 
 // ---- Defaults ----
 
-TEST_CASE("config defaults have echo provider")
+TEST_CASE("config defaults have openai provider")
 {
     ch_config::Settings s;
-    CHECK(s.provider_type == "echo");
+    CHECK(s.provider_type == "openai");
     CHECK(s.active_profile == "default");
     CHECK(s.max_turns == 200);
     CHECK(s.max_tokens == 4096);
@@ -32,7 +32,7 @@ TEST_CASE("config defaults have a default profile")
     ch_config::Settings s;
     REQUIRE(s.profiles.find("default") != s.profiles.end());
     CHECK(s.profiles["default"].name == "default");
-    CHECK(s.profiles["default"].provider_type == "echo");
+    CHECK(s.profiles["default"].provider_type == "openai");
 }
 
 // ---- JSON Serialization ----
@@ -341,7 +341,7 @@ TEST_CASE("ConfigLoader defaults match expected values")
     auto settings = loader.load(ch_config::CliOptions{});
     REQUIRE(settings);
 
-    CHECK(settings->provider_type == "echo");
+    CHECK(settings->provider_type == "openai");
     CHECK(settings->max_turns == 200);
     CHECK(settings->allow_project_skills == true);
     CHECK(settings->allow_project_plugins == false);
@@ -626,5 +626,5 @@ TEST_CASE("ConfigLoader with empty CliOptions succeeds")
     ch_config::ConfigLoader loader;
     auto settings = loader.load(ch_config::CliOptions{});
     REQUIRE(settings);
-    CHECK(settings->provider_type == "echo");
+    CHECK(settings->provider_type == "openai");
 }

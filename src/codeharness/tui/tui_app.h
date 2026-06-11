@@ -30,9 +30,14 @@ struct McpConnectionInfo
 
 struct TuiDisplayConfig
 {
+    std::string product_name = "CodeHarness";
     std::string model = "unknown";
     std::string provider_type = "unknown";
     std::string version = "0.1.0";
+    std::string directory;
+    std::string context_left_label = "100% context left";
+    std::string startup_tip = "New Build faster with CodeHarness.";
+    std::vector<std::string> status_line_items;
     int skill_count = 0;
     TokenUsage token_usage;
     McpConnectionInfo mcp_info;
@@ -137,6 +142,16 @@ struct TuiState
     std::optional<SelectModalState> select_modal;
     std::optional<QuestionModalState> question_modal;
     bool paste_burst_active = false;
+};
+
+struct CodexFrameState
+{
+    TuiDisplayConfig display;
+    TuiState state;
+    int width = 80;
+    int height = 24;
+    int elapsed_seconds = 0;
+    int composer_history_index = -1;
 };
 
 class TuiAppModel

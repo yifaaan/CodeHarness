@@ -19,7 +19,7 @@ struct ProviderProfile
 {
     std::string name;
     std::string label;
-    std::string provider_type;   // "echo" | "openai" | "anthropic"
+    std::string provider_type;   // "openai" | "anthropic" | "echo"
     std::string api_format;      // optional: "openai" | "anthropic"
     std::string model;
     std::string base_url;
@@ -38,13 +38,13 @@ struct Settings
     // --- Active Profile ---
     std::string active_profile = "default";
     std::map<std::string, ProviderProfile> profiles = {
-        {"default", ProviderProfile{.name = "default", .label = "Default", .provider_type = "echo"}}
+        {"default", ProviderProfile{.name = "default", .label = "Default", .provider_type = "openai"}}
     };
 
     // --- Resolved Provider Fields ---
     // These are populated by ConfigLoader after merging all layers
     // and resolving the active profile's credentials.
-    std::string provider_type = "echo";
+    std::string provider_type = "openai";
     std::string model;
     std::string api_key;
     std::string base_url;

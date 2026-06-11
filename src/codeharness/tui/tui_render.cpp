@@ -2,12 +2,16 @@
 
 #include "codeharness/tui/list_dialog_render.h"
 #include "codeharness/tui/render_primitives.h"
+#include "codeharness/tui/style.h"
 #include "codeharness/tui/tui_theme.h"
 
 #include <ftxui/dom/elements.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <sstream>
+#include <string>
 
 namespace codeharness::tui::render
 {
@@ -15,6 +19,26 @@ namespace
 {
 
 using namespace ftxui;
+
+auto card_width_for(const TuiDisplayConfig& config) -> int
+{
+    const auto model_line = std::string{"model: "} + config.model + "  /model to change";
+    const auto directory_line = std::string{"directory: "} + config.directory;
+    const auto title_line = std::string{">_ "} + config.product_name + " (v" + config.version + ")";
+    return std::max({36,
+                     static_cast<int>(title_line.size()),
+                     static_cast<int>(model_line.size()),
+                     static_cast<int>(directory_line.size())}) + 4;
+}
+
+auto pad_to(std::string text, int width) -> std::string
+{
+    if (static_cast<int>(text.size()) < width)
+    {
+        text.append(static_cast<std::size_t>(width - static_cast<int>(text.size())), ' ');
+    }
+    return text;
+}
 
 auto command_palette_spec(const CommandPaletteState& palette) -> ListDialogSpec
 {
@@ -80,16 +104,168 @@ auto transcript_view_lines(const std::vector<TranscriptItem>& transcript,
     return std::vector<std::string>{lines.begin(), last};
 }
 
+auto composer_frame_lines(const CodexFrameState& frame) -> std::vector<std::string>
+{
+    std::vector<std::string> lines;
+    lines.reserve(static_cast<std::size_t>(k_codex_composer_rows));
+
+    auto content = frame.state.composer;
+    if (content.empty())
+    {
+        content = "Ask " + frame.display.product_name + " to do anything";
+    }
+
+    std::istringstream stream{content};
+    std::string line;
+    for (int index = 0; index < k_codex_composer_rows; ++index)
+    {
+        if (std::getline(stream, line))
+        {
+            lines.push_back((index == 0 ? std::string{k_codex_prompt_prefix} : "  ") + line);
+        }
+        else
+        {
+            lines.push_back("  ");
+        }
+    }
+    return lines;
+}
+
+auto transcript_line_element(const std::string& line) -> Element
+{
+    if (line.empty())
+    {
+        return text(" ") | user_message_bg_style();
+    }
+
+    if (line.starts_with(std::string{k_codex_prompt_prefix}))
+    {
+        const auto content = line.substr(std::string{k_codex_prompt_prefix}.size());
+        return hbox({
+            text(std::string{k_codex_prompt_prefix}) | color(TuiTheme::codex_user_prefix()) | bold | dim,
+            text(content) | color(TuiTheme::text_strong()),
+        }) | user_message_bg_style();
+    }
+
+    const auto tree_prefix = std::string{"  \xe2\x94\x82 "};
+    const auto last_prefix = std::string{"  \xe2\x94\x94 "};
+    if (line.starts_with(tree_prefix) || line.starts_with(last_prefix))
+    {
+        const auto prefix = line.starts_with(tree_prefix) ? tree_prefix : last_prefix;
+        return hbox({
+            text(prefix) | color(TuiTheme::codex_output_dim()),
+            text(line.substr(prefix.size())) | color(TuiTheme::codex_output_dim()) | dim,
+        });
+    }
+
+    if (line.starts_with("  \xe2\x80\xa6 "))
+    {
+        return text(line) | color(TuiTheme::codex_output_dim()) | dim;
+    }
+
+    if (line.starts_with(std::string{k_codex_bullet}))
+    {
+        const auto content = line.substr(std::string{k_codex_bullet}.size());
+        if (!content.starts_with("Running ") && !content.starts_with("Ran ") && !content.starts_with("Failed "))
+        {
+            return hbox({
+                text(std::string{k_codex_bullet}) | color(TuiTheme::codex_bullet()) | dim,
+                text(content) | color(TuiTheme::text_default()),
+            });
+        }
+        return hbox({
+            text(std::string{k_codex_bullet}) | color(TuiTheme::codex_bullet()) | dim,
+            styled_line_element(codex_command_header_segments(content)),
+        });
+    }
+
+    if (line.starts_with("  \xe2\x9c\x95 "))
+    {
+        return text(line) | color(TuiTheme::error()) | bold;
+    }
+
+    return text(line) | color(TuiTheme::text_default());
+}
+
 } // namespace
+
+auto bottom_pane_reserved_rows(BottomPaneFocus focus) -> int
+{
+    if (bottom_pane_accepts_composer_input(focus))
+    {
+        return k_codex_status_rows + k_codex_composer_rows + k_codex_hint_rows + k_codex_footer_rows;
+    }
+    return 2;
+}
 
 auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>
 {
-    return {
-        "CodeHarness",
-        "An AI-powered coding assistant  v" + config.version,
-        "",
-        "  /help commands  |  /skills list  |  Ctrl+C exit",
-    };
+    std::vector<std::string> lines;
+    const auto width = card_width_for(config);
+    const auto inner_width = width - 2;
+
+    lines.push_back(std::string{k_box_corner_tl} + horizontal_rule(inner_width) + std::string{k_box_corner_tr});
+    lines.push_back(std::string{k_box_vertical} + " " +
+                    pad_to(">_ " + config.product_name + " (v" + config.version + ")", inner_width - 1) +
+                    std::string{k_box_vertical});
+    lines.push_back(std::string{k_box_vertical} + pad_to("", inner_width) + std::string{k_box_vertical});
+    lines.push_back(std::string{k_box_vertical} + " " +
+                    pad_to("model:      " + config.model + "  /model to change", inner_width - 1) +
+                    std::string{k_box_vertical});
+    lines.push_back(std::string{k_box_vertical} + " " +
+                    pad_to("directory:  " + config.directory, inner_width - 1) +
+                    std::string{k_box_vertical});
+    lines.push_back(std::string{k_box_corner_bl} + horizontal_rule(inner_width) + std::string{k_box_corner_br});
+    lines.push_back("");
+    if (!config.startup_tip.empty())
+    {
+        lines.push_back("Tip: " + config.startup_tip);
+        lines.push_back("");
+    }
+    return lines;
+}
+
+auto render_codex_frame_lines(const CodexFrameState& frame) -> std::vector<std::string>
+{
+    std::vector<std::string> lines;
+    if (frame.state.transcript.empty())
+    {
+        lines = render_welcome_lines(frame.display);
+    }
+    else
+    {
+        lines = render_transcript_lines(frame.state.transcript, frame.width);
+    }
+
+    if (bottom_pane_accepts_composer_input(frame.state.bottom_pane_focus))
+    {
+        if (should_animate_working_status(frame.state))
+        {
+            lines.push_back(std::string{k_codex_bullet} + "Working (" + std::to_string(frame.elapsed_seconds) +
+                            "s \xe2\x80\xa2 esc to interrupt)");
+        }
+        else if (frame.state.interrupt_requested)
+        {
+            lines.push_back(std::string{k_codex_bullet} + "Interrupting...");
+        }
+        else
+        {
+            lines.push_back("");
+        }
+
+        auto composer_lines = composer_frame_lines(frame);
+        lines.insert(lines.end(), std::make_move_iterator(composer_lines.begin()), std::make_move_iterator(composer_lines.end()));
+        const auto hint = frame.state.composer.empty()
+                              ? "Use /skills to list available skills"
+                              : render_composer_hint(frame.state.busy, frame.composer_history_index);
+        lines.push_back("  " + hint);
+    }
+    else
+    {
+        lines.push_back("");
+    }
+    lines.push_back("  " + render_status_footer_line(frame.display, frame.state));
+    return lines;
 }
 
 auto render_transcript_lines(const std::vector<TranscriptItem>& transcript, int width) -> std::vector<std::string>
@@ -167,25 +343,34 @@ auto welcome_banner_element(const TuiDisplayConfig& config) -> Element
 
     Elements rows;
 
-    // Title
-    rows.push_back(text("CodeHarness") | color(TuiTheme::primary()) | bold);
-    rows.push_back(text("An AI-powered coding assistant  v" + config.version) | dim);
-    rows.push_back(text(" "));
-
-    // Key bindings hint row
     rows.push_back(hbox({
+        text(">_ ") | dim,
+        text(config.product_name) | bold,
+        text(" (v" + config.version + ")") | dim,
+    }));
+    rows.push_back(text(" "));
+    rows.push_back(hbox({
+        text("model:     ") | dim,
+        text(config.model),
         text("  "),
-        text("/help") | color(TuiTheme::primary()),
-        text(" commands") | dim,
-        text("  |  ") | dim,
-        text("/skills") | color(TuiTheme::primary()),
-        text(" list") | dim,
-        text("  |  ") | dim,
-        text("Ctrl+C") | color(TuiTheme::primary()),
-        text(" exit") | dim,
+        text("/model") | color(TuiTheme::primary()) | bold,
+        text(" to change") | dim,
+    }));
+    rows.push_back(hbox({
+        text("directory: ") | dim,
+        text(config.directory),
     }));
 
-    return vbox(std::move(rows));
+    auto card = vbox(std::move(rows)) | border | color(TuiTheme::border_default());
+    Elements outer;
+    outer.push_back(card);
+    outer.push_back(text(" "));
+    if (!config.startup_tip.empty())
+    {
+        outer.push_back(text("Tip: " + config.startup_tip));
+    }
+
+    return vbox(std::move(outer));
 }
 
 auto transcript_item_element(const TranscriptItem& item, int width) -> Element
@@ -200,7 +385,10 @@ auto transcript_view_element(const std::vector<TranscriptItem>& transcript,
 {
     Elements rows;
     auto lines = transcript_view_lines(transcript, width, height, follow_transcript);
-    rows.reserve(lines.size() + 1);
+    rows.reserve(lines.size() + 2);
+
+    // Codex: model header bar at top
+    // (model info is added by tui_app.cpp in the layout, not here)
 
     if (follow_transcript)
     {
@@ -208,10 +396,15 @@ auto transcript_view_element(const std::vector<TranscriptItem>& transcript,
     }
     for (const auto& line : lines)
     {
-        rows.push_back(text(line));
+        rows.push_back(transcript_line_element(line));
     }
 
     return vbox(std::move(rows)) | flex;
+}
+
+auto model_header_element(const TuiDisplayConfig& config) -> Element
+{
+    return status_footer_element(config, TuiState{});
 }
 
 auto command_palette_element(const CommandPaletteState& palette, int width) -> Element

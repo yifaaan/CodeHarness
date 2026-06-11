@@ -16,10 +16,20 @@ namespace codeharness::tui::render
 {
 
 constexpr int k_command_palette_page_size = 8;
+constexpr int k_codex_status_rows = 1;
+constexpr int k_codex_composer_rows = 3;
+constexpr int k_codex_hint_rows = 1;
+constexpr int k_codex_footer_rows = 1;
 
 [[nodiscard]] auto horizontal_rule(int width) -> std::string;
+[[nodiscard]] auto bottom_pane_reserved_rows(BottomPaneFocus focus) -> int;
+[[nodiscard]] constexpr auto composer_fixed_height_rows() noexcept -> int
+{
+    return k_codex_composer_rows;
+}
 
 [[nodiscard]] auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>;
+[[nodiscard]] auto render_codex_frame_lines(const CodexFrameState& frame) -> std::vector<std::string>;
 [[nodiscard]] auto render_transcript_lines(const std::vector<TranscriptItem>& transcript, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_command_palette_lines(const CommandPaletteState& palette, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_select_modal_lines(const SelectModalState& modal, int width) -> std::vector<std::string>;
@@ -27,6 +37,7 @@ constexpr int k_command_palette_page_size = 8;
 [[nodiscard]] auto render_question_lines(const QuestionModalState& modal, int width) -> std::vector<std::string>;
 
 [[nodiscard]] auto welcome_banner_element(const TuiDisplayConfig& config) -> ftxui::Element;
+[[nodiscard]] auto model_header_element(const TuiDisplayConfig& config) -> ftxui::Element;
 [[nodiscard]] auto transcript_view_element(const std::vector<TranscriptItem>& transcript,
                                            int width,
                                            int height,

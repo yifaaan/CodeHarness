@@ -5,16 +5,66 @@
 #include "codeharness/tui/list_dialog_render.h"
 #include "codeharness/tui/render_primitives.h"
 #include "codeharness/tui/selection_list.h"
+#include "codeharness/tui/style.h"
 #include "codeharness/tui/terminal.h"
 #include "codeharness/tui/tui_composer.h"
 #include "codeharness/tui/tui_event.h"
 #include "codeharness/tui/tui_markdown.h"
 #include "codeharness/tui/tui_render.h"
+#include "codeharness/tui/tui_theme.h"
 #include "test_support.h"
 
 #include <ftxui/component/event.hpp>
+#include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/node.hpp>
 #include <ftxui/screen/screen.hpp>
+
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace
+{
+
+struct TerminalPaletteGuard
+{
+    codeharness::tui::TerminalPalette saved = codeharness::tui::g_terminal_palette;
+
+    ~TerminalPaletteGuard()
+    {
+        codeharness::tui::g_terminal_palette = saved;
+    }
+};
+
+[[nodiscard]] auto line_index_containing(const std::vector<std::string>& lines, std::string_view needle) -> int
+{
+    for (std::size_t index = 0; index < lines.size(); ++index)
+    {
+        if (lines.at(index).find(needle) != std::string::npos)
+        {
+            return static_cast<int>(index);
+        }
+    }
+    return -1;
+}
+
+[[nodiscard]] auto screen_lines(ftxui::Element element, int width, int height) -> std::vector<std::string>
+{
+    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(width), ftxui::Dimension::Fixed(height));
+    ftxui::Render(screen, std::move(element));
+
+    std::vector<std::string> lines;
+    std::istringstream stream{screen.ToString()};
+    std::string line;
+    while (std::getline(stream, line))
+    {
+        lines.push_back(std::move(line));
+    }
+    return lines;
+}
+
+} // namespace
 
 TEST_CASE("tui event queue preserves fifo order and drains")
 {
@@ -375,19 +425,19 @@ TEST_CASE("tui history cell factories create tool cells")
     CHECK(started.kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(started.id == "tool-1");
     CHECK(started.label == "bash");
-    CHECK(started.text == "bash running");
+    CHECK(started.text == "Running bash");
     CHECK(started.tool_status == codeharness::tui::ToolStatus::running);
 
     const auto finished = codeharness::tui::make_tool_finished_cell("tool-2");
     CHECK(finished.kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(finished.id == "tool-2");
-    CHECK(finished.text == "completed tool-2");
+    CHECK(finished.text == "Ran tool-2");
     CHECK(finished.tool_status == codeharness::tui::ToolStatus::completed);
 
     const auto completed = codeharness::tui::make_tool_result_cell("tool-3", "ok", false);
     CHECK(completed.kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(completed.id == "tool-3");
-    CHECK(completed.text == "completed");
+    CHECK(completed.text == "Ran tool-3");
     CHECK(completed.detail == "ok");
     CHECK(completed.tool_status == codeharness::tui::ToolStatus::completed);
     CHECK(!completed.is_error);
@@ -396,7 +446,7 @@ TEST_CASE("tui history cell factories create tool cells")
     const auto failed = codeharness::tui::make_tool_result_cell("tool-4", "bad", true);
     CHECK(failed.kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(failed.id == "tool-4");
-    CHECK(failed.text == "failed");
+    CHECK(failed.text == "Ran tool-4 error");
     CHECK(failed.detail == "bad");
     CHECK(failed.tool_status == codeharness::tui::ToolStatus::failed);
     CHECK(failed.is_error);
@@ -408,16 +458,16 @@ TEST_CASE("tui history cell tool status helper preserves detail and updates labe
     auto item = codeharness::tui::make_tool_started_cell("tool-1", "bash");
 
     codeharness::tui::apply_tool_status(item, codeharness::tui::ToolStatus::completed, "line 1");
-    CHECK(item.text == "bash completed");
+    CHECK(item.text == "Ran bash");
     CHECK(item.detail == "line 1");
     CHECK(item.tool_status == codeharness::tui::ToolStatus::completed);
 
     codeharness::tui::apply_tool_status(item, codeharness::tui::ToolStatus::running);
-    CHECK(item.text == "bash running");
+    CHECK(item.text == "Running bash");
     CHECK(item.detail == "line 1");
 
     codeharness::tui::apply_tool_status(item, codeharness::tui::ToolStatus::failed, "line 2");
-    CHECK(item.text == "bash failed");
+    CHECK(item.text == "Ran bash error");
     CHECK(item.detail == "line 2");
     CHECK(item.tool_status == codeharness::tui::ToolStatus::failed);
 }
@@ -453,8 +503,10 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
             .text = "hello",
         },
         80);
-    REQUIRE(lines.size() == 1);
-    CHECK(lines.at(0) == "  > hello");
+    REQUIRE(lines.size() == 3);
+    CHECK(lines.at(0).empty());
+    CHECK(lines.at(1) == "\xe2\x80\xba hello");
+    CHECK(lines.at(2).empty());
 
     lines = codeharness::tui::render::render_history_cell_lines(
         codeharness::tui::TranscriptItem{
@@ -472,7 +524,7 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
         },
         80);
     REQUIRE(lines.size() == 1);
-    CHECK(lines.at(0) == "  ○ switched");
+    CHECK(lines.at(0) == "\xe2\x80\xa2 switched");
 
     lines = codeharness::tui::render::render_history_cell_lines(
         codeharness::tui::TranscriptItem{
@@ -481,7 +533,7 @@ TEST_CASE("tui history cell render lines cover basic cell kinds")
         },
         80);
     REQUIRE(lines.size() == 1);
-    CHECK(lines.at(0) == "  ✕ boom");
+    CHECK(lines.at(0) == "  \xe2\x9c\x95 boom");
 }
 
 TEST_CASE("tui transcript viewport keeps the submitted prompt visible")
@@ -508,8 +560,6 @@ TEST_CASE("tui transcript viewport keeps the submitted prompt visible")
 
 TEST_CASE("tui full page keeps submitted prompt visible while working")
 {
-    using namespace ftxui;
-
     codeharness::tui::TuiState state;
     state.busy = true;
     state.transcript = {
@@ -519,23 +569,234 @@ TEST_CASE("tui full page keeps submitted prompt visible while working")
         },
     };
 
-    Elements rows;
-    rows.push_back(codeharness::tui::render::transcript_view_element(state.transcript, 80, 1, true));
-    rows.push_back(text(" "));
-    rows.push_back(text(codeharness::tui::render::horizontal_rule(80)));
-    rows.push_back(codeharness::tui::render::status_footer_element({}, state));
-    rows.push_back(hbox({
-        text("Working"),
-        text(" "),
-        text("") | borderRounded | size(HEIGHT, GREATER_THAN, 3) | flex,
-    }));
-    rows.push_back(text(codeharness::tui::render::render_composer_hint(true, -1)));
+    const auto lines = codeharness::tui::render::render_codex_frame_lines(
+        codeharness::tui::CodexFrameState{
+            .display = codeharness::tui::TuiDisplayConfig{
+                .model = "gpt-5.5 xhigh",
+                .directory = R"(D:\code\CodeHarness)",
+            },
+            .state = state,
+            .width = 80,
+            .height = 8,
+        });
 
-    auto screen = Screen::Create(Dimension::Fixed(80), Dimension::Fixed(8));
-    Render(screen, vbox(std::move(rows)) | flex);
+    bool saw_prompt = false;
+    bool saw_working = false;
+    bool saw_footer = false;
+    for (const auto& line : lines)
+    {
+        saw_prompt = saw_prompt || line.find("222") != std::string::npos;
+        saw_working = saw_working || line.find("Working") != std::string::npos;
+        saw_footer = saw_footer || line.find("gpt-5.5 xhigh \xc2\xb7 D:\\code\\CodeHarness") != std::string::npos;
+    }
 
-    CHECK(screen.ToString().find("> 222") != std::string::npos);
-    CHECK(screen.ToString().find("Working") != std::string::npos);
+    CHECK(saw_prompt);
+    CHECK(saw_working);
+    CHECK(saw_footer);
+}
+
+TEST_CASE("tui bottom pane reserves stable rows across working states")
+{
+    codeharness::tui::TuiState state;
+    state.bottom_pane_focus = codeharness::tui::BottomPaneFocus::composer;
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 6);
+
+    state.busy = true;
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 6);
+
+    state.interrupt_requested = true;
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 6);
+
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::permission_prompt) == 2);
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::select_modal) == 2);
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::question_modal) == 2);
+}
+
+TEST_CASE("tui codex frame keeps working layout y positions stable")
+{
+    codeharness::tui::TuiState state;
+    state.busy = true;
+    state.transcript = {
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "first transcript line\nlast transcript line",
+        },
+    };
+
+    const auto make_lines = [&](int elapsed_seconds) {
+        return codeharness::tui::render::render_codex_frame_lines(
+            codeharness::tui::CodexFrameState{
+                .display = codeharness::tui::TuiDisplayConfig{
+                    .model = "gpt-5.5 xhigh",
+                    .directory = R"(D:\code\CodeHarness)",
+                },
+                .state = state,
+                .width = 80,
+                .height = 12,
+                .elapsed_seconds = elapsed_seconds,
+            });
+    };
+
+    const auto frame0 = make_lines(0);
+    const auto frame5 = make_lines(5);
+    const auto frame10 = make_lines(10);
+
+    CHECK(line_index_containing(frame0, "last transcript line") == line_index_containing(frame5, "last transcript line"));
+    CHECK(line_index_containing(frame5, "last transcript line") == line_index_containing(frame10, "last transcript line"));
+    CHECK(line_index_containing(frame0, "esc to interrupt") == line_index_containing(frame5, "esc to interrupt"));
+    CHECK(line_index_containing(frame5, "esc to interrupt") == line_index_containing(frame10, "esc to interrupt"));
+    CHECK(line_index_containing(frame0, "\xe2\x80\xba Ask CodeHarness") == line_index_containing(frame5, "\xe2\x80\xba Ask CodeHarness"));
+    CHECK(line_index_containing(frame5, "\xe2\x80\xba Ask CodeHarness") == line_index_containing(frame10, "\xe2\x80\xba Ask CodeHarness"));
+    CHECK(line_index_containing(frame0, "gpt-5.5 xhigh") == line_index_containing(frame5, "gpt-5.5 xhigh"));
+    CHECK(line_index_containing(frame5, "gpt-5.5 xhigh") == line_index_containing(frame10, "gpt-5.5 xhigh"));
+}
+
+TEST_CASE("tui busy screen keeps y positions stable across shimmer frames")
+{
+    using namespace ftxui;
+
+    constexpr int width = 80;
+    constexpr int height = 14;
+    codeharness::tui::TuiState state;
+    state.busy = true;
+    state.bottom_pane_focus = codeharness::tui::BottomPaneFocus::composer;
+    state.follow_transcript = true;
+    state.transcript = {
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "older transcript line\nstable transcript bottom",
+        },
+    };
+    const codeharness::tui::TuiDisplayConfig display{
+        .model = "gpt-5.5 xhigh",
+        .directory = R"(D:\code\CodeHarness)",
+    };
+    const auto transcript_height =
+        height - codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::composer);
+
+    const auto make_lines = [&](int animation_frame) {
+        Elements rows;
+        rows.push_back(codeharness::tui::render::transcript_view_element(
+                           state.transcript,
+                           width,
+                           transcript_height,
+                           state.follow_transcript) |
+                       size(HEIGHT, EQUAL, transcript_height));
+        rows.push_back(codeharness::tui::render::working_status_element(0, "Working", animation_frame));
+        rows.push_back(hbox({
+                           text(std::string{codeharness::tui::k_codex_prompt_prefix}) |
+                               color(codeharness::tui::TuiTheme::codex_user_prefix()) | bold | dim,
+                           text("Ask CodeHarness to do anything") | dim,
+                       }) |
+                       size(HEIGHT, EQUAL, codeharness::tui::render::composer_fixed_height_rows()));
+        rows.push_back(text("  Use /skills to list available skills") | dim);
+        rows.push_back(codeharness::tui::render::status_footer_element(display, state));
+
+        return screen_lines(vbox(std::move(rows)) | flex | codeharness::tui::codex_background_style(), width, height);
+    };
+
+    const auto frame0 = make_lines(0);
+    const auto frame5 = make_lines(5);
+    const auto frame10 = make_lines(10);
+
+    CHECK(line_index_containing(frame0, "stable transcript bottom") ==
+          line_index_containing(frame5, "stable transcript bottom"));
+    CHECK(line_index_containing(frame5, "stable transcript bottom") ==
+          line_index_containing(frame10, "stable transcript bottom"));
+    CHECK(line_index_containing(frame0, "esc to interrupt") == line_index_containing(frame5, "esc to interrupt"));
+    CHECK(line_index_containing(frame5, "esc to interrupt") == line_index_containing(frame10, "esc to interrupt"));
+    CHECK(line_index_containing(frame0, "Ask CodeHarness") == line_index_containing(frame5, "Ask CodeHarness"));
+    CHECK(line_index_containing(frame5, "Ask CodeHarness") == line_index_containing(frame10, "Ask CodeHarness"));
+    CHECK(line_index_containing(frame0, "gpt-5.5 xhigh") == line_index_containing(frame5, "gpt-5.5 xhigh"));
+    CHECK(line_index_containing(frame5, "gpt-5.5 xhigh") == line_index_containing(frame10, "gpt-5.5 xhigh"));
+}
+
+TEST_CASE("tui codex frame keeps composer area three rows")
+{
+    const auto make_lines = [](std::string composer) {
+        codeharness::tui::TuiState state;
+        state.composer = std::move(composer);
+        state.transcript = {
+            codeharness::tui::TranscriptItem{
+                .kind = codeharness::tui::HistoryCellKind::assistant,
+                .text = "stable transcript",
+            },
+        };
+        return codeharness::tui::render::render_codex_frame_lines(
+            codeharness::tui::CodexFrameState{
+                .display = codeharness::tui::TuiDisplayConfig{
+                    .model = "gpt-5.5 xhigh",
+                    .directory = R"(D:\code\CodeHarness)",
+                },
+                .state = state,
+                .width = 80,
+                .height = 12,
+            });
+    };
+
+    const auto empty = make_lines("");
+    const auto single = make_lines("hello");
+    const auto multi = make_lines("one\ntwo\nthree\nfour");
+    const auto transcript_count = codeharness::tui::render::render_transcript_lines(
+        {
+            codeharness::tui::TranscriptItem{
+                .kind = codeharness::tui::HistoryCellKind::assistant,
+                .text = "stable transcript",
+            },
+        },
+        80)
+                                      .size();
+    const auto expected_count = transcript_count +
+                                static_cast<std::size_t>(codeharness::tui::render::bottom_pane_reserved_rows(
+                                    codeharness::tui::BottomPaneFocus::composer));
+
+    CHECK(empty.size() == expected_count);
+    CHECK(single.size() == expected_count);
+    CHECK(multi.size() == expected_count);
+
+    const auto composer_start = static_cast<int>(transcript_count) + 1;
+    CHECK(empty.at(static_cast<std::size_t>(composer_start)).find("\xe2\x80\xba Ask CodeHarness") != std::string::npos);
+    CHECK(empty.at(static_cast<std::size_t>(composer_start + 1)) == "  ");
+    CHECK(empty.at(static_cast<std::size_t>(composer_start + 2)) == "  ");
+    CHECK(single.at(static_cast<std::size_t>(composer_start)).find("\xe2\x80\xba hello") != std::string::npos);
+    CHECK(single.at(static_cast<std::size_t>(composer_start + 1)) == "  ");
+    CHECK(single.at(static_cast<std::size_t>(composer_start + 2)) == "  ");
+    CHECK(multi.at(static_cast<std::size_t>(composer_start)).find("\xe2\x80\xba one") != std::string::npos);
+    CHECK(multi.at(static_cast<std::size_t>(composer_start + 1)).find("  two") != std::string::npos);
+    CHECK(multi.at(static_cast<std::size_t>(composer_start + 2)).find("  three") != std::string::npos);
+    CHECK(line_index_containing(multi, "four") == -1);
+}
+
+TEST_CASE("tui codex welcome frame renders status card")
+{
+    const auto lines = codeharness::tui::render::render_welcome_lines(
+        codeharness::tui::TuiDisplayConfig{
+            .product_name = "CodeHarness",
+            .model = "gpt-5.5 xhigh",
+            .version = "1.2.3",
+            .directory = R"(D:\code\CodeHarness)",
+            .startup_tip = "Use /skills to list available skills",
+        });
+
+    bool saw_title = false;
+    bool saw_model = false;
+    bool saw_directory = false;
+    bool saw_model_hint = false;
+    bool saw_tip = false;
+    for (const auto& line : lines)
+    {
+        saw_title = saw_title || line.find(">_ CodeHarness (v1.2.3)") != std::string::npos;
+        saw_model = saw_model || line.find("model:") != std::string::npos;
+        saw_directory = saw_directory || line.find("directory:") != std::string::npos;
+        saw_model_hint = saw_model_hint || line.find("/model to change") != std::string::npos;
+        saw_tip = saw_tip || line.find("Tip: Use /skills to list available skills") != std::string::npos;
+    }
+
+    CHECK(saw_title);
+    CHECK(saw_model);
+    CHECK(saw_directory);
+    CHECK(saw_model_hint);
+    CHECK(saw_tip);
 }
 
 TEST_CASE("tui history cell render lines cover tool summaries and truncation")
@@ -555,7 +816,7 @@ TEST_CASE("tui history cell render lines cover tool summaries and truncation")
                   .label = "bash",
                   .tool_status = codeharness::tui::ToolStatus::completed,
               })
-          == "Ran bash 2L");
+          == "Ran bash");
 
     CHECK(codeharness::tui::render::tool_summary_text(
               codeharness::tui::TranscriptItem{
@@ -847,7 +1108,7 @@ TEST_CASE("tui chat surface merges tool events and toggles details")
     REQUIRE(chat.items().size() == 2);
     CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-1");
-    CHECK(chat.items().at(1).text == "bash completed");
+    CHECK(chat.items().at(1).text == "Ran bash");
     CHECK(chat.items().at(1).detail == "done");
     CHECK(!chat.items().at(1).expanded);
     CHECK(!chat.items().at(1).live);
@@ -869,7 +1130,7 @@ TEST_CASE("tui chat surface merges duplicate tool starts")
     REQUIRE(chat.items().size() == 2);
     CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-1");
-    CHECK(chat.items().at(1).text == "read_file running");
+    CHECK(chat.items().at(1).text == "Running read_file");
     CHECK(chat.items().at(1).live);
     CHECK(chat.has_active_response());
 }
@@ -912,8 +1173,9 @@ TEST_CASE("tui chat surface merges streamed tool input")
     CHECK(!chat.has_active_response());
 
     lines = codeharness::tui::render::render_history_cell_lines(chat.items().at(1), 80);
-    CHECK(lines.size() == 1);
-    CHECK(lines.at(0).find("Ran read_file 1L") != std::string::npos);
+    CHECK(lines.size() == 2);
+    CHECK(lines.at(0).find("Ran read_file") != std::string::npos);
+    CHECK(lines.at(1).find("done") != std::string::npos);
 }
 
 TEST_CASE("tui chat surface records orphan and failed tool results")
@@ -926,7 +1188,7 @@ TEST_CASE("tui chat surface records orphan and failed tool results")
     REQUIRE(chat.items().size() == 2);
     CHECK(chat.items().at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(chat.items().at(1).id == "tool-use-2");
-    CHECK(chat.items().at(1).text == "failed");
+    CHECK(chat.items().at(1).text == "Ran tool-use-2 error");
     CHECK(chat.items().at(1).detail == "exit 1");
     CHECK(chat.items().at(1).is_error);
     CHECK(chat.items().at(1).expanded);
@@ -1045,7 +1307,7 @@ TEST_CASE("tui model keeps submitted prompt visible through empty completion")
     REQUIRE(model.state().transcript.size() == 1);
     CHECK(model.state().transcript.at(0).kind == codeharness::tui::HistoryCellKind::user);
     CHECK(model.state().transcript.at(0).text == "222");
-    CHECK(model.render_text().find("> 222") != std::string::npos);
+    CHECK(model.render_text().find("\xe2\x80\xba 222") != std::string::npos);
 
     auto result = model.apply_tui_event(
         codeharness::tui::TuiEvent{codeharness::tui::TuiRunCompleted{.success = true}});
@@ -1054,7 +1316,7 @@ TEST_CASE("tui model keeps submitted prompt visible through empty completion")
     CHECK(!model.state().busy);
     REQUIRE(model.state().transcript.size() == 1);
     CHECK(model.state().transcript.at(0).text == "222");
-    CHECK(model.render_text().find("> 222") != std::string::npos);
+    CHECK(model.render_text().find("\xe2\x80\xba 222") != std::string::npos);
 }
 
 TEST_CASE("tui model opens command palette from leading slash")
@@ -1270,17 +1532,17 @@ TEST_CASE("tui model transcript handles engine events")
     CHECK(model.state().transcript.at(1).text == "hello world");
     CHECK(model.state().transcript.at(2).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(model.state().transcript.at(2).id == "tool-use-1");
-    CHECK(model.state().transcript.at(2).text == "bash completed");
+    CHECK(model.state().transcript.at(2).text == "Ran bash");
     CHECK(model.state().transcript.at(2).detail == "done");
     CHECK(!model.state().transcript.at(2).expanded);
     CHECK(!model.state().transcript.at(2).live);
     CHECK(!model.has_active_response());
-    CHECK(model.render_text().find("done") == std::string::npos);
+    CHECK(model.render_text().find("done") != std::string::npos);
     previous_revision = model.state().transcript_revision;
     CHECK(model.toggle_tool_details(2));
     CHECK(model.state().transcript_revision > previous_revision);
     CHECK(model.state().transcript.at(2).expanded);
-    CHECK(model.render_text().find("Ran bash 1L") != std::string::npos);
+    CHECK(model.render_text().find("Ran bash") != std::string::npos);
     CHECK(model.render_text().find("done") != std::string::npos);
 
     model.begin_prompt("next prompt");
@@ -1317,7 +1579,7 @@ TEST_CASE("tui model merges finished and error tool events")
     REQUIRE(model.state().transcript.size() == 2);
     CHECK(model.state().transcript.at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(model.state().transcript.at(1).id == "tool-use-1");
-    CHECK(model.state().transcript.at(1).text == "bash failed");
+    CHECK(model.state().transcript.at(1).text == "Ran bash error");
     CHECK(model.state().transcript.at(1).detail == "exit 1");
     CHECK(model.state().transcript.at(1).is_error);
 }
@@ -1332,7 +1594,7 @@ TEST_CASE("tui model records missing tool result as a tool row")
     REQUIRE(model.state().transcript.size() == 2);
     CHECK(model.state().transcript.at(1).kind == codeharness::tui::HistoryCellKind::tool);
     CHECK(model.state().transcript.at(1).id == "tool-use-2");
-    CHECK(model.state().transcript.at(1).text == "failed");
+    CHECK(model.state().transcript.at(1).text == "Ran tool-use-2 error");
     CHECK(model.state().transcript.at(1).detail == "failed");
     CHECK(model.state().transcript.at(1).is_error);
 }
@@ -1347,9 +1609,9 @@ TEST_CASE("tui render uses codex style transcript and command palette")
     model.complete_prompt();
 
     const auto rendered = model.render_text();
-    CHECK(rendered.find("> fix bug") != std::string::npos);
+    CHECK(rendered.find("\xe2\x80\xba fix bug") != std::string::npos);
     CHECK(rendered.find("Done.") != std::string::npos);
-    CHECK(rendered.find("▸ Ran bash 1L") != std::string::npos);
+    CHECK(rendered.find("\xe2\x80\xa2 Ran bash") != std::string::npos);
 
     model.set_composer("/");
     model.open_command_palette({
@@ -1398,7 +1660,7 @@ TEST_CASE("tui render auto expands failed tool output")
     model.apply_engine_event(codeharness::EngineToolResult{.id = "tool-use-1", .content = "exit 1", .is_error = true});
 
     CHECK(model.state().transcript.at(1).expanded);
-    CHECK(model.render_text().find("▸ Ran bash error") != std::string::npos);
+    CHECK(model.render_text().find("\xe2\x80\xa2 Ran bash error") != std::string::npos);
     CHECK(model.render_text().find("exit 1") != std::string::npos);
 }
 
@@ -1454,9 +1716,8 @@ TEST_CASE("tui composer only treats shifted enter sequences as newline")
 
 TEST_CASE("tui composer hint matches codex style")
 {
-    CHECK(codeharness::tui::render::render_composer_hint(false) ==
-          "Shift+Enter newline · Enter send · / commands · Ctrl+P/N history · Ctrl+C exit");
-    CHECK(codeharness::tui::render::render_composer_hint(true) == "Esc stop · Ctrl+C stop");
+    CHECK(codeharness::tui::render::render_composer_hint(false) == "? for shortcuts");
+    CHECK(codeharness::tui::render::render_composer_hint(true) == "esc stop \xc2\xb7 ctrl+c stop");
     CHECK(codeharness::tui::render::render_composer_hint(false, 1).find("history 2") != std::string::npos);
 }
 
@@ -1482,12 +1743,13 @@ TEST_CASE("tui model system messages and plan mode footer")
     model.set_permission_mode(codeharness::PermissionMode::Plan);
 
     const auto rendered = model.render_text();
-    CHECK(rendered.find("○ Entered plan mode.") != std::string::npos);
+    CHECK(rendered.find("\xe2\x80\xa2 Entered plan mode.") != std::string::npos);
 
     const auto footer = codeharness::tui::render::render_status_footer_line(
         codeharness::tui::TuiDisplayConfig{.skill_count = 3},
         model.state());
-    CHECK(footer.find("skills: 3") != std::string::npos);
+    CHECK(footer.find("Plan mode") != std::string::npos);
+    CHECK(footer.find("skills:") == std::string::npos);
     CHECK(footer.find("mode:") == std::string::npos);
 }
 
@@ -1915,11 +2177,12 @@ TEST_CASE("tui model owns transcript follow state")
     CHECK(model.state().follow_transcript);
 }
 
-TEST_CASE("tui footer shows token usage and mcp connections")
+TEST_CASE("tui footer shows codex model and directory line")
 {
     codeharness::tui::TuiDisplayConfig config{
         .model = "gpt-4",
         .provider_type = "openai",
+        .directory = R"(D:\code\CodeHarness)",
         .skill_count = 2,
         .token_usage = codeharness::tui::TokenUsage{.input_tokens = 1500, .output_tokens = 800},
         .mcp_info = codeharness::tui::McpConnectionInfo{.connected = 3, .failed = 1},
@@ -1927,14 +2190,12 @@ TEST_CASE("tui footer shows token usage and mcp connections")
     codeharness::tui::TuiState state;
 
     const auto footer = codeharness::tui::render::render_status_footer_line(config, state);
-    CHECK(footer.find("model: gpt-4") != std::string::npos);
-    CHECK(footer.find("provider: openai") != std::string::npos);
-    CHECK(footer.find("tokens:") != std::string::npos);
-    CHECK(footer.find("1.5k") != std::string::npos);
-    CHECK(footer.find("800") != std::string::npos);
-    CHECK(footer.find("skills: 2") != std::string::npos);
-    CHECK(footer.find("mcp: 3/1") != std::string::npos);
-    CHECK(footer.find("mode: default") != std::string::npos);
+    CHECK(footer == "gpt-4 \xc2\xb7 D:\\code\\CodeHarness");
+    CHECK(footer.find("provider:") == std::string::npos);
+    CHECK(footer.find("tokens:") == std::string::npos);
+    CHECK(footer.find("skills:") == std::string::npos);
+    CHECK(footer.find("mcp:") == std::string::npos);
+    CHECK(footer.find("mode:") == std::string::npos);
 }
 
 TEST_CASE("tui footer reflects switched model profile")
@@ -1946,8 +2207,8 @@ TEST_CASE("tui footer reflects switched model profile")
     codeharness::tui::TuiState state;
 
     const auto footer = codeharness::tui::render::render_status_footer_line(config, state);
-    CHECK(footer.find("model: echo-b") != std::string::npos);
-    CHECK(footer.find("provider: echo / echo-b") != std::string::npos);
+    CHECK(footer == "echo-b");
+    CHECK(footer.find("provider:") == std::string::npos);
 }
 
 TEST_CASE("tui footer shows active resumed session")
@@ -1964,7 +2225,8 @@ TEST_CASE("tui footer shows active resumed session")
         codeharness::tui::TuiDisplayConfig{.model = "echo", .provider_type = "echo"},
         model.state());
 
-    CHECK(footer.find("session: abc123") != std::string::npos);
+    CHECK(footer.find("abc123") != std::string::npos);
+    CHECK(footer.find("session:") == std::string::npos);
 }
 
 TEST_CASE("tui footer shows full auto permission mode")
@@ -1976,7 +2238,8 @@ TEST_CASE("tui footer shows full auto permission mode")
         codeharness::tui::TuiDisplayConfig{.model = "echo", .provider_type = "echo"},
         state);
 
-    CHECK(footer.find("mode: full_auto") != std::string::npos);
+    CHECK(footer.find("full_auto") != std::string::npos);
+    CHECK(footer.find("mode:") == std::string::npos);
 }
 
 TEST_CASE("tui footer hides token and mcp when zero")
@@ -1999,6 +2262,176 @@ TEST_CASE("tui format token count")
     CHECK(codeharness::tui::render::format_token_count(1000) == "1.0k");
     CHECK(codeharness::tui::render::format_token_count(1500) == "1.5k");
     CHECK(codeharness::tui::render::format_token_count(12345) == "12.3k");
+}
+
+TEST_CASE("tui codex palette ignores light terminal background")
+{
+    const TerminalPaletteGuard guard;
+    codeharness::tui::g_terminal_palette = codeharness::tui::TerminalPalette{
+        .default_fg = codeharness::tui::RgbColor{20, 20, 20},
+        .default_bg = codeharness::tui::RgbColor{250, 250, 250},
+        .color_level = codeharness::tui::ColorLevel::TrueColor,
+        .is_dark_theme = false,
+    };
+
+    CHECK(codeharness::tui::TuiTheme::background() == ftxui::Color{30, 30, 30});
+    CHECK(codeharness::tui::TuiTheme::foreground() == ftxui::Color{212, 212, 212});
+    CHECK(codeharness::tui::TuiTheme::primary() == ftxui::Color{0, 200, 232});
+    CHECK(codeharness::tui::TuiTheme::table_separator() == ftxui::Color{106, 106, 106});
+    CHECK(codeharness::tui::TuiTheme::user_message_bg() == ftxui::Color{57, 57, 57});
+    CHECK(codeharness::tui::TuiTheme::border_default() != ftxui::Color{250, 250, 250});
+
+    codeharness::tui::g_terminal_palette.color_level = codeharness::tui::ColorLevel::Ansi16;
+    CHECK(codeharness::tui::TuiTheme::background() == ftxui::Color{ftxui::Color::Black});
+}
+
+TEST_CASE("tui codex background style fills empty screen cells")
+{
+    const TerminalPaletteGuard guard;
+    codeharness::tui::g_terminal_palette = codeharness::tui::TerminalPalette{
+        .default_fg = codeharness::tui::RgbColor{20, 20, 20},
+        .default_bg = codeharness::tui::RgbColor{250, 250, 250},
+        .color_level = codeharness::tui::ColorLevel::TrueColor,
+        .is_dark_theme = false,
+    };
+
+    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(8), ftxui::Dimension::Fixed(3));
+    ftxui::Render(screen, ftxui::text("x") | codeharness::tui::codex_background_style());
+
+    const auto expected = codeharness::tui::TuiTheme::background();
+    CHECK(screen.PixelAt(0, 0).background_color == expected);
+    CHECK(screen.PixelAt(7, 0).background_color == expected);
+    CHECK(screen.PixelAt(0, 2).background_color == expected);
+    CHECK(screen.PixelAt(7, 2).background_color == expected);
+}
+
+TEST_CASE("tui codex command header segments carry semantic styles")
+{
+    const auto segments = codeharness::tui::render::codex_command_header_segments(
+        R"(Ran git status --short D:\code\CodeHarness)");
+
+    CHECK(codeharness::tui::render::plain_text(segments) == R"(Ran git status --short D:\code\CodeHarness)");
+
+    auto saw_command = false;
+    auto saw_argument = false;
+    auto saw_path = false;
+    for (const auto& segment : segments)
+    {
+        if (segment.text == "git")
+        {
+            saw_command = segment.role == codeharness::tui::render::StyledColorRole::command && segment.bold;
+        }
+        if (segment.text == "--short")
+        {
+            saw_argument = segment.role == codeharness::tui::render::StyledColorRole::argument && segment.dim;
+        }
+        if (segment.text == R"(D:\code\CodeHarness)")
+        {
+            saw_path = segment.role == codeharness::tui::render::StyledColorRole::path && !segment.bold;
+        }
+    }
+
+    CHECK(saw_command);
+    CHECK(saw_argument);
+    CHECK(saw_path);
+}
+
+TEST_CASE("tui working animation only runs while busy and not interrupting")
+{
+    codeharness::tui::TuiState state;
+    CHECK(!codeharness::tui::render::should_animate_working_status(state));
+
+    state.busy = true;
+    CHECK(codeharness::tui::render::should_animate_working_status(state));
+
+    state.interrupt_requested = true;
+    CHECK(!codeharness::tui::render::should_animate_working_status(state));
+}
+
+TEST_CASE("tui shimmer frame changes do not alter transcript or footer text")
+{
+    const auto frame5 = codeharness::tui::render::shimmer_text_segments(
+        "Working",
+        5,
+        true,
+        codeharness::tui::render::ShimmerColorMode::Fallback);
+    const auto frame8 = codeharness::tui::render::shimmer_text_segments(
+        "Working",
+        8,
+        true,
+        codeharness::tui::render::ShimmerColorMode::Fallback);
+    CHECK(codeharness::tui::render::plain_text(frame5) == codeharness::tui::render::plain_text(frame8));
+
+    const auto transcript5 = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "stable text",
+        },
+        80);
+    const auto transcript8 = codeharness::tui::render::render_history_cell_lines(
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "stable text",
+        },
+        80);
+
+    codeharness::tui::TuiState state;
+    const auto footer5 = codeharness::tui::render::render_status_footer_line(
+        codeharness::tui::TuiDisplayConfig{.model = "gpt-5.5 xhigh", .directory = R"(D:\code\CodeHarness)"},
+        state);
+    const auto footer8 = codeharness::tui::render::render_status_footer_line(
+        codeharness::tui::TuiDisplayConfig{.model = "gpt-5.5 xhigh", .directory = R"(D:\code\CodeHarness)"},
+        state);
+
+    CHECK(transcript5 == transcript8);
+    CHECK(footer5 == footer8);
+}
+
+TEST_CASE("tui working shimmer fallback band moves left to right")
+{
+    const auto frame0 = codeharness::tui::render::shimmer_text_segments(
+        "Working",
+        0,
+        true,
+        codeharness::tui::render::ShimmerColorMode::Fallback);
+    const auto frame5 = codeharness::tui::render::shimmer_text_segments(
+        "Working",
+        5,
+        true,
+        codeharness::tui::render::ShimmerColorMode::Fallback);
+    const auto frame8 = codeharness::tui::render::shimmer_text_segments(
+        "Working",
+        8,
+        true,
+        codeharness::tui::render::ShimmerColorMode::Fallback);
+
+    CHECK(codeharness::tui::render::plain_text(frame0) == "Working");
+    CHECK(codeharness::tui::render::plain_text(frame5) == "Working");
+    CHECK(codeharness::tui::render::plain_text(frame8) == "Working");
+
+    const auto bright0 = codeharness::tui::render::brightest_shimmer_index(frame0);
+    const auto bright5 = codeharness::tui::render::brightest_shimmer_index(frame5);
+    const auto bright8 = codeharness::tui::render::brightest_shimmer_index(frame8);
+
+    CHECK(!bright0.has_value());
+    REQUIRE(bright5.has_value());
+    REQUIRE(bright8.has_value());
+    CHECK(*bright5 < *bright8);
+}
+
+TEST_CASE("tui working shimmer disabled returns plain foreground segment")
+{
+    const auto segments = codeharness::tui::render::shimmer_text_segments(
+        "Working",
+        10,
+        false,
+        codeharness::tui::render::ShimmerColorMode::Fallback);
+
+    REQUIRE(segments.size() == 1);
+    CHECK(segments.front().text == "Working");
+    CHECK(segments.front().role == codeharness::tui::render::StyledColorRole::foreground);
+    CHECK(!segments.front().bold);
+    CHECK(!segments.front().dim);
 }
 
 TEST_CASE("tui busy spinner frames cycle")

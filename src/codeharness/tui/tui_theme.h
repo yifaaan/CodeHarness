@@ -3,115 +3,168 @@
 #include "codeharness/tui/color_utils.h"
 
 #include <ftxui/screen/color.hpp>
+
+#include <cstddef>
 #include <optional>
+#include <string_view>
 
 namespace codeharness::tui
 {
 
-/// Terminal color level support detection.
 enum class ColorLevel
 {
-    Ansi16,     ///< Basic 16-color ANSI palette
-    Ansi256,    ///< Extended 256-color palette
-    TrueColor,  ///< Full 24-bit true color support
-    Unknown,    ///< Unable to detect color support
+    Ansi16,
+    Ansi256,
+    TrueColor,
+    Unknown,
 };
 
-/// Terminal palette information detected at startup.
 struct TerminalPalette
 {
     std::optional<RgbColor> default_fg;
     std::optional<RgbColor> default_bg;
     ColorLevel color_level = ColorLevel::Unknown;
-    bool is_dark_theme = true;  ///< True if terminal background is dark
+    bool is_dark_theme = true;
 
     static auto detect() -> TerminalPalette;
 };
 
-/// Global terminal palette state (set at startup).
 inline TerminalPalette g_terminal_palette;
 
-/// Initialize the terminal palette by detecting terminal capabilities.
 inline auto init_terminal_palette() -> void
 {
     g_terminal_palette = TerminalPalette::detect();
 }
 
-/// Get the default foreground color (or nullopt if unknown).
 [[nodiscard]] inline auto default_fg() noexcept -> std::optional<RgbColor>
 {
     return g_terminal_palette.default_fg;
 }
 
-/// Get the default background color (or nullopt if unknown).
 [[nodiscard]] inline auto default_bg() noexcept -> std::optional<RgbColor>
 {
     return g_terminal_palette.default_bg;
 }
 
-/// Get the detected color level.
 [[nodiscard]] inline auto stdout_color_level() noexcept -> ColorLevel
 {
     return g_terminal_palette.color_level;
 }
 
-/// Check if terminal is using a dark theme.
 [[nodiscard]] inline auto is_dark_theme() noexcept -> bool
 {
     return g_terminal_palette.is_dark_theme;
 }
 
-/// Convert RGB color to ftxui::Color based on terminal capabilities.
 [[nodiscard]] inline auto to_ftxui_color(RgbColor rgb) -> ftxui::Color
 {
-    const auto level = stdout_color_level();
-
-    switch (level)
+    switch (stdout_color_level())
     {
         case ColorLevel::TrueColor:
-            // ftxui uses Color::RGB(r, g, b) for true color
             return ftxui::Color{rgb.r, rgb.g, rgb.b};
-
         case ColorLevel::Ansi256:
-        {
-            const auto index = best_256_color(rgb);
-            // ftxui uses Palette256 enum for 256 colors
-            return ftxui::Color{static_cast<ftxui::Color::Palette256>(index)};
-        }
-
+            return ftxui::Color{static_cast<ftxui::Color::Palette256>(best_256_color(rgb))};
         case ColorLevel::Ansi16:
         case ColorLevel::Unknown:
         default:
-            // Fall back to basic ANSI colors using Palette16 enum
-            if (is_light(rgb))
-            {
-                return ftxui::Color{ftxui::Color::White};
-            }
-            return ftxui::Color{ftxui::Color::GrayDark};
+            return is_light(rgb) ? ftxui::Color{ftxui::Color::White} : ftxui::Color{ftxui::Color::GrayDark};
     }
 }
 
-/// Get the best ftxui::Color for an RGB value, considering terminal capabilities.
 [[nodiscard]] inline auto best_color(RgbColor rgb) -> ftxui::Color
 {
     return to_ftxui_color(rgb);
 }
 
-// ============================================================================
-// Theme Colors - Codex-cli Style
-// ============================================================================
-
-/// Theme colors that adapt to terminal background.
 struct TuiTheme
 {
-    // Primary colors (adapt to terminal background)
+    [[nodiscard]] static constexpr auto codex_background_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{30, 30, 30};
+    }
+
+    [[nodiscard]] static constexpr auto codex_foreground_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{212, 212, 212};
+    }
+
+    [[nodiscard]] static constexpr auto codex_strong_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{245, 245, 245};
+    }
+
+    [[nodiscard]] static constexpr auto codex_dim_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{111, 111, 111};
+    }
+
+    [[nodiscard]] static constexpr auto codex_muted_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{138, 138, 138};
+    }
+
+    [[nodiscard]] static constexpr auto codex_separator_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{106, 106, 106};
+    }
+
+    [[nodiscard]] static constexpr auto codex_accent_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{0, 200, 232};
+    }
+
+    [[nodiscard]] static constexpr auto codex_success_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{25, 195, 125};
+    }
+
+    [[nodiscard]] static constexpr auto codex_warning_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{255, 214, 102};
+    }
+
+    [[nodiscard]] static constexpr auto codex_error_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{255, 92, 92};
+    }
+
+    [[nodiscard]] static constexpr auto codex_command_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{138, 174, 255};
+    }
+
+    [[nodiscard]] static constexpr auto codex_argument_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{245, 158, 190};
+    }
+
+    [[nodiscard]] static constexpr auto codex_path_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{205, 170, 255};
+    }
+
+    [[nodiscard]] static constexpr auto codex_output_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{126, 126, 126};
+    }
+
+    [[nodiscard]] static auto background() -> ftxui::Color
+    {
+        if (stdout_color_level() == ColorLevel::Ansi16 || stdout_color_level() == ColorLevel::Unknown)
+        {
+            return ftxui::Color::Black;
+        }
+        return to_ftxui_color(codex_background_rgb());
+    }
+
+    [[nodiscard]] static auto foreground() -> ftxui::Color
+    {
+        return to_ftxui_color(codex_foreground_rgb());
+    }
+
     [[nodiscard]] static auto primary() -> ftxui::Color
     {
-        if (const auto bg = default_bg())
-        {
-            return to_ftxui_color(accent_color_for_bg(*bg));
-        }
-        return ftxui::Color::Cyan;
+        return to_ftxui_color(codex_accent_rgb());
     }
 
     [[nodiscard]] static auto accent() -> ftxui::Color
@@ -119,46 +172,44 @@ struct TuiTheme
         return primary();
     }
 
-    // Text colors
     [[nodiscard]] static auto text_strong() -> ftxui::Color
     {
-        return ftxui::Color::White;
+        return to_ftxui_color(codex_strong_rgb());
+    }
+
+    [[nodiscard]] static auto text_default() -> ftxui::Color
+    {
+        return foreground();
     }
 
     [[nodiscard]] static auto text_dim() -> ftxui::Color
     {
-        return ftxui::Color::GrayDark;
+        return to_ftxui_color(codex_dim_rgb());
     }
 
     [[nodiscard]] static auto text_muted() -> ftxui::Color
     {
-        return ftxui::Color::GrayLight;
+        return to_ftxui_color(codex_muted_rgb());
     }
 
-    // Semantic colors
     [[nodiscard]] static auto success() -> ftxui::Color
     {
-        return ftxui::Color::Green;
+        return to_ftxui_color(codex_success_rgb());
     }
 
     [[nodiscard]] static auto warning() -> ftxui::Color
     {
-        return ftxui::Color::Yellow;
+        return to_ftxui_color(codex_warning_rgb());
     }
 
     [[nodiscard]] static auto error() -> ftxui::Color
     {
-        return ftxui::Color::Red;
+        return to_ftxui_color(codex_error_rgb());
     }
 
-    // Background colors for content blocks
     [[nodiscard]] static auto user_message_bg() -> ftxui::Color
     {
-        if (const auto bg = default_bg())
-        {
-            return to_ftxui_color(codeharness::tui::user_message_bg(*bg));
-        }
-        return ftxui::Color::Default;  // Use terminal default
+        return to_ftxui_color(codeharness::tui::user_message_bg(codex_background_rgb()));
     }
 
     [[nodiscard]] static auto proposed_plan_bg() -> ftxui::Color
@@ -166,22 +217,11 @@ struct TuiTheme
         return user_message_bg();
     }
 
-    // Table separator (low contrast, decorative)
     [[nodiscard]] static auto table_separator() -> ftxui::Color
     {
-        if (const auto fg = default_fg())
-        {
-            if (const auto bg = default_bg())
-            {
-                // Blend 20% of foreground with background for subtle separators
-                const auto separator_rgb = blend(*fg, *bg, 0.20F);
-                return to_ftxui_color(separator_rgb);
-            }
-        }
-        return ftxui::Color::GrayDark;
+        return to_ftxui_color(codex_separator_rgb());
     }
 
-    // Status indicator colors
     [[nodiscard]] static auto status_working() -> ftxui::Color
     {
         return primary();
@@ -197,80 +237,122 @@ struct TuiTheme
         return error();
     }
 
-    // Tool-specific colors
     [[nodiscard]] static auto tool_running() -> ftxui::Color
     {
-        return ftxui::Color::Yellow;
+        return primary();
     }
 
     [[nodiscard]] static auto tool_completed() -> ftxui::Color
     {
-        return ftxui::Color::Green;
+        return codex_bullet();
     }
 
     [[nodiscard]] static auto tool_failed() -> ftxui::Color
     {
-        return ftxui::Color::Red;
+        return error();
     }
 
-    // Border colors
+    [[nodiscard]] static auto codex_bullet() -> ftxui::Color
+    {
+        return to_ftxui_color(blend(codex_foreground_rgb(), codex_background_rgb(), 0.45F));
+    }
+
+    [[nodiscard]] static auto codex_user_prefix() -> ftxui::Color
+    {
+        return to_ftxui_color(blend(codex_foreground_rgb(), codex_background_rgb(), 0.60F));
+    }
+
+    [[nodiscard]] static auto codex_output_dim() -> ftxui::Color
+    {
+        return to_ftxui_color(codex_output_rgb());
+    }
+
     [[nodiscard]] static auto border_default() -> ftxui::Color
     {
-        return ftxui::Color::GrayDark;
+        return to_ftxui_color(blend(codex_foreground_rgb(), codex_background_rgb(), 0.22F));
     }
 
     [[nodiscard]] static auto border_focused() -> ftxui::Color
     {
         return primary();
     }
+
+    [[nodiscard]] static auto command_name() -> ftxui::Color
+    {
+        return to_ftxui_color(codex_command_rgb());
+    }
+
+    [[nodiscard]] static auto command_argument() -> ftxui::Color
+    {
+        return to_ftxui_color(codex_argument_rgb());
+    }
+
+    [[nodiscard]] static auto command_path() -> ftxui::Color
+    {
+        return to_ftxui_color(codex_path_rgb());
+    }
+
+    [[nodiscard]] static auto command_separator() -> ftxui::Color
+    {
+        return text_dim();
+    }
+
+    [[nodiscard]] static auto shimmer_base_rgb() noexcept -> RgbColor
+    {
+        return codex_dim_rgb();
+    }
+
+    [[nodiscard]] static auto shimmer_highlight_rgb() noexcept -> RgbColor
+    {
+        return RgbColor{245, 245, 245};
+    }
+
+    [[nodiscard]] static auto shimmer_base() -> ftxui::Color
+    {
+        return to_ftxui_color(shimmer_base_rgb());
+    }
+
+    [[nodiscard]] static auto shimmer_highlight() -> ftxui::Color
+    {
+        return to_ftxui_color(RgbColor{245, 245, 245});
+    }
 };
 
-// ============================================================================
-// Unicode Symbols for UI
-// ============================================================================
-
-/// Select pointer symbol (❯)
 inline constexpr std::string_view k_select_pointer = "\xe2\x9d\xaf ";
-
-/// Current marker (← current)
 inline constexpr std::string_view k_current_mark = " \xe2\x86\x90 current";
+inline constexpr std::string_view k_codex_prompt_prefix = "\xe2\x80\xba ";
+inline constexpr std::string_view k_codex_bullet = "\xe2\x80\xa2 ";
 
-/// Box drawing characters
-inline constexpr std::string_view k_box_horizontal = "\xe2\x94\x80";  // ─
-inline constexpr std::string_view k_box_vertical = "\xe2\x94\x82";   // │
-inline constexpr std::string_view k_box_corner_tl = "\xe2\x94\x8c";  // ┌
-inline constexpr std::string_view k_box_corner_tr = "\xe2\x94\x90";  // ┐
-inline constexpr std::string_view k_box_corner_bl = "\xe2\x94\x94";  // └
-inline constexpr std::string_view k_box_corner_br = "\xe2\x94\x98";  // ┘
-inline constexpr std::string_view k_box_tee_right = "\xe2\x94\x9c";  // ├
-inline constexpr std::string_view k_box_tee_left = "\xe2\x94\xa4";   // ┤
+inline constexpr std::string_view k_box_horizontal = "\xe2\x94\x80";
+inline constexpr std::string_view k_box_vertical = "\xe2\x94\x82";
+inline constexpr std::string_view k_box_corner_tl = "\xe2\x94\x8c";
+inline constexpr std::string_view k_box_corner_tr = "\xe2\x94\x90";
+inline constexpr std::string_view k_box_corner_bl = "\xe2\x94\x94";
+inline constexpr std::string_view k_box_corner_br = "\xe2\x94\x98";
+inline constexpr std::string_view k_box_tee_right = "\xe2\x94\x9c";
+inline constexpr std::string_view k_box_tee_left = "\xe2\x94\xa4";
+inline constexpr std::string_view k_tree_branch = "\xe2\x94\x82 ";
+inline constexpr std::string_view k_tree_last = "\xe2\x94\x94 ";
 
-/// Tree drawing characters
-inline constexpr std::string_view k_tree_branch = "\xe2\x94\x9c ";   // ├
-inline constexpr std::string_view k_tree_last = "\xe2\x94\x94 ";     // └
-
-/// Spinner frames (Braille patterns for smooth animation)
 inline constexpr std::string_view k_spinner_frames[] = {
-    "\xe2\xa0\x8b",  // ⠋
-    "\xe2\xa0\x99",  // ⠙
-    "\xe2\xa0\xb9",  // ⠹
-    "\xe2\xa0\xb8",  // ⠸
-    "\xe2\xa0\xbc",  // ⠼
-    "\xe2\xa0\xb4",  // ⠴
-    "\xe2\xa0\xa6",  // ⠦
-    "\xe2\xa0\xa7",  // ⠧
-    "\xe2\xa0\x87",  // ⠇
-    "\xe2\xa0\x8f",  // ⠏
+    "\xe2\xa0\x8b",
+    "\xe2\xa0\x99",
+    "\xe2\xa0\xb9",
+    "\xe2\xa0\xb8",
+    "\xe2\xa0\xbc",
+    "\xe2\xa0\xb4",
+    "\xe2\xa0\xa6",
+    "\xe2\xa0\xa7",
+    "\xe2\xa0\x87",
+    "\xe2\xa0\x8f",
 };
 
-/// Get spinner frame by index (cycling).
 [[nodiscard]] inline auto spinner_frame(std::size_t index) noexcept -> std::string_view
 {
     constexpr auto frame_count = sizeof(k_spinner_frames) / sizeof(k_spinner_frames[0]);
     return k_spinner_frames[index % frame_count];
 }
 
-/// Get spinner frame count.
 [[nodiscard]] constexpr auto spinner_frame_count() noexcept -> std::size_t
 {
     return sizeof(k_spinner_frames) / sizeof(k_spinner_frames[0]);
