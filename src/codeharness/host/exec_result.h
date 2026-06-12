@@ -1,13 +1,13 @@
 #pragma once
 
-#include <cstdint>
+#include <filesystem>
 #include <string>
 
-namespace codeharness::platform {
+namespace codeharness::host {
 
 struct ExecOptions {
   int timeout_seconds = 600;
-  std::string working_directory;  // empty = use platform instance cwd
+  std::filesystem::path working_directory;
 };
 
 struct ExecResult {
@@ -18,8 +18,14 @@ struct ExecResult {
 };
 
 struct MkdirOptions {
-  bool parents = true;
+  bool recursive = true;
   bool exist_ok = true;
 };
 
-}  // namespace codeharness::platform
+struct GlobOptions {
+  bool include_directories = true;
+  int max_depth = -1;
+  std::size_t max_results = 200;
+};
+
+}  // namespace codeharness::host

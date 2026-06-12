@@ -36,13 +36,13 @@ auto parse_web_fetch_input(const nlohmann::json& input) -> absl::StatusOr<WebFet
   WebFetchInput parsed;
 
   if (auto r = Assign(parsed.url, ReadJsonField<std::string>(input, "url", "web_fetch")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.max_chars, ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(
                                             input, "max_chars", "web_fetch", kDefaultMaxChars));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (parsed.max_chars < kMinChars || parsed.max_chars > kMaxChars) {

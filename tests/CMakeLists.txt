@@ -3,6 +3,13 @@ find_package(doctest CONFIG REQUIRED)
 add_executable(fake_mcp_server fake_mcp_server.cpp)
 target_link_libraries(fake_mcp_server PRIVATE codeharness_foundation)
 
+add_executable(codeharness_host_tests
+    main.cpp
+    host_tests.cpp
+)
+target_link_libraries(codeharness_host_tests PRIVATE codeharness_host doctest::doctest)
+add_test(NAME codeharness_host_tests COMMAND $<TARGET_FILE:codeharness_host_tests>)
+
 add_executable(codeharness_tests
     main.cpp
     command_tests.cpp
@@ -16,7 +23,7 @@ add_executable(codeharness_tests
     mcp_tests.cpp
     memory_tests.cpp
     permission_tests.cpp
-    platform_tests.cpp
+    host_tests.cpp
     plugin_tests.cpp
     prompt_tests.cpp
     provider_tests.cpp
@@ -31,7 +38,7 @@ add_executable(codeharness_tests
     ui_backend_tests.cpp
     version_tests.cpp
 )
-target_link_libraries(codeharness_tests PRIVATE codeharness_core codeharness_network_objects codeharness_platform doctest::doctest)
+target_link_libraries(codeharness_tests PRIVATE codeharness_core codeharness_network_objects codeharness_host doctest::doctest)
 target_compile_definitions(codeharness_tests PRIVATE "CODEHARNESS_FAKE_MCP_SERVER=\"$<TARGET_FILE:fake_mcp_server>\"")
 target_compile_definitions(codeharness_tests PRIVATE "CODEHARNESS_CMAKE_COMMAND=\"${CMAKE_COMMAND}\"")
 target_compile_definitions(codeharness_tests PRIVATE "CODEHARNESS_EXE=\"$<TARGET_FILE:codeharness>\"")

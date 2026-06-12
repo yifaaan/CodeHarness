@@ -1,5 +1,5 @@
 add_subdirectory(core)
-add_subdirectory(platform)
+add_subdirectory(host)
 add_subdirectory(network)
 add_subdirectory(provider)
 add_subdirectory(permissions)
@@ -69,7 +69,7 @@ target_link_libraries(codeharness_core
         codeharness_memory
         codeharness_mcp
         codeharness_permissions
-        codeharness_platform
+        codeharness_host
         codeharness_prompts
         codeharness_provider
         codeharness_runtime

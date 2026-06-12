@@ -43,13 +43,13 @@ auto parse_bash_input(const nlohmann::json& input) -> absl::StatusOr<BashInput> 
   BashInput parsed;
 
   if (auto r = Assign(parsed.command, ReadJsonField<std::string>(input, "command", "bash")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.timeout_seconds,
                       ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(input, "timeout_seconds", "bash", 600));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (parsed.timeout_seconds < 1) {

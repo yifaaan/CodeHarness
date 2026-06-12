@@ -29,21 +29,21 @@ auto parse_edit_file_input(const nlohmann::json& input) -> absl::StatusOr<EditFi
   EditFileInput parsed;
 
   if (auto r = Assign(parsed.path, ReadJsonField<std::string>(input, "path", "edit_file")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.old_string, ReadJsonField<std::string>(input, "old_string", "edit_file")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.new_string, ReadJsonField<std::string>(input, "new_string", "edit_file")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.replace_all, ReadJsonField<bool, JsonFieldMode::kOptionalWithDefault>(input, "replace_all",
                                                                                                    "edit_file", false));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (parsed.old_string.empty()) {
@@ -131,7 +131,7 @@ auto EditFileTool::execute(const ToolRequest& request, const ToolContext& contex
 
   auto write_result = atomic_write_text_file(*resolved, edited);
   if (!write_result.ok()) {
-    return write_result.status();
+    return write_result;
   }
 
   auto unit = match_count == 1 ? "replacement" : "replacements";

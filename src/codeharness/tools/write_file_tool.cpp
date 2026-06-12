@@ -30,17 +30,17 @@ auto parse_write_file_input(const nlohmann::json& input) -> absl::StatusOr<Write
   WriteFileInput parsed;
 
   if (auto r = Assign(parsed.path, ReadJsonField<std::string>(input, "path", "write_file")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.content, ReadJsonField<std::string>(input, "content", "write_file")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.create_directories, ReadJsonField<bool, JsonFieldMode::kOptionalWithDefault>(
                                                      input, "create_directories", "write_file", true));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   return parsed;
@@ -103,7 +103,7 @@ auto WriteFileTool::execute(const ToolRequest& request, const ToolContext& conte
   // 原子写入
   auto write_result = atomic_write_text_file(*resolved, parsed->content);
   if (!write_result.ok()) {
-    return write_result.status();
+    return write_result;
   }
 
   auto size_str = format_size(parsed->content.size());

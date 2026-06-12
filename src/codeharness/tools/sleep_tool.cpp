@@ -24,7 +24,7 @@ auto parse_sleep_input(const nlohmann::json& input) -> absl::StatusOr<SleepInput
   if (auto r =
           Assign(parsed.seconds, ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(input, "seconds", "sleep", 1));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (parsed.seconds < 0) {

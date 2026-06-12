@@ -24,19 +24,19 @@ auto parse_read_file_input(const nlohmann::json& input) -> absl::StatusOr<ReadFi
   ReadFileInput parsed;
 
   if (auto r = Assign(parsed.path, ReadJsonField<std::string>(input, "path", "read_file")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.offset,
                       ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(input, "offset", "read_file", 0));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.limit,
                       ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(input, "limit", "read_file", 200));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (parsed.offset < 0 || parsed.limit <= 0) {

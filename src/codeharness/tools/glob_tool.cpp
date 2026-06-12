@@ -24,11 +24,11 @@ auto parse_glob_input(const nlohmann::json& input) -> absl::StatusOr<GlobInput> 
   GlobInput parsed;
 
   if (auto r = Assign(parsed.pattern, ReadJsonField<std::string>(input, "pattern", "glob")); !r.ok()) {
-    return r.status();
+    return r;
   }
   if (auto r = Assign(parsed.path, ReadJsonField<std::string, JsonFieldMode::kOptionalIfValid>(input, "path"));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   return parsed;

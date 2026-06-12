@@ -130,9 +130,9 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
     }
 
     auto event_text = ReadJsonField<std::string>(json, "event", context);
-    if (!event_text)
+    if (!event_text.ok())
     {
-        return event_text.error();
+        return event_text.status();
     }
 
     auto event = hook_event_from_string(*event_text);
@@ -146,9 +146,9 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
         "type",
         context,
         std::string{"command"});
-    if (!type_text)
+    if (!type_text.ok())
     {
-        return type_text.error();
+        return type_text.status();
     }
 
     auto type = hook_type_from_string(*type_text);
@@ -165,36 +165,36 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
     hook.event = *event;
     hook.type = *type;
 
-    if (auto priority = read_optional_int(json, "priority", context); !priority)
+    if (auto priority = read_optional_int(json, "priority", context); !priority.ok())
     {
-        return priority.error();
+        return priority.status();
     }
     else if (*priority)
     {
         hook.priority = **priority;
     }
 
-    if (auto matcher = read_optional_string(json, "matcher", context); !matcher)
+    if (auto matcher = read_optional_string(json, "matcher", context); !matcher.ok())
     {
-        return matcher.error();
+        return matcher.status();
     }
     else
     {
         hook.matcher = std::move(*matcher);
     }
 
-    if (auto block = read_optional_bool(json, "block_on_failure", context); !block)
+    if (auto block = read_optional_bool(json, "block_on_failure", context); !block.ok())
     {
-        return block.error();
+        return block.status();
     }
     else if (*block)
     {
         hook.block_on_failure = **block;
     }
 
-    if (auto timeout = read_optional_int(json, "timeout_seconds", context); !timeout)
+    if (auto timeout = read_optional_int(json, "timeout_seconds", context); !timeout.ok())
     {
-        return timeout.error();
+        return timeout.status();
     }
     else if (*timeout)
     {
@@ -210,9 +210,9 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
     {
         return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " requires object field: config"));
     }
-    if (auto validated = validate_command_config(*config, context); !validated)
+    if (auto validated = validate_command_config(*config, context); !validated.ok())
     {
-        return validated.error();
+        return validated;
     }
     hook.config = *config;
 

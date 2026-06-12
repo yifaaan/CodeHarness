@@ -28,19 +28,19 @@ auto parse_todo_write_input(const nlohmann::json& input) -> absl::StatusOr<TodoW
   TodoWriteInput parsed;
 
   if (auto r = Assign(parsed.item, ReadJsonField<std::string>(input, "item", "todo_write")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.checked,
                       ReadJsonField<bool, JsonFieldMode::kOptionalWithDefault>(input, "checked", "todo_write", false));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.path, ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(
                                        input, "path", "todo_write", "TODO.md"));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   return parsed;
@@ -92,7 +92,7 @@ auto TodoWriteTool::execute(const ToolRequest& request, const ToolContext& conte
   auto existing = read_file_or_default(*resolved);
 
   // 先 trim item
-  std::string trimmed_item_str(trim(parsed->item));
+  std::string trimmed_item_str(Trim(parsed->item));
 
   auto unchecked_line = fmt::format("- [ ] {}", trimmed_item_str);
   auto checked_line = fmt::format("- [x] {}", trimmed_item_str);
@@ -131,7 +131,7 @@ auto TodoWriteTool::execute(const ToolRequest& request, const ToolContext& conte
   if (changed) {
     auto write_result = atomic_write_text_file(*resolved, updated);
     if (!write_result.ok()) {
-      return write_result.status();
+      return write_result;
     }
   }
 

@@ -37,13 +37,13 @@ auto parse_grep_input(const nlohmann::json& input) -> absl::StatusOr<GrepInput> 
   GrepInput parsed;
 
   if (auto r = Assign(parsed.pattern, ReadJsonField<std::string>(input, "pattern", "grep")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.max_results,
                       ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(input, "max_results", "grep", 200));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   auto path = ReadJsonField<std::string, JsonFieldMode::kOptionalIfValid>(input, "path");

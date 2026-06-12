@@ -135,7 +135,7 @@ auto lower_copy(std::string value) -> std::string
 auto parse_http_url(std::string_view raw) -> absl::StatusOr<ParsedUrl>
 {
     auto parsed = boost::urls::parse_uri(raw);
-    if(!parsed.ok())
+    if(!parsed)
     {
         return absl::StatusOr<ParsedUrl>(absl::InvalidArgumentError("invalid URL: " + std::string{raw}));
     }

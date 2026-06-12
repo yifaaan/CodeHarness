@@ -34,13 +34,13 @@ auto parse_web_search_input(const nlohmann::json& input) -> absl::StatusOr<WebSe
   WebSearchInput parsed;
 
   if (auto r = Assign(parsed.query, ReadJsonField<std::string>(input, "query", "web_search")); !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (auto r = Assign(parsed.max_results, ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(
                                               input, "max_results", "web_search", kDefaultMaxResults));
       !r.ok()) {
-    return r.status();
+    return r;
   }
 
   if (parsed.max_results < kMinResults || parsed.max_results > kMaxResults) {
