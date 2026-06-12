@@ -1,49 +1,46 @@
 #include "codeharness/provider/provider.h"
 
-#include <string_view>
-#include <utility>
-
-#include "codeharness/core/error.h"
-
 namespace codeharness {
 
-namespace {
-
-auto json_int_value(const nlohmann::json& input, std::string_view key) -> int {
-  const auto found = input.find(std::string{key});
-  if (found == input.end() || !found->is_number_integer()) {
-    return 0;
-  }
-  return found->get<int>();
+FinishReason FinishReasonFromString(std::string_view value) {
+  if (value == "completed" || value == "stop") return FinishReason::kCompleted;
+  if (value == "tool_calls" || value == "tool_use") return FinishReason::kToolCalls;
+  if (value == "truncated" || value == "length") return FinishReason::kTruncated;
+  if (value == "filtered" || value == "content_filter") return FinishReason::kFiltered;
+  if (value == "paused") return FinishReason::kPaused;
+  return FinishReason::kUnknown;
 }
 
-}  // namespace
+std::string_view FinishReasonToString(FinishReason reason) {
+  switch (reason) {
+    case FinishReason::kCompleted:
+      return "completed";
+    case FinishReason::kToolCalls:
+      return "tool_calls";
+    case FinishReason::kTruncated:
+      return "truncated";
+    case FinishReason::kFiltered:
+      return "filtered";
+    case FinishReason::kPaused:
+      return "paused";
+    case FinishReason::kUnknown:
+      return "unknown";
+  }
+  return "unknown";
+}
 
-auto to_json(nlohmann::json& output, const ProviderUsage& usage) -> void {
+void to_json(nlohmann::json& output, const ProviderUsage& usage) {
   output = nlohmann::json{
       {"input_tokens", usage.input_tokens},
       {"output_tokens", usage.output_tokens},
-      {"total_tokens", usage.normalized_total()},
+      {"total_tokens", usage.total_tokens > 0 ? usage.total_tokens : usage.input_tokens + usage.output_tokens},
   };
 }
 
-auto from_json(const nlohmann::json& input, ProviderUsage& usage) -> void {
-  auto input_tokens = json_int_value(input, "input_tokens");
-  if (input_tokens == 0) {
-    input_tokens = json_int_value(input, "prompt_tokens");
-  }
-
-  auto output_tokens = json_int_value(input, "output_tokens");
-  if (output_tokens == 0) {
-    output_tokens = json_int_value(input, "completion_tokens");
-  }
-
-  usage = ProviderUsage{
-      .input_tokens = input_tokens,
-      .output_tokens = output_tokens,
-      .total_tokens = json_int_value(input, "total_tokens"),
-  };
-  usage.total_tokens = usage.normalized_total();
+void from_json(const nlohmann::json& input, ProviderUsage& usage) {
+  usage.input_tokens = input.value("input_tokens", 0);
+  usage.output_tokens = input.value("output_tokens", 0);
+  usage.total_tokens = input.value("total_tokens", 0);
 }
 
 }  // namespace codeharness

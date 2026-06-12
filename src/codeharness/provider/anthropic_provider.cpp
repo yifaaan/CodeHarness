@@ -23,22 +23,22 @@ AnthropicProvider::AnthropicProvider(ProviderConfig config,
                                      std::vector<std::pair<std::string, std::string>> tool_descriptions)
     : config_{std::move(config)}, tool_descriptions_{std::move(tool_descriptions)} {}
 
-auto AnthropicProvider::stream(std::span<const Message> messages, const ProviderEventSink& sink) -> absl::Status {
+std::string_view AnthropicProvider::ModelName() const {
+  return config_.model.empty() ? kDefaultAnthropicModel : config_.model;
+}
+
+absl::Status AnthropicProvider::Stream(std::span<const Message> messages, const ProviderEventSink& sink) {
   const auto url = provider_endpoint_url(config_.base_url, "messages", kDefaultAnthropicMessagesUrl);
 
   nlohmann::json body;
-  body["model"] = config_.model.empty() ? std::string{kDefaultAnthropicModel} : config_.model;
-  body["messages"] = serialize_anthropic_messages(messages);
-  body["stream"] = true;
+  body["model"] = ModelName();
+  body["system"] = SerializeAnthropicSystem(messages);
+  body["messages"] = SerializeAnthropicMessages(messages);
   body["max_tokens"] = 4096;
-
-  auto system = serialize_anthropic_system(messages);
-  if (!system.empty()) {
-    body["system"] = std::move(system);
-  }
+  body["stream"] = true;
 
   if (!tool_descriptions_.empty()) {
-    body["tools"] = serialize_anthropic_tools(tool_descriptions_);
+    body["tools"] = SerializeAnthropicTools(tool_descriptions_);
   }
 
   std::map<std::string, std::string> headers;
@@ -55,17 +55,14 @@ auto AnthropicProvider::stream(std::span<const Message> messages, const Provider
   bool stream_done = false;
 
   auto response = provider_http_post_with_retry("Anthropic", [&]() -> absl::StatusOr<network::HttpResponse> {
-    // Reset stream-parser state so a fresh attempt starts clean.
     stream_parser = AnthropicStreamParser{};
     stream_error.clear();
     stream_done = false;
 
     return http_.post(url, headers, body_str, [&](std::string_view chunk) {
-      if (stream_done) {
-        return false;
-      }
+      if (stream_done) return false;
 
-      auto parsed = stream_parser.feed(chunk);
+      auto parsed = stream_parser.Feed(chunk);
       if (!parsed.error.empty() && stream_error.empty()) {
         stream_error = std::move(parsed.error);
       }

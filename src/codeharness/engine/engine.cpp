@@ -40,6 +40,7 @@ auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<Engi
                         [](const ToolUseFinished& finished) -> std::optional<EngineEvent> {
                           return EngineToolFinished{.id = finished.id};
                         },
+                        [](const ThinkingDelta&) -> std::optional<EngineEvent> { return std::nullopt; },
                         [](const MessageFinished&) -> std::optional<EngineEvent> { return std::nullopt; },
                         [](const ProviderUsage&) -> std::optional<EngineEvent> { return std::nullopt; },
                     },
@@ -49,7 +50,7 @@ auto translate_to_engine_event(const ProviderEvent& event) -> std::optional<Engi
 auto add_usage(ProviderUsage& total, const ProviderUsage& turn) -> void {
   total.input_tokens += turn.input_tokens;
   total.output_tokens += turn.output_tokens;
-  total.total_tokens += turn.normalized_total();
+  total.total_tokens += turn.NormalizedTotal();
 }
 
 // 构造一个标记为 is_error 的工具结果。execute_tool_use 里
@@ -119,9 +120,9 @@ auto is_cancelled(const CancellationToken& cancellation, const EngineEventSink& 
 
 }  // namespace
 
-Engine::Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker* permissions, const HookExecutor* hooks,
-               PermissionPromptHandler permission_prompt, UserQuestionHandler user_question)
-    : provider_(&provider),
+Engine::Engine(ChatProvider& provider, ToolRegistry& tools, const PermissionChecker* permissions,
+               const HookExecutor* hooks, PermissionPromptHandler permission_prompt, UserQuestionHandler user_question)
+    : chat_provider_(&provider),
       tools_(tools),
       permissions_(permissions),
       hooks_(hooks),
@@ -201,7 +202,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
   collector.Message().role = Role::kAssistant;
   bool interrupted = false;
 
-  auto streamed = provider_->stream(messages, [&](const ProviderEvent& event) {
+  auto streamed = chat_provider_->Stream(messages, [&](const ProviderEvent& event) {
     if (cancellation.is_cancelled()) {
       interrupted = true;
       return;
@@ -210,7 +211,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
     collector.OnEvent(event);
     if (const auto* updated_usage = std::get_if<ProviderUsage>(&event)) {
       usage = *updated_usage;
-      usage.total_tokens = usage.normalized_total();
+      usage.total_tokens = usage.NormalizedTotal();
     }
     if (auto engine_event = translate_to_engine_event(event)) {
       emit_engine_event(sink, *engine_event);
@@ -222,7 +223,7 @@ auto Engine::stream_provider_turn(std::span<const Message> messages, const Engin
   });
 
   if (!streamed.ok()) {
-    return streamed.status();
+    return streamed;
   }
   if (interrupted || cancellation.is_cancelled()) {
     emit_engine_event(sink, EngineEvent{EngineError{.message = "interrupted"}});
@@ -242,7 +243,8 @@ auto Engine::execute_tool_use(const ToolUseBlock& tool_use, const PermissionProm
     };
 
     // 预解析 input_json：permission_target 与 execute 共用 parsed_input，避免重复 parse。
-    if (auto parsed = parse_tool_request_input(request, tool_use.name); !parsed) {
+    auto parsed = parse_tool_request_input(request, tool_use.name);
+    if (!parsed.ok()) {
       return make_error_tool_result(tool_use.id, std::string{parsed.status().message()});
     }
 

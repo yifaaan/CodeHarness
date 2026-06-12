@@ -17,6 +17,7 @@ namespace codeharness {
 //
 // Rules:
 //   - AssistantTextDelta    -> append a TextBlock
+//   - ThinkingDelta         -> append a ThinkingBlock
 //   - ToolUseStarted        -> append an empty ToolUseBlock
 //   - ToolUseInputDelta     -> append delta to registered ToolUseBlock input_json
 //   - ToolUseFinished       -> validate id was registered
@@ -29,6 +30,7 @@ class ProviderEventCollector {
   void OnEvent(const ProviderEvent& event) {
     std::visit(
         Overloaded{[this](const AssistantTextDelta& delta) { message_.content.emplace_back(TextBlock{delta.text}); },
+                   [this](const ThinkingDelta& delta) { message_.content.emplace_back(ThinkingBlock{delta.text}); },
                    [this](const ToolUseStarted& started) {
                      if (tool_block_by_id_.contains(started.id)) {
                        SetError(absl::InvalidArgumentError("duplicate tool use id: " + started.id));
@@ -60,7 +62,7 @@ class ProviderEventCollector {
         event);
   }
 
-  bool HasError() const noexcept { return event_error_.ok(); }
+  bool HasError() const noexcept { return event_error_.has_value(); }
 
   absl::StatusOr<Message> Finalize() const {
     if (event_error_) {

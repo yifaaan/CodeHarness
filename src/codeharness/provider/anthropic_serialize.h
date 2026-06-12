@@ -1,19 +1,18 @@
 #pragma once
 
-#include "codeharness/core/message.h"
-
 #include <nlohmann/json.hpp>
-
 #include <span>
 #include <string>
 #include <vector>
 
-namespace codeharness
-{
+#include "codeharness/core/message.h"
 
-auto serialize_anthropic_system(std::span<const Message> messages) -> std::string;
-auto serialize_anthropic_messages(std::span<const Message> messages) -> nlohmann::json;
-auto serialize_anthropic_tools(const std::vector<std::pair<std::string, std::string>>& tool_descriptions)
-    -> nlohmann::json;
+namespace codeharness {
 
-} // namespace codeharness
+std::string SerializeAnthropicSystem(std::span<const Message> messages);
+
+nlohmann::json SerializeAnthropicMessages(std::span<const Message> messages);
+
+nlohmann::json SerializeAnthropicTools(const std::vector<std::pair<std::string, std::string>>& tool_descriptions);
+
+}  // namespace codeharness

@@ -14,7 +14,7 @@
 #include "codeharness/core/message.h"
 #include "codeharness/hooks/hook_executor.h"
 #include "codeharness/permissions/permission.h"
-#include "codeharness/provider/provider.h"
+#include "codeharness/provider/provider.h"  // ProviderEvent, ProviderEventSink, ProviderUsage, ChatProvider
 #include "codeharness/tools/tool_registry.h"
 
 namespace codeharness {
@@ -106,33 +106,31 @@ using EngineEventSink = std::function<void(const EngineEvent&)>;
 
 class Engine {
  public:
-  Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker* permissions = nullptr,
+  Engine(ChatProvider& provider, ToolRegistry& tools, const PermissionChecker* permissions = nullptr,
          const HookExecutor* hooks = nullptr, PermissionPromptHandler permission_prompt = {},
          UserQuestionHandler user_question = {});
 
-  auto run(const RunRequest& request) -> absl::StatusOr<RunResult>;
-  auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> absl::StatusOr<RunResult>;
+  absl::StatusOr<RunResult> run(const RunRequest& request);
+  absl::StatusOr<RunResult> run_streaming(const RunRequest& request, const EngineEventSink& sink);
 
   /// Replace the permission checker mid-session (e.g. on /plan toggle).
-  auto set_permission_checker(const PermissionChecker* checker) -> void { permissions_ = checker; }
+  void set_permission_checker(const PermissionChecker* checker) { permissions_ = checker; }
 
   /// Replace the provider mid-session (e.g. on /model profile switch).
-  auto set_provider(Provider& provider) noexcept -> void { provider_ = &provider; }
+  void set_chat_provider(ChatProvider& provider) noexcept { chat_provider_ = &provider; }
 
   /// Set the agent identity used to auto-populate ToolContext::sender_id
   /// before each tool execution.
-  auto set_sender_id(std::string id) -> void { sender_id_ = std::move(id); }
+  void set_sender_id(std::string id) { sender_id_ = std::move(id); }
 
  private:
-  auto execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt,
-                        const UserQuestionHandler& user_question) -> ToolResultBlock;
+  ToolResultBlock execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt,
+                                   const UserQuestionHandler& user_question);
 
-  // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
-  auto stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink,
-                            const CancellationToken& cancellation, ProviderUsage& usage) const
-      -> absl::StatusOr<Message>;
+  absl::StatusOr<Message> stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink,
+                                               const CancellationToken& cancellation, ProviderUsage& usage) const;
 
-  Provider* provider_ = nullptr;
+  ChatProvider* chat_provider_ = nullptr;
   ToolRegistry& tools_;
   const PermissionChecker* permissions_ = nullptr;
   const HookExecutor* hooks_ = nullptr;

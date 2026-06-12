@@ -4,9 +4,19 @@
 
 namespace codeharness {
 
-class EchoProvider final : public Provider {
+class EchoProvider final : public ChatProvider {
  public:
-  auto stream(std::span<const Message> messages, const ProviderEventSink& sink) -> absl::Status override;
+  std::string_view Name() const override { return "echo"; }
+  std::string_view ModelName() const override { return "echo"; }
+
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override;
+
+  ModelCapability Capability() const override {
+    return ModelCapability{
+        .tool_use = true,
+        .max_context_tokens = 4096,
+    };
+  }
 };
 
 }  // namespace codeharness

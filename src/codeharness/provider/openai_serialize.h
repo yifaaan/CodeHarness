@@ -1,18 +1,16 @@
 #pragma once
 
-#include "codeharness/core/message.h"
-
 #include <nlohmann/json.hpp>
-
 #include <span>
 #include <string>
 #include <vector>
 
-namespace codeharness
-{
+#include "codeharness/core/message.h"
 
-auto serialize_openai_input(std::span<const Message> messages) -> nlohmann::json;
+namespace codeharness {
 
-auto serialize_openai_tools(const std::vector<std::pair<std::string, std::string>>& tool_descriptions) -> nlohmann::json;
+nlohmann::json SerializeOpenAIInput(std::span<const Message> messages);
 
-} // namespace codeharness
+nlohmann::json SerializeOpenAITools(const std::vector<std::pair<std::string, std::string>>& tool_descriptions);
+
+}  // namespace codeharness

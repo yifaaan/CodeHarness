@@ -3,23 +3,19 @@
 #include <optional>
 
 #include "absl/status/status.h"
-#include "codeharness/core/error.h"
 
 namespace codeharness {
 
-auto EchoProvider::stream(std::span<const Message> messages, const ProviderEventSink& sink) -> absl::Status {
+absl::Status EchoProvider::Stream(std::span<const Message> messages, const ProviderEventSink& sink) {
   std::optional<std::string> latest_user_text;
 
   for (int index = messages.size() - 1; index >= 0; index--) {
     const auto& message = messages[index];
+    if (message.role != Role::kUser) continue;
 
-    if (message.role != Role::kUser) {
-      continue;
-    }
-
-    const auto text = CollectText(message);
+    auto text = CollectText(message);
     if (!text.empty()) {
-      latest_user_text = text;
+      latest_user_text = std::move(text);
       break;
     }
   }

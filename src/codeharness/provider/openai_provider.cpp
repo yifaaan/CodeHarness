@@ -22,17 +22,21 @@ OpenAIProvider::OpenAIProvider(ProviderConfig config,
                                std::vector<std::pair<std::string, std::string>> tool_descriptions)
     : config_{std::move(config)}, tool_descriptions_{std::move(tool_descriptions)} {}
 
-auto OpenAIProvider::stream(std::span<const Message> messages, const ProviderEventSink& sink) -> absl::Status {
-  const auto url = provider_endpoint_url(config_.base_url, "responses", kDefaultOpenAIResponsesUrl);
+std::string_view OpenAIProvider::ModelName() const {
+  return config_.model.empty() ? kDefaultOpenAIModel : config_.model;
+}
+
+absl::Status OpenAIProvider::Stream(std::span<const Message> messages, const ProviderEventSink& sink) {
+  auto url = provider_endpoint_url(config_.base_url, "responses", kDefaultOpenAIResponsesUrl);
 
   nlohmann::json body;
-  body["model"] = config_.model.empty() ? std::string{kDefaultOpenAIModel} : config_.model;
-  body["input"] = serialize_openai_input(messages);
+  body["model"] = ModelName();
+  body["input"] = SerializeOpenAIInput(messages);
   body["stream"] = true;
   body["max_output_tokens"] = 4096;
 
   if (!tool_descriptions_.empty()) {
-    body["tools"] = serialize_openai_tools(tool_descriptions_);
+    body["tools"] = SerializeOpenAITools(tool_descriptions_);
   }
 
   std::map<std::string, std::string> headers;
@@ -41,7 +45,6 @@ auto OpenAIProvider::stream(std::span<const Message> messages, const ProviderEve
   headers["Authorization"] = "Bearer " + config_.api_key;
 
   auto body_str = body.dump();
-
   spdlog::debug("OpenAI request: POST {} ({} bytes)", url, body_str.size());
 
   OpenAIStreamParser stream_parser;
@@ -49,22 +52,19 @@ auto OpenAIProvider::stream(std::span<const Message> messages, const ProviderEve
   bool stream_done = false;
 
   auto response = provider_http_post_with_retry("OpenAI", [&]() -> absl::StatusOr<network::HttpResponse> {
-    // Reset stream-parser state so a fresh attempt starts clean.
     stream_parser = OpenAIStreamParser{};
     stream_error.clear();
     stream_done = false;
 
     return http_.post(url, headers, body_str, [&](std::string_view chunk) {
-      if (stream_done) {
-        return false;
-      }
+      if (stream_done) return false;
 
-      auto parsed = stream_parser.feed(chunk);
+      auto parsed = stream_parser.Feed(chunk);
       if (!parsed.error.empty() && stream_error.empty()) {
-        stream_error = std::move(parsed.error);
+        stream_error = parsed.error;
       }
-      for (const auto& event : parsed.events) {
-        sink(event);
+      for (const auto& evt : parsed.events) {
+        sink(evt);
       }
 
       stream_done = parsed.done;

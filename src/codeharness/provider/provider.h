@@ -11,7 +11,42 @@
 
 namespace codeharness {
 
+// ---------------------------------------------------------------------------
+// FinishReason — unified provider stop reason
+// ---------------------------------------------------------------------------
+enum class FinishReason {
+  kCompleted,
+  kToolCalls,
+  kTruncated,
+  kFiltered,
+  kPaused,
+  kUnknown,
+};
+
+FinishReason FinishReasonFromString(std::string_view value);
+std::string_view FinishReasonToString(FinishReason reason);
+
+// ---------------------------------------------------------------------------
+// ModelCapability — describes what a model can do
+// ---------------------------------------------------------------------------
+struct ModelCapability {
+  bool image_in = false;
+  bool video_in = false;
+  bool audio_in = false;
+  bool thinking = false;
+  bool tool_use = true;
+  int max_context_tokens = 0;
+};
+
+// ---------------------------------------------------------------------------
+// Streaming event types (same wire format as before, extended)
+// ---------------------------------------------------------------------------
+
 struct AssistantTextDelta {
+  std::string text;
+};
+
+struct ThinkingDelta {
   std::string text;
 };
 
@@ -29,31 +64,44 @@ struct ToolUseFinished {
   std::string id;
 };
 
-struct MessageFinished {};
+struct MessageFinished {
+  FinishReason reason = FinishReason::kCompleted;
+};
 
 struct ProviderUsage {
   int input_tokens = 0;
   int output_tokens = 0;
   int total_tokens = 0;
 
-  [[nodiscard]] auto normalized_total() const noexcept -> int {
+  [[nodiscard]] auto NormalizedTotal() const noexcept -> int {
     return total_tokens > 0 ? total_tokens : input_tokens + output_tokens;
   }
 };
 
-auto to_json(nlohmann::json& output, const ProviderUsage& usage) -> void;
-auto from_json(const nlohmann::json& input, ProviderUsage& usage) -> void;
+void to_json(nlohmann::json& output, const ProviderUsage& usage);
+void from_json(const nlohmann::json& input, ProviderUsage& usage);
 
-using ProviderEvent = std::variant<AssistantTextDelta, ToolUseStarted, ToolUseInputDelta, ToolUseFinished,
-                                   MessageFinished, ProviderUsage>;
+using ProviderEvent = std::variant<AssistantTextDelta, ThinkingDelta, ToolUseStarted, ToolUseInputDelta,
+                                   ToolUseFinished, MessageFinished, ProviderUsage>;
 
 using ProviderEventSink = std::function<void(const ProviderEvent&)>;
 
-class Provider {
+// ---------------------------------------------------------------------------
+// ChatProvider — unified LLM provider interface
+// ---------------------------------------------------------------------------
+class ChatProvider {
  public:
-  virtual ~Provider() = default;
+  virtual ~ChatProvider() = default;
 
-  virtual auto stream(std::span<const Message> messages, const ProviderEventSink& sink) -> absl::Status = 0;
+  // Provider identity.
+  virtual std::string_view Name() const = 0;
+  virtual std::string_view ModelName() const = 0;
+
+  // Core streaming call — the provider emits events via the sink.
+  virtual absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) = 0;
+
+  // Capability query.
+  virtual ModelCapability Capability() const = 0;
 };
 
 }  // namespace codeharness

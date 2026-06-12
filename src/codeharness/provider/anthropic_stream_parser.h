@@ -1,47 +1,43 @@
 #pragma once
 
-#include "codeharness/network/sse_parser.h"
-#include "codeharness/provider/provider.h"
-
-#include <nlohmann/json.hpp>
-
 #include <map>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace codeharness
-{
+#include "codeharness/network/sse_parser.h"
+#include "codeharness/provider/provider.h"
 
-class AnthropicStreamParser
-{
-public:
-    struct ParsedEvent
-    {
-        std::vector<ProviderEvent> events;
-        bool done = false;
-        std::string error;
-    };
+namespace codeharness {
 
-    auto feed(std::string_view chunk) -> ParsedEvent;
+class AnthropicStreamParser {
+ public:
+  struct ParsedEvent {
+    std::vector<ProviderEvent> events;
+    bool done = false;
+    std::string error;
+  };
 
-private:
-    struct ToolAccum
-    {
-        std::string id;
-        std::string name;
-        bool started = false;
-        bool finished = false;
-    };
+  ParsedEvent Feed(std::string_view chunk);
 
-    network::SseParser sse_;
-    std::map<int, ToolAccum> tool_blocks_;
-    ProviderUsage usage_;
+ private:
+  struct ToolAccum {
+    std::string id;
+    std::string name;
+    bool started = false;
+    bool finished = false;
+  };
 
-    auto handle_json_event(const nlohmann::json& event, ParsedEvent& result) -> void;
-    auto emit_tool_start(int index, ParsedEvent& result) -> void;
-    auto emit_tool_finish(int index, ParsedEvent& result) -> void;
-    auto flush_tools() -> std::vector<ProviderEvent>;
+  network::SseParser sse_;
+  std::map<int, ToolAccum> tool_blocks_;
+  bool thinking_block_active_ = false;
+  ProviderUsage usage_;
+
+  void HandleJsonEvent(const nlohmann::json& event, ParsedEvent& result);
+  void EmitToolStart(int index, ParsedEvent& result);
+  void EmitToolFinish(int index, ParsedEvent& result);
+  std::vector<ProviderEvent> FlushTools();
 };
 
-} // namespace codeharness
+}  // namespace codeharness

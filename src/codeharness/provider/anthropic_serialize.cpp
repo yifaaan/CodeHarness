@@ -8,7 +8,7 @@ namespace codeharness {
 
 namespace {
 
-auto append_text_block(nlohmann::json& content, std::string text) -> void {
+void AppendTextBlock(nlohmann::json& content, std::string text) {
   if (!text.empty()) {
     content.push_back({{"type", "text"}, {"text", std::move(text)}});
   }
@@ -16,33 +16,25 @@ auto append_text_block(nlohmann::json& content, std::string text) -> void {
 
 }  // namespace
 
-auto serialize_anthropic_system(std::span<const Message> messages) -> std::string {
+std::string SerializeAnthropicSystem(std::span<const Message> messages) {
   std::string system;
   for (const auto& message : messages) {
-    if (message.role != Role::kSystem) {
-      continue;
-    }
+    if (message.role != Role::kSystem) continue;
 
     auto text = CollectText(message);
-    if (text.empty()) {
-      continue;
-    }
+    if (text.empty()) continue;
 
-    if (!system.empty()) {
-      system += "\n\n";
-    }
+    if (!system.empty()) system += "\n\n";
     system += text;
   }
   return system;
 }
 
-auto serialize_anthropic_messages(std::span<const Message> messages) -> nlohmann::json {
+nlohmann::json SerializeAnthropicMessages(std::span<const Message> messages) {
   auto serialized = nlohmann::json::array();
 
   for (const auto& message : messages) {
-    if (message.role == Role::kSystem) {
-      continue;
-    }
+    if (message.role == Role::kSystem) continue;
 
     auto content = nlohmann::json::array();
     auto role = std::string{"user"};
@@ -51,21 +43,20 @@ auto serialize_anthropic_messages(std::span<const Message> messages) -> nlohmann
       case Role::kSystem:
         break;
       case Role::kUser:
-        append_text_block(content, CollectText(message));
+        AppendTextBlock(content, CollectText(message));
         break;
       case Role::kAssistant:
         role = "assistant";
         for (const auto& block : message.content) {
           if (const auto* text = std::get_if<TextBlock>(&block)) {
-            append_text_block(content, text->text);
+            AppendTextBlock(content, text->text);
           } else if (const auto* tool_use = std::get_if<ToolUseBlock>(&block)) {
-            content.push_back({
-                {"type", "tool_use"},
-                {"id", tool_use->id},
-                {"name", tool_use->name},
-                {"input", parse_tool_input_json_or_empty_object(tool_use->input_json)},
-            });
+            content.push_back({{"type", "tool_use"},
+                               {"id", tool_use->id},
+                               {"name", tool_use->name},
+                               {"input", parse_tool_input_json_or_empty_object(tool_use->input_json)}});
           }
+          // ThinkingBlock: skip for Anthropic (output-only thinking)
         }
         break;
       case Role::kTool:
@@ -86,25 +77,17 @@ auto serialize_anthropic_messages(std::span<const Message> messages) -> nlohmann
     }
 
     if (!content.empty()) {
-      serialized.push_back({
-          {"role", std::move(role)},
-          {"content", std::move(content)},
-      });
+      serialized.push_back({{"role", std::move(role)}, {"content", std::move(content)}});
     }
   }
 
   return serialized;
 }
 
-auto serialize_anthropic_tools(const std::vector<std::pair<std::string, std::string>>& tool_descriptions)
-    -> nlohmann::json {
+nlohmann::json SerializeAnthropicTools(const std::vector<std::pair<std::string, std::string>>& tool_descriptions) {
   auto tools = nlohmann::json::array();
   for (const auto& [name, description] : tool_descriptions) {
-    tools.push_back({
-        {"name", name},
-        {"description", description},
-        {"input_schema", loose_tool_input_schema()},
-    });
+    tools.push_back({{"name", name}, {"description", description}, {"input_schema", loose_tool_input_schema()}});
   }
   return tools;
 }
