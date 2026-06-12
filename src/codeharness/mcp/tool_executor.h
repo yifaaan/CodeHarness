@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/mcp/types.h"
 
 #include <nlohmann/json.hpp>
@@ -19,7 +19,7 @@ public:
     virtual ~McpToolExecutor() = default;
 
     virtual auto call_tool(std::string_view server_name, std::string_view tool_name, const nlohmann::json& arguments)
-        -> Result<McpToolCallResult> = 0;
+        -> absl::StatusOr<McpToolCallResult> = 0;
 };
 
 } // namespace codeharness

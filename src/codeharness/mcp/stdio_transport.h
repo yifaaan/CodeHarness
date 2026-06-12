@@ -36,13 +36,13 @@ public:
     McpStdioTransport(McpStdioTransport&&) = delete;
     auto operator=(McpStdioTransport&&) -> McpStdioTransport& = delete;
 
-    auto start() -> Result<void> override;
-    auto send(const nlohmann::json& message) -> Result<void> override;
-    auto read() -> Result<nlohmann::json> override;
+    auto start() -> absl::Status override;
+    auto send(const nlohmann::json& message) -> absl::Status override;
+    auto read() -> absl::StatusOr<nlohmann::json> override;
     auto close() noexcept -> void override;
 
 private:
-    auto read_available(reproc::stream stream, std::string& buffer) -> Result<void>;
+    auto read_available(reproc::stream stream, std::string& buffer) -> absl::Status;
     auto next_stdout_line() -> std::optional<std::string>;
     auto log_stderr_lines() -> void;
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -67,27 +67,27 @@ struct MemoryScanOptions
     std::optional<std::size_t> max_files = 50;
 };
 
-auto default_memory_root() -> Result<std::filesystem::path>;
+auto default_memory_root() -> absl::StatusOr<std::filesystem::path>;
 
 auto project_memory_dir(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
-    -> Result<std::filesystem::path>;
+    -> absl::StatusOr<std::filesystem::path>;
 
 class MemoryStore
 {
 public:
     explicit MemoryStore(std::filesystem::path root);
 
-    static auto for_project(const std::filesystem::path& cwd) -> Result<MemoryStore>;
+    static auto for_project(const std::filesystem::path& cwd) -> absl::StatusOr<MemoryStore>;
     static auto for_project(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
-        -> Result<MemoryStore>;
+        -> absl::StatusOr<MemoryStore>;
 
     [[nodiscard]] auto root() const -> const std::filesystem::path&;
 
-    auto add(const AddMemoryRequest& request) const -> Result<MemoryHeader>;
-    auto scan(MemoryScanOptions options = {}) const -> Result<std::vector<MemoryHeader>>;
-    auto search(std::string_view query, std::size_t max_results = 5) const -> Result<std::vector<MemoryEntry>>;
-    auto read(const MemoryHeader& header) const -> Result<MemoryEntry>;
-    auto soft_remove(std::string_view name_or_id) const -> Result<bool>;
+    auto add(const AddMemoryRequest& request) const -> absl::StatusOr<MemoryHeader>;
+    auto scan(MemoryScanOptions options = {}) const -> absl::StatusOr<std::vector<MemoryHeader>>;
+    auto search(std::string_view query, std::size_t max_results = 5) const -> absl::StatusOr<std::vector<MemoryEntry>>;
+    auto read(const MemoryHeader& header) const -> absl::StatusOr<MemoryEntry>;
+    auto soft_remove(std::string_view name_or_id) const -> absl::StatusOr<bool>;
 
 private:
     std::filesystem::path root_;

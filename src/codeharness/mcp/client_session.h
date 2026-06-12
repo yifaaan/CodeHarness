@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/mcp/json_rpc.h"
 #include "codeharness/mcp/transport.h"
 #include "codeharness/mcp/types.h"
@@ -35,17 +35,17 @@ public:
     McpClientSession(McpClientSession&&) noexcept = default;
     auto operator=(McpClientSession&&) noexcept -> McpClientSession& = default;
 
-    auto initialize() -> Result<void>;
-    auto list_tools(std::string_view server_name) -> Result<std::vector<McpToolInfo>>;
-    auto list_resources(std::string_view server_name) -> Result<std::vector<McpResourceInfo>>;
-    auto call_tool(std::string_view name, const nlohmann::json& arguments) -> Result<McpToolCallResult>;
-    auto read_resource(std::string_view uri) -> Result<std::string>;
+    auto initialize() -> absl::Status;
+    auto list_tools(std::string_view server_name) -> absl::StatusOr<std::vector<McpToolInfo>>;
+    auto list_resources(std::string_view server_name) -> absl::StatusOr<std::vector<McpResourceInfo>>;
+    auto call_tool(std::string_view name, const nlohmann::json& arguments) -> absl::StatusOr<McpToolCallResult>;
+    auto read_resource(std::string_view uri) -> absl::StatusOr<std::string>;
     auto close() noexcept -> void;
 
 private:
-    auto start_transport() -> Result<void>;
-    auto request_raw(std::string_view method, nlohmann::json params) -> Result<McpJsonRpcResponse>;
-    auto request(std::string_view method, nlohmann::json params) -> Result<nlohmann::json>;
+    auto start_transport() -> absl::Status;
+    auto request_raw(std::string_view method, nlohmann::json params) -> absl::StatusOr<McpJsonRpcResponse>;
+    auto request(std::string_view method, nlohmann::json params) -> absl::StatusOr<nlohmann::json>;
 
     std::unique_ptr<McpTransport> transport_; // 发 JSON、收 JSON
     int next_id_ = 1; // JSON-RPC 请求 id，从 1 开始递增

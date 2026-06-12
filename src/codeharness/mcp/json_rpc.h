@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <nlohmann/json.hpp>
 
@@ -52,7 +52,7 @@ auto make_mcp_notification(std::string_view method, std::optional<nlohmann::json
 
 auto is_mcp_notification(const nlohmann::json& message) noexcept -> bool;
 
-auto parse_mcp_response(const nlohmann::json& message) -> Result<McpJsonRpcResponse>;
+auto parse_mcp_response(const nlohmann::json& message) -> absl::StatusOr<McpJsonRpcResponse>;
 
 auto is_mcp_method_not_found(const McpJsonRpcError& error) noexcept -> bool;
 

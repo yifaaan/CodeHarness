@@ -1,7 +1,5 @@
 #include "codeharness/mcp/tool_adapter.h"
 
-#include <nonstd/expected.hpp>
-
 #include <cctype>
 #include <stdexcept>
 #include <string_view>
@@ -41,13 +39,13 @@ auto sanitize_tool_segment(std::string_view value) -> std::string
     return sanitized;
 }
 
-auto adapter_input_json(const ToolRequest& request) -> Result<nlohmann::json>
+auto adapter_input_json(const ToolRequest& request) -> absl::StatusOr<nlohmann::json>
 {
     if (!request.parsed_input.is_null())
     {
         if (!request.parsed_input.is_object())
         {
-            return fail<nlohmann::json>(ErrorKind::InvalidArgument, "MCP tool input must be a JSON object");
+            return fail<nlohmann::json>(absl::InvalidArgumentError , "MCP tool input must be a JSON object");
         }
 
         return request.parsed_input;
@@ -58,14 +56,14 @@ auto adapter_input_json(const ToolRequest& request) -> Result<nlohmann::json>
         auto parsed = nlohmann::json::parse(request.input_json);
         if (!parsed.is_object())
         {
-            return fail<nlohmann::json>(ErrorKind::InvalidArgument, "MCP tool input must be a JSON object");
+            return fail<nlohmann::json>(absl::InvalidArgumentError , "MCP tool input must be a JSON object");
         }
 
         return parsed;
     }
     catch (const nlohmann::json::parse_error& error)
     {
-        return fail<nlohmann::json>(ErrorKind::InvalidArgument, "MCP tool input is not valid JSON: " + std::string{error.what()});
+        return fail<nlohmann::json>(absl::InvalidArgumentError , "MCP tool input is not valid JSON: " + std::string{error.what()});
     }
 }
 
@@ -105,24 +103,24 @@ auto McpToolAdapter::is_read_only() const noexcept -> bool
     return false;
 }
 
-auto McpToolAdapter::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
+auto McpToolAdapter::execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse>
 {
     auto arguments = adapter_input_json(request);
     if (!arguments)
     {
         return ToolResponse{
             .tool_use_id = request.id,
-            .content = arguments.error().message,
+            .content = arguments.status().message(),
             .is_error = true,
         };
     }
 
     auto result = executor_->call_tool(tool_info_.server_name, tool_info_.name, *arguments);
-    if (!result)
+    if(!result.ok())
     {
         return ToolResponse{
             .tool_use_id = request.id,
-            .content = "MCP tool " + tool_info_.name + " failed: " + result.error().message,
+            .content = "MCP tool " + tool_info_.name + " failed: " + result.status().message(),
             .is_error = true,
         };
     }

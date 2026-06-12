@@ -1,8 +1,6 @@
 #include "codeharness/mcp/stdio_transport.h"
 
 #include <spdlog/spdlog.h>
-#include <nonstd/expected.hpp>
-
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -59,7 +57,7 @@ McpStdioTransport::~McpStdioTransport()
     close();
 }
 
-auto McpStdioTransport::start() -> Result<void>
+auto McpStdioTransport::start() -> absl::Status
 {
     if (running_)
     {
@@ -68,7 +66,7 @@ auto McpStdioTransport::start() -> Result<void>
 
     if (config_.command.empty())
     {
-        return fail<void>(ErrorKind::Config, "MCP stdio server command is empty: " + config_.name);
+        return absl::FailedPreconditionError("MCP stdio server command is empty: " + config_.name);
     }
 
     std::vector<std::string> argv;
@@ -87,7 +85,7 @@ auto McpStdioTransport::start() -> Result<void>
     // stdio setup. We still avoid unbounded waits by polling before each read
     // and write and by writing bounded chunks.
 
-    if (config_.cwd.has_value())
+    if (config_.cwd.ok())
     {
         cwd = config_.cwd->string();
         options.working_directory = cwd.c_str();
@@ -95,14 +93,14 @@ auto McpStdioTransport::start() -> Result<void>
 
     if (auto error = process_.start(argv, options))
     {
-        return fail<void>(ErrorKind::Io, "failed to start MCP stdio server " + config_.name + ": " + error.message());
+        return absl::InternalError("failed to start MCP stdio server " + config_.name + ": " + error.message());
     }
 
     running_ = true;
     return {};
 }
 
-auto McpStdioTransport::send(const nlohmann::json& message) -> Result<void>
+auto McpStdioTransport::send(const nlohmann::json& message) -> absl::Status
 {
     auto line = message.dump();
     line.push_back('\n');
@@ -116,18 +114,18 @@ auto McpStdioTransport::send(const nlohmann::json& message) -> Result<void>
         const auto remaining_timeout = timeout_ms_since(deadline);
         if (remaining_timeout.count() <= 0)
         {
-            return fail<void>(ErrorKind::Network, "timed out writing to MCP stdio server " + config_.name);
+            return absl::UnavailableError("timed out writing to MCP stdio server " + config_.name);
         }
 
         auto [events, poll_error] = process_.poll(reproc::event::in | reproc::event::exit, remaining_timeout);
         if (poll_error)
         {
-            return fail<void>(ErrorKind::Network, "failed to poll MCP stdio server " + config_.name + ": " + poll_error.message());
+            return absl::UnavailableError("failed to poll MCP stdio server " + config_.name + ": " + poll_error.message());
         }
 
         if ((events & reproc::event::exit) != 0)
         {
-            return fail<void>(ErrorKind::Network, "MCP stdio server exited while writing: " + config_.name);
+            return absl::UnavailableError("MCP stdio server exited while writing: " + config_.name);
         }
 
         if ((events & reproc::event::in) == 0)
@@ -155,16 +153,16 @@ auto McpStdioTransport::send(const nlohmann::json& message) -> Result<void>
 
         if (write_error == std::errc::broken_pipe)
         {
-            return fail<void>(ErrorKind::Network, "MCP stdio server closed stdin: " + config_.name);
+            return absl::UnavailableError("MCP stdio server closed stdin: " + config_.name);
         }
 
-        return fail<void>(ErrorKind::Network, "failed to write to MCP stdio server " + config_.name + ": " + write_error.message());
+        return absl::UnavailableError("failed to write to MCP stdio server " + config_.name + ": " + write_error.message());
     }
 
     return {};
 }
 
-auto McpStdioTransport::read() -> Result<nlohmann::json>
+auto McpStdioTransport::read() -> absl::StatusOr<nlohmann::json>
 {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{options_.io_timeout_ms};
     while (true)
@@ -182,20 +180,20 @@ auto McpStdioTransport::read() -> Result<nlohmann::json>
             }
             catch (const nlohmann::json::parse_error& error)
             {
-                return fail<nlohmann::json>(ErrorKind::Network, "MCP stdio server " + config_.name + " wrote invalid JSON line: " + error.what());
+                return fail<nlohmann::json>(absl::UnavailableError , "MCP stdio server " + config_.name + " wrote invalid JSON line: " + error.what());
             }
         }
 
         const auto remaining_timeout = timeout_ms_since(deadline);
         if (remaining_timeout.count() == 0)
         {
-            return fail<nlohmann::json>(ErrorKind::Network, "timed out waiting for MCP stdio server response: " + config_.name);
+            return fail<nlohmann::json>(absl::UnavailableError , "timed out waiting for MCP stdio server response: " + config_.name);
         }
 
         auto [events, poll_error] = process_.poll(reproc::event::out | reproc::event::err | reproc::event::exit, remaining_timeout);
         if (poll_error)
         {
-            return fail<nlohmann::json>(ErrorKind::Network, "failed to poll MCP stdio server " + config_.name + ": " + poll_error.message());
+            return fail<nlohmann::json>(absl::UnavailableError , "failed to poll MCP stdio server " + config_.name + ": " + poll_error.message());
         }
 
         if (events == 0)
@@ -207,7 +205,7 @@ auto McpStdioTransport::read() -> Result<nlohmann::json>
         {
             if (auto read_out = read_available(reproc::stream::out, stdout_buffer_); !read_out)
             {
-                return nonstd::make_unexpected(read_out.error());
+                return read_out.error();
             }
         }
 
@@ -215,7 +213,7 @@ auto McpStdioTransport::read() -> Result<nlohmann::json>
         {
             if (auto read_err = read_available(reproc::stream::err, stderr_buffer_); !read_err)
             {
-                return nonstd::make_unexpected(read_err.error());
+                return read_err.error();
             }
             log_stderr_lines();
         }
@@ -234,12 +232,12 @@ auto McpStdioTransport::read() -> Result<nlohmann::json>
                 }
                 catch (const nlohmann::json::parse_error& error)
                 {
-                    return fail<nlohmann::json>(ErrorKind::Network, "MCP stdio server " + config_.name + " wrote invalid JSON line before exit: " + error.what());
+                    return fail<nlohmann::json>(absl::UnavailableError , "MCP stdio server " + config_.name + " wrote invalid JSON line before exit: " + error.what());
                 }
             }
 
             running_ = false;
-            return fail<nlohmann::json>(ErrorKind::Network, "MCP stdio server exited before writing a response: " + config_.name);
+            return fail<nlohmann::json>(absl::UnavailableError , "MCP stdio server exited before writing a response: " + config_.name);
         }
     }
 }
@@ -265,7 +263,7 @@ auto McpStdioTransport::close() noexcept -> void
     running_ = false;
 }
 
-auto McpStdioTransport::read_available(reproc::stream stream, std::string& buffer) -> Result<void>
+auto McpStdioTransport::read_available(reproc::stream stream, std::string& buffer) -> absl::Status
 {
     std::array<std::uint8_t, read_chunk_size> chunk{};
 
@@ -277,7 +275,7 @@ auto McpStdioTransport::read_available(reproc::stream stream, std::string& buffe
             return {};
         }
 
-        return fail<void>(ErrorKind::Network, "failed to read MCP stdio server " + config_.name + ": " + read_error.message());
+        return absl::UnavailableError("failed to read MCP stdio server " + config_.name + ": " + read_error.message());
     }
 
     if (bytes_read > 0)

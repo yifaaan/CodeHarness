@@ -5,8 +5,6 @@
 #include <git2.h>
 #include <yaml-cpp/yaml.h>
 #include <nlohmann/json.hpp>
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -60,18 +58,18 @@ struct SplitMemoryFile
     std::string body;
 };
 
-auto resolve_directory(const std::filesystem::path& path) -> Result<std::filesystem::path>
+auto resolve_directory(const std::filesystem::path& path) -> absl::StatusOr<std::filesystem::path>
 {
     std::error_code error;
     auto resolved = std::filesystem::weakly_canonical(path, error);
     if (error)
     {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve directory: " + error.message());
+        return fail<std::filesystem::path>(absl::InternalError , "failed to resolve directory: " + error.message());
     }
 
     if (!std::filesystem::is_directory(resolved, error))
     {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "path is not a directory: " + path.string());
+        return fail<std::filesystem::path>(absl::InvalidArgumentError , "path is not a directory: " + path.string());
     }
 
     return resolved;
@@ -100,7 +98,7 @@ auto normalize_for_signature(std::string_view text) -> std::string
             continue;
         }
 
-        normalized.push_back(lower_ascii(character));
+        normalized.push_back(LowerAscii(character));
         previous_space = false;
     }
 
@@ -112,14 +110,14 @@ auto normalize_for_signature(std::string_view text) -> std::string
     return normalized;
 }
 
-auto compute_signature(std::string_view body, std::string_view type, std::string_view category) -> Result<std::string>
+auto compute_signature(std::string_view body, std::string_view type, std::string_view category) -> absl::StatusOr<std::string>
 {
     auto payload = normalize_for_signature(body);
     payload += '|';
     payload += normalize_for_signature(type);
     payload += '|';
     payload += normalize_for_signature(category);
-    return git_blob_hash_hex(payload);
+    return GitBlobHashHex(payload);
 }
 
 auto generate_memory_id() -> std::string
@@ -134,7 +132,7 @@ auto generate_memory_id() -> std::string
         suffix << std::hex << std::setw(2) << std::setfill('0') << byte;
     }
 
-    auto timestamp = utc_timestamp_seconds();
+    auto timestamp = UtcTimestampSeconds();
     std::erase(timestamp, '-');
     std::erase(timestamp, ':');
     std::erase(timestamp, 'Z');
@@ -153,7 +151,7 @@ auto yaml_string(const YAML::Node& node, std::string_view key) -> std::optional<
 
     try
     {
-        auto text = std::string{trim(value.as<std::string>())};
+        auto text = std::string{Trim(value.as<std::string>())};
         if (!text.empty())
         {
             return text;
@@ -169,7 +167,7 @@ auto yaml_string(const YAML::Node& node, std::string_view key) -> std::optional<
 auto yaml_int(const YAML::Node& node, std::string_view key, int fallback) -> int
 {
     const auto value = node[std::string{key}];
-    if (!value)
+    if(!value.ok())
     {
         return fallback;
     }
@@ -205,7 +203,7 @@ auto yaml_optional_int(const YAML::Node& node, std::string_view key) -> std::opt
 auto yaml_bool(const YAML::Node& node, std::string_view key, bool fallback) -> bool
 {
     const auto value = node[std::string{key}];
-    if (!value)
+    if(!value.ok())
     {
         return fallback;
     }
@@ -223,7 +221,7 @@ auto yaml_bool(const YAML::Node& node, std::string_view key, bool fallback) -> b
 auto yaml_string_list(const YAML::Node& node, std::string_view key) -> std::vector<std::string>
 {
     const auto value = node[std::string{key}];
-    if (!value)
+    if(!value.ok())
     {
         return {};
     }
@@ -253,7 +251,7 @@ auto yaml_string_list(const YAML::Node& node, std::string_view key) -> std::vect
 
         try
         {
-            auto text = std::string{trim(item.as<std::string>())};
+            auto text = std::string{Trim(item.as<std::string>())};
             if (!text.empty())
             {
                 result.push_back(std::move(text));
@@ -269,8 +267,8 @@ auto yaml_string_list(const YAML::Node& node, std::string_view key) -> std::vect
 
 auto split_memory_file(std::string_view content) -> SplitMemoryFile
 {
-    auto [first_line, offset] = next_line(content, 0);
-    if (trim(first_line) != "---")
+    auto [first_line, offset] = NextLine(content, 0);
+    if (Trim(first_line) != "---")
     {
         return SplitMemoryFile{.body = std::string{content}};
     }
@@ -279,10 +277,10 @@ auto split_memory_file(std::string_view content) -> SplitMemoryFile
     while (offset < content.size())
     {
         const auto line_start = offset;
-        auto [line, next_offset] = next_line(content, offset);
+        auto [line, next_offset] = NextLine(content, offset);
         offset = next_offset;
 
-        if (trim(line) != "---")
+        if (Trim(line) != "---")
         {
             continue;
         }
@@ -311,9 +309,9 @@ auto first_content_line(std::string_view body) -> std::string
     std::size_t offset = 0;
     while (offset < body.size())
     {
-        auto [line, next_offset] = next_line(body, offset);
+        auto [line, next_offset] = NextLine(body, offset);
         offset = next_offset;
-        auto stripped = trim(line);
+        auto stripped = Trim(line);
         if (stripped.empty() || stripped.starts_with('#') || stripped == "---")
         {
             continue;
@@ -336,10 +334,10 @@ auto body_preview(std::string_view body, std::string_view description) -> std::s
     std::size_t offset = 0;
     while (offset < body.size() && preview.size() < 300)
     {
-        auto [line, next_offset] = next_line(body, offset);
+        auto [line, next_offset] = NextLine(body, offset);
         offset = next_offset;
 
-        const auto stripped = trim(line);
+        const auto stripped = Trim(line);
         if (stripped.empty() || stripped.starts_with('#') || stripped == description)
         {
             continue;
@@ -517,12 +515,12 @@ auto render_memory_file(const MemoryMetadata& metadata, std::string_view body) -
     return "---\n" + render_frontmatter(metadata) + "---\n\n" + normalized_body;
 }
 
-auto parse_memory_entry(const std::filesystem::path& root, const std::filesystem::path& path) -> Result<MemoryEntry>
+auto parse_memory_entry(const std::filesystem::path& root, const std::filesystem::path& path) -> absl::StatusOr<MemoryEntry>
 {
-    auto text = read_text_file(path);
+    auto text = ReadTextFile(path);
     if (!text)
     {
-        return nonstd::make_unexpected(text.error());
+        return text.error();
     }
 
     auto split = split_memory_file(*text);
@@ -537,13 +535,13 @@ auto parse_memory_entry(const std::filesystem::path& root, const std::filesystem
     modified_at = std::filesystem::last_write_time(path, error);
     if (error)
     {
-        return fail<MemoryEntry>(ErrorKind::Io, "failed to read memory timestamp: " + error.message());
+        return absl::StatusOr<MemoryEntry>(absl::InternalError("failed to read memory timestamp: " + error.message()));
     }
 
     auto relative_path = std::filesystem::relative(path, root, error);
     if (error)
     {
-        return fail<MemoryEntry>(ErrorKind::Io, "failed to resolve memory relative path: " + error.message());
+        return absl::StatusOr<MemoryEntry>(absl::InternalError("failed to resolve memory relative path: " + error.message()));
     }
 
     return MemoryEntry{
@@ -561,7 +559,7 @@ auto parse_memory_entry(const std::filesystem::path& root, const std::filesystem
     };
 }
 
-auto candidate_memory_files(const std::filesystem::path& root) -> Result<std::vector<std::filesystem::path>>
+auto candidate_memory_files(const std::filesystem::path& root) -> absl::StatusOr<std::vector<std::filesystem::path>>
 {
     std::vector<std::filesystem::path> paths;
     std::error_code error;
@@ -575,14 +573,14 @@ auto candidate_memory_files(const std::filesystem::path& root) -> Result<std::ve
         if (error)
         {
             return fail<std::vector<std::filesystem::path>>(
-                ErrorKind::Io, "failed to scan memory directory: " + error.message());
+                absl::InternalError , "failed to scan memory directory: " + error.message());
         }
 
         const auto is_regular = entry.is_regular_file(error);
         if (error)
         {
             return fail<std::vector<std::filesystem::path>>(
-                ErrorKind::Io, "failed to inspect memory file: " + error.message());
+                absl::InternalError , "failed to inspect memory file: " + error.message());
         }
 
         if (!is_regular || entry.path().extension() != ".md" || entry.path().filename() == kIndexFileName)
@@ -621,7 +619,7 @@ auto clean_tags(const std::vector<std::string>& tags) -> std::vector<std::string
     std::set<std::string> seen;
     for (const auto& tag : tags)
     {
-        auto stripped = std::string{trim(tag)};
+        auto stripped = std::string{Trim(tag)};
         if (stripped.empty() || !seen.emplace(stripped).second)
         {
             continue;
@@ -633,17 +631,17 @@ auto clean_tags(const std::vector<std::string>& tags) -> std::vector<std::string
     return cleaned;
 }
 
-auto update_index(const std::filesystem::path& root, const MemoryHeader& header) -> Result<void>
+auto update_index(const std::filesystem::path& root, const MemoryHeader& header) -> absl::Status
 {
     auto entrypoint = root / kIndexFileName;
     std::string index_text;
 
     if (std::filesystem::exists(entrypoint))
     {
-        auto content = read_text_file(entrypoint);
+        auto content = ReadTextFile(entrypoint);
         if (!content)
         {
-            return nonstd::make_unexpected(content.error());
+            return content.error();
         }
         index_text = std::move(*content);
     }
@@ -658,7 +656,7 @@ auto update_index(const std::filesystem::path& root, const MemoryHeader& header)
     std::size_t offset = 0;
     while (offset < index_text.size())
     {
-        auto [line, next_offset] = next_line(index_text, offset);
+        auto [line, next_offset] = NextLine(index_text, offset);
         offset = next_offset;
         if (line.find(filename) != std::string_view::npos)
         {
@@ -682,17 +680,17 @@ auto update_index(const std::filesystem::path& root, const MemoryHeader& header)
 
     if (!found_existing || updated_index != index_text)
     {
-        auto write_result = atomic_write_text_file(entrypoint, updated_index);
+        auto write_result = AtomicWriteTextFile(entrypoint, updated_index);
         if (!write_result)
         {
-            return nonstd::make_unexpected(write_result.error());
+            return write_result.error();
         }
     }
 
     return {};
 }
 
-auto remove_from_index(const std::filesystem::path& root, const std::filesystem::path& relative_path) -> Result<void>
+auto remove_from_index(const std::filesystem::path& root, const std::filesystem::path& relative_path) -> absl::Status
 {
     const auto entrypoint = root / kIndexFileName;
     if (!std::filesystem::exists(entrypoint))
@@ -700,10 +698,10 @@ auto remove_from_index(const std::filesystem::path& root, const std::filesystem:
         return {};
     }
 
-    auto content = read_text_file(entrypoint);
+    auto content = ReadTextFile(entrypoint);
     if (!content)
     {
-        return nonstd::make_unexpected(content.error());
+        return content.error();
     }
 
     std::ostringstream output;
@@ -711,7 +709,7 @@ auto remove_from_index(const std::filesystem::path& root, const std::filesystem:
     std::size_t offset = 0;
     while (offset < content->size())
     {
-        auto [line, next_offset] = next_line(*content, offset);
+        auto [line, next_offset] = NextLine(*content, offset);
         offset = next_offset;
         if (line.find(filename) == std::string_view::npos)
         {
@@ -719,10 +717,10 @@ auto remove_from_index(const std::filesystem::path& root, const std::filesystem:
         }
     }
 
-    auto write_result = atomic_write_text_file(entrypoint, output.str());
+    auto write_result = AtomicWriteTextFile(entrypoint, output.str());
     if (!write_result)
     {
-        return nonstd::make_unexpected(write_result.error());
+        return write_result.error();
     }
 
     return {};
@@ -747,7 +745,7 @@ auto search_tokens(std::string_view query) -> std::vector<std::string>
         const auto byte = static_cast<unsigned char>(character);
         if (std::isalnum(byte) != 0 || character == '_')
         {
-            current.push_back(lower_ascii(character));
+            current.push_back(LowerAscii(character));
             continue;
         }
 
@@ -788,33 +786,33 @@ auto recency_boost(const MemoryHeader& header) -> double
 auto contains_token(std::string_view text, const std::string& token) -> bool
 {
     auto haystack = std::string{text};
-    std::ranges::transform(haystack, haystack.begin(), lower_ascii);
+    std::ranges::transform(haystack, haystack.begin(), LowerAscii);
     return haystack.find(token) != std::string::npos;
 }
 
 } // namespace
 
-auto default_memory_root() -> Result<std::filesystem::path>
+auto default_memory_root() -> absl::StatusOr<std::filesystem::path>
 {
     return codeharness::config::data_dir() / "memory";
 }
 
 auto project_memory_dir(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
-    -> Result<std::filesystem::path>
+    -> absl::StatusOr<std::filesystem::path>
 {
     auto resolved = resolve_directory(cwd);
-    if (!resolved)
+    if(!resolved.ok())
     {
-        return nonstd::make_unexpected(resolved.error());
+        return resolved.status();
     }
 
-    auto hash = git_blob_hash_hex(resolved->string());
+    auto hash = GitBlobHashHex(resolved->string());
     if (!hash)
     {
-        return nonstd::make_unexpected(hash.error());
+        return hash.error();
     }
 
-    const auto project_name = slugify(resolved->filename().string());
+    const auto project_name = Slugify(resolved->filename().string());
     return memory_root / fmt::format("{}-{}", project_name, hash->substr(0, 12));
 }
 
@@ -822,24 +820,24 @@ MemoryStore::MemoryStore(std::filesystem::path root) : root_(std::move(root))
 {
 }
 
-auto MemoryStore::for_project(const std::filesystem::path& cwd) -> Result<MemoryStore>
+auto MemoryStore::for_project(const std::filesystem::path& cwd) -> absl::StatusOr<MemoryStore>
 {
     auto root = default_memory_root();
     if (!root)
     {
-        return nonstd::make_unexpected(root.error());
+        return root.error();
     }
 
     return for_project(cwd, *root);
 }
 
 auto MemoryStore::for_project(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
-    -> Result<MemoryStore>
+    -> absl::StatusOr<MemoryStore>
 {
     auto root = project_memory_dir(cwd, memory_root);
     if (!root)
     {
-        return nonstd::make_unexpected(root.error());
+        return root.error();
     }
 
     return MemoryStore{*root};
@@ -850,13 +848,13 @@ auto MemoryStore::root() const -> const std::filesystem::path&
     return root_;
 }
 
-auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHeader>
+auto MemoryStore::add(const AddMemoryRequest& request) const -> absl::StatusOr<MemoryHeader>
 {
-    const auto title = std::string{trim(request.title)};
-    auto body = std::string{trim(request.body)};
-    auto type = std::string{trim(request.type)};
-    auto scope = std::string{trim(request.scope)};
-    auto category = std::string{trim(request.category)};
+    const auto title = std::string{Trim(request.title)};
+    auto body = std::string{Trim(request.body)};
+    auto type = std::string{Trim(request.type)};
+    auto scope = std::string{Trim(request.scope)};
+    auto category = std::string{Trim(request.category)};
     if (type.empty())
     {
         type = "project";
@@ -872,33 +870,33 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
 
     if (title.empty())
     {
-        return fail<MemoryHeader>(ErrorKind::InvalidArgument, "memory title is required");
+        return absl::StatusOr<MemoryHeader>(absl::InvalidArgumentError("memory title is required"));
     }
 
     if (body.empty())
     {
-        return fail<MemoryHeader>(ErrorKind::InvalidArgument, "memory body is required");
+        return absl::StatusOr<MemoryHeader>(absl::InvalidArgumentError("memory body is required"));
     }
 
     body.push_back('\n');
 
-    auto mkdir = ensure_directory(root_, "memory directory");
+    auto mkdir = EnsureDirectory(root_, "memory directory");
     if (!mkdir)
     {
-        return nonstd::make_unexpected(mkdir.error());
+        return mkdir.error();
     }
 
     auto signature = compute_signature(body, type, category);
     if (!signature)
     {
-        return nonstd::make_unexpected(signature.error());
+        return signature.error();
     }
 
     auto existing =
         scan(MemoryScanOptions{.include_disabled = true, .include_expired = true, .max_files = std::nullopt});
     if (!existing)
     {
-        return nonstd::make_unexpected(existing.error());
+        return existing.error();
     }
 
     const auto duplicate = std::ranges::find_if(*existing, [&](const auto& header) {
@@ -906,9 +904,9 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
     });
     const auto has_duplicate = duplicate != existing->end();
 
-    const auto now = utc_timestamp_seconds();
+    const auto now = UtcTimestampSeconds();
     auto metadata = MemoryMetadata{};
-    auto path = has_duplicate ? duplicate->path : next_memory_path(root_, slugify(title));
+    auto path = has_duplicate ? duplicate->path : next_memory_path(root_, Slugify(title));
     if (has_duplicate)
     {
         metadata.id = duplicate->metadata.id;
@@ -923,7 +921,7 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
 
     metadata.schema_version = 1;
     metadata.name = title;
-    metadata.description = std::string{trim(request.description)};
+    metadata.description = std::string{Trim(request.description)};
     if (metadata.description.empty())
     {
         metadata.description = first_content_line(body);
@@ -942,33 +940,33 @@ auto MemoryStore::add(const AddMemoryRequest& request) const -> Result<MemoryHea
     metadata.disabled = false;
     metadata.tags = clean_tags(request.tags);
 
-    auto write_result = atomic_write_text_file(path, render_memory_file(metadata, body));
+    auto write_result = AtomicWriteTextFile(path, render_memory_file(metadata, body));
     if (!write_result)
     {
-        return nonstd::make_unexpected(write_result.error());
+        return write_result.error();
     }
 
     auto entry = parse_memory_entry(root_, path);
     if (!entry)
     {
-        return nonstd::make_unexpected(entry.error());
+        return entry.error();
     }
 
     auto index_result = update_index(root_, entry->header);
     if (!index_result)
     {
-        return nonstd::make_unexpected(index_result.error());
+        return index_result.error();
     }
 
     return entry->header;
 }
 
-auto MemoryStore::scan(MemoryScanOptions options) const -> Result<std::vector<MemoryHeader>>
+auto MemoryStore::scan(MemoryScanOptions options) const -> absl::StatusOr<std::vector<MemoryHeader>>
 {
     auto paths = candidate_memory_files(root_);
     if (!paths)
     {
-        return nonstd::make_unexpected(paths.error());
+        return paths.error();
     }
 
     std::vector<MemoryHeader> headers;
@@ -977,7 +975,7 @@ auto MemoryStore::scan(MemoryScanOptions options) const -> Result<std::vector<Me
         auto entry = parse_memory_entry(root_, path);
         if (!entry)
         {
-            return nonstd::make_unexpected(entry.error());
+            return entry.error();
         }
 
         if (entry->header.metadata.disabled && !options.include_disabled)
@@ -1010,7 +1008,7 @@ auto MemoryStore::scan(MemoryScanOptions options) const -> Result<std::vector<Me
     return headers;
 }
 
-auto MemoryStore::search(std::string_view query, std::size_t max_results) const -> Result<std::vector<MemoryEntry>>
+auto MemoryStore::search(std::string_view query, std::size_t max_results) const -> absl::StatusOr<std::vector<MemoryEntry>>
 {
     const auto tokens = search_tokens(query);
     if (tokens.empty() || max_results == 0)
@@ -1021,7 +1019,7 @@ auto MemoryStore::search(std::string_view query, std::size_t max_results) const 
     auto headers = scan(MemoryScanOptions{.max_files = 100});
     if (!headers)
     {
-        return nonstd::make_unexpected(headers.error());
+        return headers.error();
     }
 
     std::vector<std::pair<double, MemoryHeader>> scored;
@@ -1074,7 +1072,7 @@ auto MemoryStore::search(std::string_view query, std::size_t max_results) const 
         auto entry = read(header);
         if (!entry)
         {
-            return nonstd::make_unexpected(entry.error());
+            return entry.error();
         }
 
         results.push_back(std::move(*entry));
@@ -1083,40 +1081,40 @@ auto MemoryStore::search(std::string_view query, std::size_t max_results) const 
     return results;
 }
 
-auto MemoryStore::read(const MemoryHeader& header) const -> Result<MemoryEntry>
+auto MemoryStore::read(const MemoryHeader& header) const -> absl::StatusOr<MemoryEntry>
 {
     auto entry = parse_memory_entry(root_, header.path);
     if (!entry)
     {
-        return nonstd::make_unexpected(entry.error());
+        return entry.error();
     }
 
     if (entry->header.metadata.disabled)
     {
-        return fail<MemoryEntry>(ErrorKind::InvalidArgument, "memory is disabled: " + header.title);
+        return absl::StatusOr<MemoryEntry>(absl::InvalidArgumentError("memory is disabled: " + header.title));
     }
 
     if (is_expired(entry->header.metadata))
     {
-        return fail<MemoryEntry>(ErrorKind::InvalidArgument, "memory is expired: " + header.title);
+        return absl::StatusOr<MemoryEntry>(absl::InvalidArgumentError("memory is expired: " + header.title));
     }
 
     return entry;
 }
 
-auto MemoryStore::soft_remove(std::string_view name_or_id) const -> Result<bool>
+auto MemoryStore::soft_remove(std::string_view name_or_id) const -> absl::StatusOr<bool>
 {
-    const auto query = std::string{trim(name_or_id)};
+    const auto query = std::string{Trim(name_or_id)};
     if (query.empty())
     {
-        return fail<bool>(ErrorKind::InvalidArgument, "memory name or id is required");
+        return absl::StatusOr<bool>(absl::InvalidArgumentError("memory name or id is required"));
     }
 
     auto headers =
         scan(MemoryScanOptions{.include_disabled = true, .include_expired = true, .max_files = std::nullopt});
     if (!headers)
     {
-        return nonstd::make_unexpected(headers.error());
+        return headers.error();
     }
 
     auto it = std::ranges::find_if(*headers, [&](const auto& header) {
@@ -1132,21 +1130,21 @@ auto MemoryStore::soft_remove(std::string_view name_or_id) const -> Result<bool>
     auto entry = parse_memory_entry(root_, it->path);
     if (!entry)
     {
-        return nonstd::make_unexpected(entry.error());
+        return entry.error();
     }
 
     entry->header.metadata.disabled = true;
-    entry->header.metadata.updated_at = utc_timestamp_seconds();
-    auto write_result = atomic_write_text_file(it->path, render_memory_file(entry->header.metadata, entry->body));
+    entry->header.metadata.updated_at = UtcTimestampSeconds();
+    auto write_result = AtomicWriteTextFile(it->path, render_memory_file(entry->header.metadata, entry->body));
     if (!write_result)
     {
-        return nonstd::make_unexpected(write_result.error());
+        return write_result.error();
     }
 
     auto index_result = remove_from_index(root_, it->relative_path);
     if (!index_result)
     {
-        return nonstd::make_unexpected(index_result.error());
+        return index_result.error();
     }
 
     return true;

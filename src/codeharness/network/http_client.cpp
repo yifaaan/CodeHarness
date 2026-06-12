@@ -132,25 +132,25 @@ auto lower_copy(std::string value) -> std::string
     return value;
 }
 
-auto parse_http_url(std::string_view raw) -> Result<ParsedUrl>
+auto parse_http_url(std::string_view raw) -> absl::StatusOr<ParsedUrl>
 {
     auto parsed = boost::urls::parse_uri(raw);
-    if (!parsed)
+    if(!parsed.ok())
     {
-        return fail<ParsedUrl>(ErrorKind::InvalidArgument, "invalid URL: " + std::string{raw});
+        return absl::StatusOr<ParsedUrl>(absl::InvalidArgumentError("invalid URL: " + std::string{raw}));
     }
 
     const auto view = *parsed;
     auto scheme = lower_copy(std::string{view.scheme()});
     if (scheme != "http" && scheme != "https")
     {
-        return fail<ParsedUrl>(ErrorKind::InvalidArgument, "unsupported URL scheme: " + scheme);
+        return absl::StatusOr<ParsedUrl>(absl::InvalidArgumentError("unsupported URL scheme: " + scheme));
     }
 
     auto host = std::string{view.host()};
     if (host.empty())
     {
-        return fail<ParsedUrl>(ErrorKind::InvalidArgument, "URL requires a host");
+        return absl::StatusOr<ParsedUrl>(absl::InvalidArgumentError("URL requires a host"));
     }
 
     std::string target;
@@ -218,7 +218,7 @@ auto make_request(http::verb method,
 
 template <typename Stream>
 auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on_chunk, std::string_view label)
-    -> Result<ReadResponseResult>
+    -> absl::StatusOr<ReadResponseResult>
 {
     beast::error_code error;
     http::response_parser<http::buffer_body> parser;
@@ -228,7 +228,7 @@ auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on
     http::read_header(stream, buffer, parser, error);
     if (error)
     {
-        return fail<ReadResponseResult>(ErrorKind::Network, std::string{label} + " read headers failed: " + error.message());
+        return absl::StatusOr<ReadResponseResult>(absl::UnavailableError(std::string{label} + " read headers failed: " + error.message()));
     }
 
     std::string body;
@@ -266,7 +266,7 @@ auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on
 
         if (error)
         {
-            return fail<ReadResponseResult>(ErrorKind::Network, std::string{label} + " read body failed: " + error.message());
+            return absl::StatusOr<ReadResponseResult>(absl::UnavailableError(std::string{label} + " read body failed: " + error.message()));
         }
     }
 
@@ -276,7 +276,7 @@ auto read_response(Stream& stream, beast::flat_buffer& buffer, const OnChunk& on
 auto run_plain_request(asio::io_context& io,
                        const ParsedUrl& url,
                        http::request<http::string_body> request,
-                       const OnChunk& on_chunk) -> Result<HttpResponse>
+                       const OnChunk& on_chunk) -> absl::StatusOr<HttpResponse>
 {
     beast::error_code error;
     Tcp::resolver resolver{io};
@@ -285,28 +285,28 @@ auto run_plain_request(asio::io_context& io,
     auto endpoints = resolver.resolve(url.host, url.port, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTP resolve failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTP resolve failed: " + error.message()));
     }
 
     set_stream_timeout(stream);
     stream.connect(endpoints, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTP connect failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTP connect failed: " + error.message()));
     }
 
     set_stream_timeout(stream);
     http::write(stream, request, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTP write failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTP write failed: " + error.message()));
     }
 
     beast::flat_buffer buffer;
     auto response = read_response(stream, buffer, on_chunk, "HTTP");
-    if (!response)
+    if(!response.ok())
     {
-        return nonstd::make_unexpected(response.error());
+        return response.status();
     }
 
     if (response->stopped_early)
@@ -324,7 +324,7 @@ auto run_tls_request(asio::io_context& io,
                      ssl::context& tls,
                      const ParsedUrl& url,
                      http::request<http::string_body> request,
-                     const OnChunk& on_chunk) -> Result<HttpResponse>
+                     const OnChunk& on_chunk) -> absl::StatusOr<HttpResponse>
 {
     beast::error_code error;
     Tcp::resolver resolver{io};
@@ -332,41 +332,41 @@ auto run_tls_request(asio::io_context& io,
 
     if (!SSL_set_tlsext_host_name(stream.native_handle(), url.host.c_str()))
     {
-        return fail<HttpResponse>(ErrorKind::Network, "failed to set TLS SNI host");
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("failed to set TLS SNI host"));
     }
 
     auto endpoints = resolver.resolve(url.host, url.port, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTPS resolve failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTPS resolve failed: " + error.message()));
     }
 
     set_stream_timeout(stream);
     beast::get_lowest_layer(stream).connect(endpoints, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTPS connect failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTPS connect failed: " + error.message()));
     }
 
     set_stream_timeout(stream);
     stream.handshake(ssl::stream_base::client, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTPS handshake failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTPS handshake failed: " + error.message()));
     }
 
     set_stream_timeout(stream);
     http::write(stream, request, error);
     if (error)
     {
-        return fail<HttpResponse>(ErrorKind::Network, "HTTPS write failed: " + error.message());
+        return absl::StatusOr<HttpResponse>(absl::UnavailableError("HTTPS write failed: " + error.message()));
     }
 
     beast::flat_buffer buffer;
     auto response = read_response(stream, buffer, on_chunk, "HTTPS");
-    if (!response)
+    if(!response.ok())
     {
-        return nonstd::make_unexpected(response.error());
+        return response.status();
     }
 
     if (response->stopped_early)
@@ -396,12 +396,12 @@ auto do_request(asio::io_context& io,
                 std::string_view url_str,
                 const std::map<std::string, std::string>& headers,
                 std::string_view body,
-                const OnChunk& on_chunk) -> Result<HttpResponse>
+                const OnChunk& on_chunk) -> absl::StatusOr<HttpResponse>
 {
     auto parsed = parse_http_url(url_str);
-    if (!parsed)
+    if(!parsed.ok())
     {
-        return nonstd::make_unexpected(parsed.error());
+        return parsed.status();
     }
 
     auto request = make_request(method, *parsed, headers, body);
@@ -436,14 +436,14 @@ HttpClient::~HttpClient() = default;
 auto HttpClient::post(std::string_view url_str,
                       const std::map<std::string, std::string>& headers,
                       std::string_view body,
-                      const OnChunk& on_chunk) -> Result<HttpResponse>
+                      const OnChunk& on_chunk) -> absl::StatusOr<HttpResponse>
 {
     return do_request(impl_->io, impl_->tls, http::verb::post, url_str, headers, body, on_chunk);
 }
 
 auto HttpClient::get(std::string_view url_str,
                      const std::map<std::string, std::string>& headers,
-                     const OnChunk& on_chunk) -> Result<HttpResponse>
+                     const OnChunk& on_chunk) -> absl::StatusOr<HttpResponse>
 {
     return do_request(impl_->io, impl_->tls, http::verb::get, url_str, headers, {}, on_chunk);
 }

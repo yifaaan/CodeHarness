@@ -21,7 +21,7 @@ public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
     auto is_read_only() const noexcept -> bool override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
     auto server_name() const -> const std::string&;
     auto tool_name() const -> const std::string&;

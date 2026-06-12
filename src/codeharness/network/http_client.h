@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <functional>
 #include <map>
@@ -37,11 +37,11 @@ public:
     auto post(std::string_view url_str,
               const std::map<std::string, std::string>& headers,
               std::string_view body,
-              const OnChunk& on_chunk = {}) -> Result<HttpResponse>;
+              const OnChunk& on_chunk = {}) -> absl::StatusOr<HttpResponse>;
 
     auto get(std::string_view url_str,
              const std::map<std::string, std::string>& headers,
-             const OnChunk& on_chunk = {}) -> Result<HttpResponse>;
+             const OnChunk& on_chunk = {}) -> absl::StatusOr<HttpResponse>;
 
 private:
     struct Impl;

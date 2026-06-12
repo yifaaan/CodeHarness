@@ -2,8 +2,6 @@
 
 #include "codeharness/core/json_parse.h"
 
-#include <nonstd/expected.hpp>
-
 #include <string>
 #include <utility>
 
@@ -15,23 +13,23 @@ namespace
 
 constexpr int json_rpc_method_not_found_code = -32601;
 
-auto parse_rpc_error(const nlohmann::json& error) -> Result<McpJsonRpcError>
+auto parse_rpc_error(const nlohmann::json& error) -> absl::StatusOr<McpJsonRpcError>
 {
     if (!error.is_object())
     {
-        return fail<McpJsonRpcError>(ErrorKind::Network, "MCP JSON-RPC error must be an object");
+        return absl::StatusOr<McpJsonRpcError>(absl::UnavailableError("MCP JSON-RPC error must be an object"));
     }
 
-    auto code = read_json_field<int>(error, "code", "MCP JSON-RPC error", {}, ErrorKind::Network);
+    auto code = ReadJsonField<int>(error, "code", "MCP JSON-RPC error", {}, absl::UnavailableError );
     if (!code)
     {
-        return nonstd::make_unexpected(code.error());
+        return code.error();
     }
 
-    auto message = read_json_field<std::string>(error, "message", "MCP JSON-RPC error", {}, ErrorKind::Network);
+    auto message = ReadJsonField<std::string>(error, "message", "MCP JSON-RPC error", {}, absl::UnavailableError );
     if (!message)
     {
-        return nonstd::make_unexpected(message.error());
+        return message.error();
     }
 
     auto parsed = McpJsonRpcError{
@@ -69,7 +67,7 @@ auto make_mcp_notification(std::string_view method, std::optional<nlohmann::json
         {"method", std::string{method}},
     };
 
-    if (params.has_value())
+    if (params.ok())
     {
         message["params"] = std::move(*params);
     }
@@ -82,35 +80,35 @@ auto is_mcp_notification(const nlohmann::json& message) noexcept -> bool
     return message.is_object() && message.contains("method") && !message.contains("id");
 }
 
-auto parse_mcp_response(const nlohmann::json& message) -> Result<McpJsonRpcResponse>
+auto parse_mcp_response(const nlohmann::json& message) -> absl::StatusOr<McpJsonRpcResponse>
 {
     if (!message.is_object())
     {
-        return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response must be an object");
+        return absl::StatusOr<McpJsonRpcResponse>(absl::UnavailableError("MCP JSON-RPC response must be an object"));
     }
 
-    auto version = read_json_field<std::string>(message, "jsonrpc", "MCP JSON-RPC response", {}, ErrorKind::Network);
+    auto version = ReadJsonField<std::string>(message, "jsonrpc", "MCP JSON-RPC response", {}, absl::UnavailableError );
     if (!version)
     {
-        return nonstd::make_unexpected(version.error());
+        return version.error();
     }
 
     if (*version != "2.0")
     {
-        return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response must declare jsonrpc \"2.0\"");
+        return absl::StatusOr<McpJsonRpcResponse>(absl::UnavailableError("MCP JSON-RPC response must declare jsonrpc \"2.0\""));
     }
 
-    auto id = read_json_field<int>(message, "id", "MCP JSON-RPC response", {}, ErrorKind::Network);
+    auto id = ReadJsonField<int>(message, "id", "MCP JSON-RPC response", {}, absl::UnavailableError );
     if (!id)
     {
-        return nonstd::make_unexpected(id.error());
+        return id.error();
     }
 
     const auto has_result = message.contains("result");
     const auto has_error = message.contains("error");
     if (has_result == has_error)
     {
-        return fail<McpJsonRpcResponse>(ErrorKind::Network, "MCP JSON-RPC response must contain exactly one of result or error");
+        return absl::StatusOr<McpJsonRpcResponse>(absl::UnavailableError("MCP JSON-RPC response must contain exactly one of result or error"));
     }
 
     auto response = McpJsonRpcResponse{
@@ -126,7 +124,7 @@ auto parse_mcp_response(const nlohmann::json& message) -> Result<McpJsonRpcRespo
     auto error = parse_rpc_error(message.at("error"));
     if (!error)
     {
-        return nonstd::make_unexpected(error.error());
+        return error.error();
     }
 
     response.error = std::move(*error);
@@ -141,7 +139,7 @@ auto is_mcp_method_not_found(const McpJsonRpcError& error) noexcept -> bool
 auto describe_mcp_error(const McpJsonRpcError& error) -> std::string
 {
     auto text = std::to_string(error.code) + ": " + error.message;
-    if (error.data.has_value())
+    if (error.data.ok())
     {
         text += " data=" + error.data->dump();
     }
