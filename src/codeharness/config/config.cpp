@@ -1,390 +1,335 @@
 #include "codeharness/config/config.h"
 
-#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
+#include <toml++/toml.h>
 
-#include <utility>
+#include <sstream>
+#include <string>
 
-namespace codeharness::config
-{
+namespace codeharness::config {
 
-namespace
-{
+namespace {
 
-auto permission_mode_from_string(std::string_view value) -> PermissionMode
-{
-    if (value == "plan")
-    {
-        return PermissionMode::Plan;
+absl::StatusOr<ProviderConfig> ParseProviderConfig(const toml::table& tbl, const std::string& name) {
+  ProviderConfig pc;
+  pc.type = tbl["type"].value_or(std::string{});
+  if (pc.type.empty()) {
+    return absl::InvalidArgumentError("provider '" + name + "' missing required field 'type'");
+  }
+  pc.api_key = tbl["api_key"].value_or(std::string{});
+  pc.base_url = tbl["base_url"].value_or(std::string{});
+
+  if (tbl.contains("extra_headers")) {
+    const auto* headers = tbl["extra_headers"].as_table();
+    if (headers) {
+      for (const auto& [key, val] : *headers) {
+        pc.extra_headers[std::string{key.str()}] = val.value_or(std::string{});
+      }
     }
-    if (value == "full_auto")
-    {
-        return PermissionMode::FullAuto;
-    }
+  }
 
-    return PermissionMode::Default;
+  return pc;
 }
 
-auto permission_mode_to_string(PermissionMode mode) -> std::string_view
-{
-    switch (mode)
-    {
-    case PermissionMode::Plan: return "plan";
-    case PermissionMode::FullAuto: return "full_auto";
-    case PermissionMode::Default: return "default";
-    }
-
-    return "default";
+absl::StatusOr<ModelAlias> ParseModelAlias(const toml::table& tbl, const std::string& name) {
+  ModelAlias ma;
+  ma.provider_ref = tbl["provider"].value_or(std::string{});
+  if (ma.provider_ref.empty()) {
+    return absl::InvalidArgumentError("model '" + name + "' missing required field 'provider'");
+  }
+  ma.model = tbl["model"].value_or(std::string{});
+  return ma;
 }
 
-auto permission_action_from_string(std::string_view value) -> PermissionAction
-{
-    if (value == "allow")
-    {
-        return PermissionAction::Allow;
-    }
-    if (value == "deny")
-    {
-        return PermissionAction::Deny;
-    }
-
-    return PermissionAction::Ask;
+PermissionRule ParsePermissionRule(const toml::table& tbl) {
+  PermissionRule rule;
+  rule.decision = tbl["decision"].value_or(std::string{});
+  rule.scope = tbl["scope"].value_or(std::string{});
+  rule.pattern = tbl["pattern"].value_or(std::string{});
+  return rule;
 }
 
-auto permission_action_to_string(PermissionAction action) -> std::string_view
-{
-    switch (action)
-    {
-    case PermissionAction::Allow: return "allow";
-    case PermissionAction::Deny: return "deny";
-    case PermissionAction::Ask: return "ask";
-    }
+absl::StatusOr<HookDefinition> ParseHookEvent(const toml::table& tbl) {
+  HookDefinition hd;
 
-    return "ask";
+  auto event_str = tbl["event"].value_or(std::string{});
+  auto event_opt = hook_event_from_string(event_str);
+  if (!event_opt) {
+    return absl::InvalidArgumentError("unknown hook event: " + event_str);
+  }
+  hd.event = *event_opt;
+
+  auto type_str = tbl["type"].value_or(std::string{});
+  auto type_opt = hook_type_from_string(type_str);
+  if (!type_opt) {
+    return absl::InvalidArgumentError("unknown hook type: " + type_str);
+  }
+  hd.type = *type_opt;
+
+  hd.priority = tbl["priority"].value_or(0);
+  hd.block_on_failure = tbl["block_on_failure"].value_or(false);
+  hd.timeout_seconds = tbl["timeout_seconds"].value_or(30);
+
+  auto matcher = tbl["matcher"].value_or(std::string{});
+  if (!matcher.empty()) {
+    hd.matcher = std::move(matcher);
+  }
+
+  nlohmann::json cfg = nlohmann::json::object();
+  cfg["command"] = tbl["command"].value_or(std::string{});
+  if (!cfg["command"].empty()) {
+    hd.config = std::move(cfg);
+  }
+
+  return hd;
 }
 
-auto parse_path_rules(const nlohmann::json& rules) -> std::vector<PermissionPathRule>
-{
-    std::vector<PermissionPathRule> parsed;
-    if (!rules.is_array())
-    {
-        return parsed;
+absl::StatusOr<McpServerConfig> ParseMcpServer(const toml::table& tbl, const std::string& name) {
+  auto transport = tbl["transport"].value_or(std::string{"stdio"});
+
+  if (transport == "stdio") {
+    McpStdioServerConfig cfg;
+    cfg.name = name;
+    cfg.command = tbl["command"].value_or(std::string{});
+    if (cfg.command.empty()) {
+      return absl::InvalidArgumentError("MCP server '" + name + "' missing required field 'command'");
     }
 
-    for (const auto& item : rules)
-    {
-        if (!item.is_object())
-        {
-            continue;
-        }
-
-        PermissionPathRule rule;
-        rule.action = permission_action_from_string(item.value("action", std::string{}));
-        rule.pattern = item.value("pattern", std::string{});
-        if (item.contains("tools") && item["tools"].is_array())
-        {
-            rule.tools = item["tools"].get<std::vector<std::string>>();
-        }
-
-        if (!rule.pattern.empty())
-        {
-            parsed.push_back(std::move(rule));
-        }
+    const auto* args_arr = tbl["args"].as_array();
+    if (args_arr) {
+      for (const auto& arg : *args_arr) {
+        cfg.args.push_back(arg.value_or(std::string{}));
+      }
     }
 
-    return parsed;
+    const auto* env_tbl = tbl["env"].as_table();
+    if (env_tbl) {
+      for (const auto& [key, val] : *env_tbl) {
+        cfg.env[std::string{key.str()}] = val.value_or(std::string{});
+      }
+    }
+
+    return McpServerConfig{std::move(cfg)};
+  }
+
+  if (transport == "http" || transport == "sse") {
+    McpHttpServerConfig cfg;
+    cfg.name = name;
+    cfg.url = tbl["url"].value_or(std::string{});
+    if (cfg.url.empty()) {
+      return absl::InvalidArgumentError("MCP server '" + name + "' missing required field 'url'");
+    }
+
+    const auto* headers_tbl = tbl["headers"].as_table();
+    if (headers_tbl) {
+      for (const auto& [key, val] : *headers_tbl) {
+        cfg.headers[std::string{key.str()}] = val.value_or(std::string{});
+      }
+    }
+
+    return McpServerConfig{std::move(cfg)};
+  }
+
+  return absl::InvalidArgumentError("MCP server '" + name + "' unknown transport: " + transport);
 }
 
-auto parse_command_rules(const nlohmann::json& rules) -> std::vector<PermissionCommandRule>
-{
-    std::vector<PermissionCommandRule> parsed;
-    if (!rules.is_array())
-    {
-        return parsed;
+}  // namespace
+
+absl::StatusOr<CodeHarnessConfig> ParseTomlConfig(std::string_view toml_content) {
+  CodeHarnessConfig config;
+
+  try {
+    auto tbl = toml::parse(std::string{toml_content});
+
+    config.default_model = tbl["default_model"].value_or(std::string{});
+    config.default_thinking = tbl["default_thinking"].value_or(std::string{});
+    config.default_permission_mode = tbl["default_permission_mode"].value_or(std::string{});
+
+    // Parse [providers]
+    const auto* providers_tbl = tbl["providers"].as_table();
+    if (providers_tbl) {
+      for (const auto& [key, val] : *providers_tbl) {
+        const auto* provider_tbl = val.as_table();
+        if (!provider_tbl) continue;
+
+        auto pc = ParseProviderConfig(*provider_tbl, std::string{key.str()});
+        if (!pc) return pc.status();
+
+        config.providers[std::string{key.str()}] = std::move(*pc);
+      }
     }
 
-    for (const auto& item : rules)
-    {
-        if (!item.is_object())
-        {
-            continue;
-        }
+    // Parse [models]
+    const auto* models_tbl = tbl["models"].as_table();
+    if (models_tbl) {
+      for (const auto& [key, val] : *models_tbl) {
+        const auto* model_tbl = val.as_table();
+        if (!model_tbl) continue;
 
-        PermissionCommandRule rule;
-        rule.action = permission_action_from_string(item.value("action", std::string{}));
-        rule.pattern = item.value("pattern", std::string{});
-        if (!rule.pattern.empty())
-        {
-            parsed.push_back(std::move(rule));
-        }
+        auto ma = ParseModelAlias(*model_tbl, std::string{key.str()});
+        if (!ma) return ma.status();
+
+        config.models[std::string{key.str()}] = std::move(*ma);
+      }
     }
 
-    return parsed;
+    // Parse [[permission.rules]]
+    const auto* rules_arr = tbl["permission"]["rules"].as_array();
+    if (rules_arr) {
+      for (const auto& item : *rules_arr) {
+        const auto* rule_tbl = item.as_table();
+        if (!rule_tbl) continue;
+
+        config.permission_rules.push_back(ParsePermissionRule(*rule_tbl));
+      }
+    }
+
+    // Parse [[hooks]]
+    const auto* hooks_arr = tbl["hooks"].as_array();
+    if (hooks_arr) {
+      for (const auto& item : *hooks_arr) {
+        const auto* hook_tbl = item.as_table();
+        if (!hook_tbl) continue;
+
+        auto hd = ParseHookEvent(*hook_tbl);
+        if (!hd) return hd.status();
+
+        config.hooks.push_back(std::move(*hd));
+      }
+    }
+
+    // Parse [mcp_servers]
+    const auto* mcp_tbl = tbl["mcp_servers"].as_table();
+    if (mcp_tbl) {
+      for (const auto& [key, val] : *mcp_tbl) {
+        const auto* server_tbl = val.as_table();
+        if (!server_tbl) continue;
+
+        auto server = ParseMcpServer(*server_tbl, std::string{key.str()});
+        if (!server) return server.status();
+
+        config.mcp_servers.push_back(std::move(*server));
+      }
+    }
+  } catch (const toml::parse_error& e) {
+    return absl::FailedPreconditionError("TOML parse error: " + std::string{e.what()});
+  }
+
+  return config;
 }
 
-auto path_rules_to_json(const std::vector<PermissionPathRule>& rules) -> nlohmann::json
-{
-    auto json = nlohmann::json::array();
-    for (const auto& rule : rules)
-    {
-        nlohmann::json item{
-            {"action", permission_action_to_string(rule.action)},
-            {"pattern", rule.pattern},
-        };
-        if (!rule.tools.empty())
-        {
-            item["tools"] = rule.tools;
-        }
-        json.push_back(std::move(item));
+absl::StatusOr<std::string> SerializeToToml(const CodeHarnessConfig& config) {
+  try {
+    toml::table tbl;
+
+    if (!config.default_model.empty()) tbl.emplace("default_model", config.default_model);
+    if (!config.default_thinking.empty()) tbl.emplace("default_thinking", config.default_thinking);
+    if (!config.default_permission_mode.empty()) tbl.emplace("default_permission_mode", config.default_permission_mode);
+
+    // [providers]
+    toml::table providers_tbl;
+    for (const auto& [name, pc] : config.providers) {
+      toml::table provider_tbl;
+      provider_tbl.emplace("type", pc.type);
+      if (!pc.api_key.empty()) provider_tbl.emplace("api_key", pc.api_key);
+      if (!pc.base_url.empty()) provider_tbl.emplace("base_url", pc.base_url);
+
+      toml::table headers_tbl;
+      for (const auto& [key, value] : pc.extra_headers) headers_tbl.emplace(key, value);
+      if (!headers_tbl.empty()) provider_tbl.emplace("extra_headers", std::move(headers_tbl));
+
+      providers_tbl.emplace(name, std::move(provider_tbl));
     }
-    return json;
-}
+    if (!providers_tbl.empty()) tbl.emplace("providers", std::move(providers_tbl));
 
-auto command_rules_to_json(const std::vector<PermissionCommandRule>& rules) -> nlohmann::json
-{
-    auto json = nlohmann::json::array();
-    for (const auto& rule : rules)
-    {
-        json.push_back(nlohmann::json{
-            {"action", permission_action_to_string(rule.action)},
-            {"pattern", rule.pattern},
-        });
+    // [models]
+    toml::table models_tbl;
+    for (const auto& [name, ma] : config.models) {
+      toml::table model_tbl;
+      model_tbl.emplace("provider", ma.provider_ref);
+      model_tbl.emplace("model", ma.model);
+      models_tbl.emplace(name, std::move(model_tbl));
     }
-    return json;
-}
+    if (!models_tbl.empty()) tbl.emplace("models", std::move(models_tbl));
 
-} // namespace
+    // [[permission.rules]]
+    if (!config.permission_rules.empty()) {
+      toml::array rules_arr;
+      for (const auto& rule : config.permission_rules) {
+        toml::table rule_tbl;
+        if (!rule.decision.empty()) rule_tbl.emplace("decision", rule.decision);
+        if (!rule.scope.empty()) rule_tbl.emplace("scope", rule.scope);
+        if (!rule.pattern.empty()) rule_tbl.emplace("pattern", rule.pattern);
+        rules_arr.push_back(std::move(rule_tbl));
+      }
 
-// ---- ProviderProfile ----
-
-void from_json(const nlohmann::json& j, ProviderProfile& p)
-{
-    p.name = j.value("name", p.name);
-    p.label = j.value("label", p.name);
-    p.provider_type = j.value("provider_type", p.provider_type);
-    p.api_format = j.value("api_format", p.api_format);
-    p.model = j.value("model", p.model);
-    p.base_url = j.value("base_url", p.base_url);
-    p.auth_source = j.value("auth_source", p.auth_source);
-    if (j.contains("extra_headers") && j["extra_headers"].is_object())
-    {
-        p.extra_headers = j["extra_headers"].get<std::map<std::string, std::string>>();
-    }
-}
-
-void to_json(nlohmann::json& j, const ProviderProfile& p)
-{
-    j = nlohmann::json{
-        {"name", p.name},
-        {"label", p.label},
-        {"provider_type", p.provider_type},
-        {"model", p.model},
-        {"base_url", p.base_url},
-        {"auth_source", p.auth_source},
-    };
-    if (!p.api_format.empty())
-    {
-        j["api_format"] = p.api_format;
-    }
-    if (!p.extra_headers.empty())
-    {
-        j["extra_headers"] = p.extra_headers;
-    }
-}
-
-// ---- Settings ----
-
-void from_json(const nlohmann::json& j, Settings& s)
-{
-    s.active_profile = j.value("active_profile", s.active_profile);
-
-    if (j.contains("profiles") && j["profiles"].is_object())
-    {
-        for (auto& [key, value] : j["profiles"].items())
-        {
-            s.profiles[key] = value.get<ProviderProfile>();
-        }
+      toml::table permission_tbl;
+      permission_tbl.emplace("rules", std::move(rules_arr));
+      tbl.emplace("permission", std::move(permission_tbl));
     }
 
-    s.provider_type = j.value("provider_type", s.provider_type);
-    s.model = j.value("model", s.model);
-    s.base_url = j.value("base_url", s.base_url);
-    s.max_tokens = j.value("max_tokens", s.max_tokens);
-    s.max_turns = j.value("max_turns", s.max_turns);
-
-    if (j.contains("permission"))
-    {
-        // PermissionSettings from_json: map "mode" string → PermissionMode enum
-        const auto& perm = j["permission"];
-        if (perm.is_object())
-        {
-            s.permission.mode = permission_mode_from_string(perm.value("mode", std::string{}));
-            if (perm.contains("allowed_tools") && perm["allowed_tools"].is_array())
-            {
-                s.permission.allowed_tools = perm["allowed_tools"].get<std::vector<std::string>>();
-            }
-            if (perm.contains("denied_tools") && perm["denied_tools"].is_array())
-            {
-                s.permission.denied_tools = perm["denied_tools"].get<std::vector<std::string>>();
-            }
-            if (perm.contains("path_rules"))
-            {
-                s.permission.path_rules = parse_path_rules(perm["path_rules"]);
-            }
-            if (perm.contains("command_rules"))
-            {
-                s.permission.command_rules = parse_command_rules(perm["command_rules"]);
-            }
-        }
+    // [[hooks]]
+    if (!config.hooks.empty()) {
+      toml::array hooks_arr;
+      for (const auto& hook : config.hooks) {
+        toml::table hook_tbl;
+        hook_tbl.emplace("event", hook_event_to_string(hook.event));
+        hook_tbl.emplace("type", hook_type_to_string(hook.type));
+        if (hook.priority != 0) hook_tbl.emplace("priority", hook.priority);
+        if (hook.matcher) hook_tbl.emplace("matcher", *hook.matcher);
+        if (hook.block_on_failure) hook_tbl.emplace("block_on_failure", true);
+        if (hook.timeout_seconds != 30) hook_tbl.emplace("timeout_seconds", hook.timeout_seconds);
+        if (hook.config.contains("command")) hook_tbl.emplace("command", hook.config["command"].get<std::string>());
+        hooks_arr.push_back(std::move(hook_tbl));
+      }
+      tbl.emplace("hooks", std::move(hooks_arr));
     }
 
-    if (j.contains("mcp_servers") && j["mcp_servers"].is_array())
-    {
-        for (const auto& server_json : j["mcp_servers"])
-        {
-            auto type = server_json.value("transport", std::string{});
-            if (type == "stdio" || type.empty())
-            {
-                McpStdioServerConfig cfg;
-                cfg.name = server_json.value("name", cfg.name);
-                cfg.command = server_json.value("command", cfg.command);
-                cfg.args = server_json.value("args", cfg.args);
-                if (server_json.contains("env") && server_json["env"].is_object())
-                {
-                    cfg.env = server_json["env"].get<std::map<std::string, std::string>>();
+    // [mcp_servers]
+    if (!config.mcp_servers.empty()) {
+      toml::table mcp_tbl;
+      for (const auto& server : config.mcp_servers) {
+        toml::table server_tbl;
+
+        std::visit(
+            [&](const auto& cfg) {
+              using T = std::decay_t<decltype(cfg)>;
+              if constexpr (std::is_same_v<T, McpStdioServerConfig>) {
+                server_tbl.emplace("transport", "stdio");
+                server_tbl.emplace("command", cfg.command);
+                if (!cfg.args.empty()) {
+                  toml::array args_arr;
+                  for (const auto& arg : cfg.args) args_arr.push_back(arg);
+                  server_tbl.emplace("args", std::move(args_arr));
                 }
-                s.mcp_servers.push_back(std::move(cfg));
-            }
-            else if (type == "http")
-            {
-                McpHttpServerConfig cfg;
-                cfg.name = server_json.value("name", cfg.name);
-                cfg.url = server_json.value("url", cfg.url);
-                if (server_json.contains("headers") && server_json["headers"].is_object())
-                {
-                    cfg.headers = server_json["headers"].get<std::map<std::string, std::string>>();
+                if (!cfg.env.empty()) {
+                  toml::table env_tbl;
+                  for (const auto& [key, val] : cfg.env) env_tbl.emplace(key, val);
+                  server_tbl.emplace("env", std::move(env_tbl));
                 }
-                s.mcp_servers.push_back(std::move(cfg));
-            }
-        }
+              } else {
+                server_tbl.emplace("transport", "http");
+                server_tbl.emplace("url", cfg.url);
+                if (!cfg.headers.empty()) {
+                  toml::table headers_tbl;
+                  for (const auto& [key, val] : cfg.headers) headers_tbl.emplace(key, val);
+                  server_tbl.emplace("headers", std::move(headers_tbl));
+                }
+              }
+            },
+            server);
+
+        mcp_tbl.emplace(mcp_server_name(server), std::move(server_tbl));
+      }
+      tbl.emplace("mcp_servers", std::move(mcp_tbl));
     }
 
-    if (j.contains("hooks"))
-    {
-        const auto& hooks_json = j["hooks"];
-        if (!hooks_json.is_array())
-        {
-            throw nlohmann::json::type_error::create(302, "settings hooks must be an array", nullptr);
-        }
-
-        s.hooks.clear();
-        for (std::size_t i = 0; i < hooks_json.size(); ++i)
-        {
-            auto hook = hook_definition_from_json(hooks_json[i], "settings hooks[" + std::to_string(i) + "]");
-            if (!hook)
-            {
-                throw nlohmann::json::type_error::create(302, hook.status().message(), nullptr);
-            }
-            s.hooks.push_back(std::move(*hook));
-        }
-    }
-
-    s.allow_project_skills = j.value("allow_project_skills", s.allow_project_skills);
-    s.allow_project_plugins = j.value("allow_project_plugins", s.allow_project_plugins);
-
-    s.config_dir = j.value("config_dir", s.config_dir);
-    s.data_dir = j.value("data_dir", s.data_dir);
-    s.memory_root = j.value("memory_root", s.memory_root);
+    std::ostringstream oss;
+    oss << tbl << "\n";
+    return oss.str();
+  } catch (const std::exception& e) {
+    return absl::InternalError("TOML serialization error: " + std::string{e.what()});
+  }
 }
 
-void to_json(nlohmann::json& j, const Settings& s)
-{
-    j = nlohmann::json{
-        {"active_profile", s.active_profile},
-        {"profiles", s.profiles},
-        {"provider_type", s.provider_type},
-        {"model", s.model},
-        {"base_url", s.base_url},
-        {"max_tokens", s.max_tokens},
-        {"max_turns", s.max_turns},
-        {"allow_project_skills", s.allow_project_skills},
-        {"allow_project_plugins", s.allow_project_plugins},
-    };
-
-    j["permission"] = nlohmann::json{{"mode", permission_mode_to_string(s.permission.mode)}};
-    if (!s.permission.allowed_tools.empty())
-    {
-        j["permission"]["allowed_tools"] = s.permission.allowed_tools;
-    }
-    if (!s.permission.denied_tools.empty())
-    {
-        j["permission"]["denied_tools"] = s.permission.denied_tools;
-    }
-    if (!s.permission.path_rules.empty())
-    {
-        j["permission"]["path_rules"] = path_rules_to_json(s.permission.path_rules);
-    }
-    if (!s.permission.command_rules.empty())
-    {
-        j["permission"]["command_rules"] = command_rules_to_json(s.permission.command_rules);
-    }
-
-    // MCP servers
-    nlohmann::json servers = nlohmann::json::array();
-    for (const auto& server : s.mcp_servers)
-    {
-        if (auto* stdio = std::get_if<McpStdioServerConfig>(&server))
-        {
-            nlohmann::json sj;
-            sj["transport"] = "stdio";
-            sj["name"] = stdio->name;
-            sj["command"] = stdio->command;
-            sj["args"] = stdio->args;
-            if (!stdio->env.empty())
-            {
-                sj["env"] = stdio->env;
-            }
-            servers.push_back(std::move(sj));
-        }
-        else if (auto* http = std::get_if<McpHttpServerConfig>(&server))
-        {
-            nlohmann::json sj;
-            sj["transport"] = "http";
-            sj["name"] = http->name;
-            sj["url"] = http->url;
-            if (!http->headers.empty())
-            {
-                sj["headers"] = http->headers;
-            }
-            servers.push_back(std::move(sj));
-        }
-    }
-    j["mcp_servers"] = std::move(servers);
-
-    if (!s.hooks.empty())
-    {
-        auto hooks = nlohmann::json::array();
-        for (const auto& hook : s.hooks)
-        {
-            hooks.push_back(hook_definition_to_json(hook));
-        }
-        j["hooks"] = std::move(hooks);
-    }
-
-    // Paths (only when non-empty)
-    if (!s.config_dir.empty())
-    {
-        j["config_dir"] = s.config_dir.string();
-    }
-    if (!s.data_dir.empty())
-    {
-        j["data_dir"] = s.data_dir.string();
-    }
-    if (!s.memory_root.empty())
-    {
-        j["memory_root"] = s.memory_root.string();
-    }
-
-    // Never serialize api_key.
-}
-
-} // namespace codeharness::config
+}  // namespace codeharness::config

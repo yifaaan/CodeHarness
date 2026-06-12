@@ -1,81 +1,68 @@
 #pragma once
 
-#include "codeharness/hooks/hook.h"
-#include "codeharness/mcp/types.h"
-#include "codeharness/permissions/permission.h"
-
 #include <filesystem>
 #include <map>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace codeharness::config
-{
+#include "codeharness/hooks/hook.h"
+#include "codeharness/mcp/types.h"
+#include "codeharness/permissions/permission.h"
 
-// Named provider configuration that can be referenced via settings.active_profile.
-// Each profile stores connection parameters for one API provider (OpenAI, Anthropic, etc.).
-struct ProviderProfile
-{
-    std::string name;
-    std::string label;
-    std::string provider_type;   // "openai" | "anthropic" | "echo"
-    std::string api_format;      // optional: "openai" | "anthropic"
-    std::string model;
-    std::string base_url;
-    std::string auth_source;     // "env:VAR" | "credentials:NAME" | "literal-key"
-    std::map<std::string, std::string> extra_headers;
+namespace codeharness::config {
+
+// Provider configuration from TOML [providers.<name>]
+//   [providers.my-anthropic]
+//   type = "anthropic"
+//   api_key = "env:ANTHROPIC_API_KEY"
+struct ProviderConfig {
+  std::string type;     // "anthropic" | "openai" | "google" | "echo"
+  std::string api_key;  // literal, "env:VAR", or "credentials:NAME"
+  std::string base_url;
+  std::map<std::string, std::string> extra_headers;
 };
 
-// Central runtime configuration, merged from multiple sources:
-//   defaults → settings.json → environment variables → CLI flags
-//
-// v1 keeps this practical: only fields with actual consumers are included.
-// Future additions (MemorySettings, SandboxSettings) go here when their
-// corresponding subsystems need them.
-struct Settings
-{
-    // --- Active Profile ---
-    std::string active_profile = "default";
-    std::map<std::string, ProviderProfile> profiles = {
-        {"default", ProviderProfile{.name = "default", .label = "Default", .provider_type = "openai"}}
-    };
-
-    // --- Resolved Provider Fields ---
-    // These are populated by ConfigLoader after merging all layers
-    // and resolving the active profile's credentials.
-    std::string provider_type = "openai";
-    std::string model;
-    std::string api_key;
-    std::string base_url;
-    int max_tokens = 4096;
-    int max_turns = 200;
-
-    // --- Permissions ---
-    PermissionSettings permission;
-
-    // --- MCP Servers ---
-    std::vector<McpServerConfig> mcp_servers;
-
-    // --- Hooks ---
-    std::vector<HookDefinition> hooks;
-
-    // --- Feature Flags ---
-    bool allow_project_skills = true;
-    bool allow_project_plugins = false;
-
-    // --- Core Paths ---
-    std::filesystem::path config_dir;
-    std::filesystem::path data_dir;
-    std::filesystem::path cwd;
-    std::filesystem::path memory_root;
+// Model alias: maps a friendly name to a (provider, model) pair.
+//   [models]
+//   "claude-sonnet-4" = { provider = "my-anthropic", model = "claude-sonnet-4-20250514" }
+struct ModelAlias {
+  std::string provider_ref;  // references a [providers] name
+  std::string model;         // actual model name passed to the API
 };
 
-// --- JSON Serialization ---
-void from_json(const nlohmann::json& j, ProviderProfile& p);
-void to_json(nlohmann::json& j, const ProviderProfile& p);
+// Permission rule from [[permission.rules]]
+//   [[permission.rules]]
+//   decision = "allow"
+//   scope = "session-runtime"
+//   pattern = "Bash"
+struct PermissionRule {
+  std::string decision;  // "allow" | "deny" | "ask"
+  std::string scope;     // "session-runtime" | "turn-override" | "project" | "user"
+  std::string pattern;   // ToolName(pattern)
+};
 
-void from_json(const nlohmann::json& j, Settings& s);
-void to_json(nlohmann::json& j, const Settings& s);
+// Top-level CodeHarness configuration, typically loaded from config.toml.
+struct CodeHarnessConfig {
+  std::string default_model;
+  std::string default_thinking;
+  std::string default_permission_mode;
 
-} // namespace codeharness::config
+  std::map<std::string, ProviderConfig> providers;
+  std::map<std::string, ModelAlias> models;
+  std::vector<PermissionRule> permission_rules;
+
+  std::vector<HookDefinition> hooks;
+  std::vector<McpServerConfig> mcp_servers;
+
+  std::filesystem::path config_dir;
+  std::filesystem::path data_dir;
+};
+
+// Parse TOML content into CodeHarnessConfig.
+absl::StatusOr<CodeHarnessConfig> ParseTomlConfig(std::string_view toml_content);
+
+// Serialize CodeHarnessConfig to TOML string.
+absl::StatusOr<std::string> SerializeToToml(const CodeHarnessConfig& config);
+
+}  // namespace codeharness::config
