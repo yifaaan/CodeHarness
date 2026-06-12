@@ -327,8 +327,11 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
             return text("");
         }
 
-        // Empty line with user_message_bg (full width via padded text)
-        rows.push_back(text("  ") | bgcolor(TuiTheme::user_message_bg()));
+        // Top padding — full width via hbox + filler
+        rows.push_back(hbox({
+            text("  "),
+            filler(),
+        }));
         for (std::size_t i = 0; i < text_lines.size(); ++i)
         {
             const auto content = trim_to_width(text_lines.at(i), std::max(0, width - 4));
@@ -337,19 +340,24 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
                 rows.push_back(hbox({
                     text("\xe2\x80\xba ") | color(TuiTheme::codex_user_prefix()) | bold | dim,
                     text(content),
-                }) | bgcolor(TuiTheme::user_message_bg()));
+                    filler(),
+                }));
             }
             else
             {
                 rows.push_back(hbox({
                     text("  "),
                     text(content),
-                }) | bgcolor(TuiTheme::user_message_bg()));
+                    filler(),
+                }));
             }
         }
-        // Empty line with user_message_bg (full width via padded text)
-        rows.push_back(text("  ") | bgcolor(TuiTheme::user_message_bg()));
-        return vbox(std::move(rows));
+        // Bottom padding — full width via hbox + filler
+        rows.push_back(hbox({
+            text("  "),
+            filler(),
+        }));
+        return vbox(std::move(rows)) | bgcolor(TuiTheme::user_message_bg());
     }
 
     if (item.kind == HistoryCellKind::assistant)

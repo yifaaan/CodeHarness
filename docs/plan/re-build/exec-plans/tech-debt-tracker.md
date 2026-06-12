@@ -1,0 +1,113 @@
+# Technical Debt Tracker
+
+This document tracks technical debt in the CodeHarness project, following OpenAI's principle of "entropy collection" - regular cleanup of outdated patterns.
+
+## Debt Categories
+
+### 1. Architecture Debt
+- **Description**: Architectural decisions that need revision
+- **Impact**: High - affects maintainability and extensibility
+- **Examples**: Missing abstraction layers, tight coupling
+
+### 2. Code Quality Debt
+- **Description**: Code that doesn't meet quality standards
+- **Impact**: Medium - affects readability and maintainability
+- **Examples**: Missing tests, code duplication, poor naming
+
+### 3. Documentation Debt
+- **Description**: Outdated or missing documentation
+- **Impact**: Medium - affects onboarding and agent readability
+- **Examples**: Missing API docs, outdated architecture docs
+
+### 4. Performance Debt
+- **Description**: Performance issues that need optimization
+- **Impact**: Low-Medium - affects user experience
+- **Examples**: Memory leaks, inefficient algorithms
+
+### 5. Security Debt
+- **Description**: Security vulnerabilities that need addressing
+- **Impact**: High - affects system security
+- **Examples**: Missing input validation, exposed secrets
+
+## Current Debt Items
+
+### High Priority (Must Fix)
+
+| ID | Category | Description | Impact | Status | Due Date |
+|----|----------|-------------|--------|--------|----------|
+| TD-001 | Architecture | Missing Kaos abstraction layer | High | In Progress | 2026-07-01 |
+| TD-002 | Architecture | No ToolScheduler for concurrent execution | High | Pending | 2026-07-15 |
+| TD-003 | Security | Incomplete permission checking | High | Pending | 2026-07-01 |
+
+### Medium Priority (Should Fix)
+
+| ID | Category | Description | Impact | Status | Due Date |
+|----|----------|-------------|--------|--------|----------|
+| TD-004 | Code Quality | Missing unit tests for tools | Medium | In Progress | 2026-07-15 |
+| TD-005 | Documentation | Outdated architecture docs | Medium | Pending | 2026-07-30 |
+| TD-006 | Performance | Inefficient context loading | Medium | Pending | 2026-08-15 |
+
+### Low Priority (Nice to Have)
+
+| ID | Category | Description | Impact | Status | Due Date |
+|----|----------|-------------|--------|--------|----------|
+| TD-007 | Code Quality | Code duplication in providers | Low | Pending | 2026-08-30 |
+| TD-008 | Documentation | Missing API examples | Low | Pending | 2026-09-15 |
+| TD-009 | Performance | Unoptimized string operations | Low | Pending | 2026-09-30 |
+
+## Debt Reduction Strategy
+
+### Weekly Cleanup (20% Time)
+- **Friday**: Dedicated to technical debt reduction
+- **Focus**: High priority items first
+- **Output**: PRs that reduce debt
+
+### Automated Detection
+- **Linters**: Custom linters for architecture invariants
+- **Tests**: Structural tests for dependency direction
+- **CI**: Automated debt detection in CI pipeline
+
+### Documentation Freshness
+- **Monthly**: Review and update documentation
+- **Quarterly**: Archive outdated documentation
+- **Continuous**: Agent-driven documentation updates
+
+## Metrics
+
+### Debt Ratio
+- **Target**: < 10% of codebase
+- **Current**: TBD
+- **Measurement**: Lines of code with debt / Total lines of code
+
+### Debt Velocity
+- **Target**: Reduce by 5% per month
+- **Current**: TBD
+- **Measurement**: Debt items closed / Debt items created
+
+### Documentation Freshness
+- **Target**: < 30 days average age
+- **Current**: TBD
+- **Measurement**: Average age of documentation files
+
+## Process
+
+### When to Add Debt
+1. **Emergency fixes**: Add debt item with high priority
+2. **Feature development**: Add debt item if shortcuts are taken
+3. **Code review**: Identify debt during review
+
+### When to Remove Debt
+1. **Weekly cleanup**: Address high priority items
+2. **Feature development**: Remove related debt when touching code
+3. **Refactoring**: Remove debt during major refactors
+
+### Tracking
+- **Tools**: Git issues, project board
+- **Reporting**: Monthly debt report
+- **Review**: Weekly debt review meeting
+
+## References
+
+- [OpenAI: Codex in an Agent-First World](https://openai.com/index/codex-in-an-agent-first-world/)
+- [Technical Debt Quadrant](https://martinfowler.com/bliki/TechnicalDebtQuadrant.html)
+- [Refactoring by Martin Fowler](https://martinfowler.com/books/refactoring.html)

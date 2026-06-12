@@ -31,13 +31,12 @@ namespace codeharness::tui
 }
 
 /// Fill the top-level TUI with the Codex dark background when the terminal supports it.
+/// Applies bgcolor directly on the child element rather than using dbox+filler,
+/// to ensure every cell has a definite background color (no Color::Default gaps).
 [[nodiscard]] inline auto codex_background_style() -> ftxui::Decorator
 {
     return [](ftxui::Element child) -> ftxui::Element {
-        return ftxui::dbox({
-            ftxui::filler() | ftxui::bgcolor(TuiTheme::background()),
-            child | ftxui::bgcolor(TuiTheme::background()),
-        });
+        return child | ftxui::bgcolor(TuiTheme::background());
     };
 }
 

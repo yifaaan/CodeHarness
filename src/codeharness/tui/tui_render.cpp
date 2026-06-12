@@ -138,7 +138,10 @@ auto transcript_line_element(const std::string& line) -> Element
 {
     if (line.empty())
     {
-        return text(" ") | user_message_bg_style();
+        return hbox({
+            text("  "),
+            filler(),
+        }) | user_message_bg_style();
     }
 
     if (line.starts_with(std::string{k_codex_prompt_prefix}))
@@ -147,6 +150,18 @@ auto transcript_line_element(const std::string& line) -> Element
         return hbox({
             text(std::string{k_codex_prompt_prefix}) | color(TuiTheme::codex_user_prefix()) | bold | dim,
             text(content) | color(TuiTheme::text_strong()),
+            filler(),
+        }) | user_message_bg_style();
+    }
+
+    // Subsequent user content lines (indented with "  ") — also need full-width bgcolor
+    if (line.starts_with("  ") && !line.starts_with("  \xe2\x94\x82 ") &&
+        !line.starts_with("  \xe2\x94\x94 ") && !line.starts_with("  \xe2\x80\xa6 ") &&
+        !line.starts_with("  \xe2\x9c\x95 "))
+    {
+        return hbox({
+            text(line),
+            filler(),
         }) | user_message_bg_style();
     }
 
@@ -215,10 +230,10 @@ auto composer_prompt_prefix_column_element() -> Element
 
 auto composer_input_area_element(Element child) -> Element
 {
-    return dbox({
-        filler() | bgcolor(TuiTheme::user_message_bg()),
-        std::move(child) | bgcolor(TuiTheme::user_message_bg()),
-    }) | size(HEIGHT, EQUAL, k_codex_composer_rows);
+    return hbox({
+        std::move(child),
+        filler(),
+    }) | bgcolor(TuiTheme::user_message_bg()) | size(HEIGHT, EQUAL, k_codex_composer_rows);
 }
 
 auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>
@@ -317,7 +332,10 @@ auto render_codex_screen(const CodexFrameState& frame) -> ftxui::Screen
     {
         if (should_animate_working_status(frame.state))
         {
-            rows.push_back(working_status_element(frame.elapsed_seconds, "Working", frame.elapsed_seconds) |
+            rows.push_back(hbox({
+                working_status_element(frame.elapsed_seconds, "Working", frame.elapsed_seconds),
+                filler(),
+            }) |
                            size(HEIGHT, EQUAL, k_codex_status_rows));
         }
         else if (frame.state.interrupt_requested)
@@ -325,12 +343,17 @@ auto render_codex_screen(const CodexFrameState& frame) -> ftxui::Screen
             rows.push_back(hbox({
                                text(std::string{k_codex_bullet}) | color(TuiTheme::warning()),
                                text("Interrupting...") | color(TuiTheme::warning()) | bold,
+                               filler(),
                            }) |
                            size(HEIGHT, EQUAL, k_codex_status_rows));
         }
         else
         {
-            rows.push_back(text(" ") | size(HEIGHT, EQUAL, k_codex_status_rows));
+            rows.push_back(hbox({
+                text(" "),
+                filler(),
+            }) |
+                           size(HEIGHT, EQUAL, k_codex_status_rows));
         }
 
         Elements composer_rows;

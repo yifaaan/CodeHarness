@@ -2,6 +2,16 @@
 
 This directory contains comprehensive architecture documentation for the Kimi Code CLI project, organized as self-contained module references. Each document is designed to provide enough detail for reimplementing the module in another language.
 
+## Documentation Philosophy
+
+Based on OpenAI's agent-first engineering principles:
+
+1. **Repository as Source of Truth**: All knowledge lives in the repository
+2. **Agent Readability**: Documentation is optimized for agent consumption
+3. **Progressive Disclosure**: From high-level to detailed, guiding agents step by step
+4. **Canonical Architecture**: Enforced invariants, not micromanaged implementations
+5. **Entropy Collection**: Regular cleanup of outdated documentation
+
 ## Monorepo Structure
 
 ```
@@ -94,6 +104,34 @@ Throughout these documents:
 | **Phase 3: Services** | Records (14) → Session (07) → Tools (09) → Permission (11) → Hooks (11) | Records enables persistence; Session enables multi-agent; Tools give the agent actions; Permission + Hooks control safety |
 | **Phase 4: Extensions** | Skills (13) → MCP (10) | Skills are file-based, easy; MCP requires an external protocol implementation |
 | **Phase 5: Application** | CLI/TUI (15) → SDK (16) | Most platform-specific, port last |
+
+## Key Invariants (Enforced by Linters and Tests)
+
+These architectural invariants are mechanically enforced:
+
+1. **Dependency Direction**: Modules only depend on lower layers
+2. **Tool Execution**: Two-phase execution (resolve → execute) is mandatory
+3. **Event Recording**: All state changes must be recorded as events
+4. **Permission Check**: Permission checking must happen before tool execution
+5. **Error Handling**: Tool failures must not crash the harness
+
+## Quality Metrics
+
+| Metric | Target | Current |
+|--------|--------|---------|
+| Test Coverage | > 80% | TBD |
+| Documentation Freshness | < 30 days | TBD |
+| Linter Pass Rate | 100% | TBD |
+| Build Success Rate | > 99% | TBD |
+
+## Contributing
+
+When modifying code:
+1. Check [ARCHITECTURE.md](ARCHITECTURE.md) for system boundaries
+2. Read relevant reference doc for the module you're touching
+3. Follow existing patterns in the codebase
+4. Update documentation if architecture changes
+5. Ensure all linters and tests pass
 
 ---
 

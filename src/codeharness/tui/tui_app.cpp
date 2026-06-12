@@ -966,7 +966,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             cancellation = cancellation_source->token();
         }
         terminal.post_refresh();
-        terminal.start_animation_timer(150);
+        terminal.start_animation_timer(250);
 
         worker = std::thread{[&, prompt = std::move(prompt), cancellation] {
             const auto complete_with_error = [&](std::string message) {
@@ -1346,7 +1346,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         if (model.state().busy && !model.state().interrupt_requested)
         {
             const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_frame_time).count();
-            animation_frame = (animation_frame + static_cast<int>(elapsed_ms / 150)) % 360;
+            animation_frame = (animation_frame + static_cast<int>(elapsed_ms / 80)) % 360;
         }
         else
         {
@@ -1401,7 +1401,10 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             // Codex: status indicator line (when busy)
             if (render::should_animate_working_status(model.state()))
             {
-                rows.push_back(render::working_status_element(0, "Working", animation_frame) |
+                rows.push_back(hbox({
+                    render::working_status_element(0, "Working", animation_frame),
+                    filler(),
+                }) |
                                size(HEIGHT, EQUAL, render::k_codex_status_rows));
             }
             else if (model.state().interrupt_requested)
@@ -1409,12 +1412,17 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                 rows.push_back(hbox({
                                    text(std::string{k_codex_bullet}) | color(TuiTheme::warning()),
                                    text("Interrupting...") | color(TuiTheme::warning()) | bold,
+                                   filler(),
                                }) |
                                size(HEIGHT, EQUAL, render::k_codex_status_rows));
             }
             else
             {
-                rows.push_back(text(" ") | size(HEIGHT, EQUAL, render::k_codex_status_rows));
+                rows.push_back(hbox({
+                    text(" "),
+                    filler(),
+                }) |
+                               size(HEIGHT, EQUAL, render::k_codex_status_rows));
             }
 
             // Codex composer with prompt prefix and no border.

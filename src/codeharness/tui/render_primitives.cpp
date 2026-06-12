@@ -227,9 +227,35 @@ auto shimmer_text_segments(std::string_view text, int frame, bool enabled, Shimm
         }};
     }
 
+    // Iterate over UTF-8 characters properly (not bytes)
+    std::vector<std::string> chars;
+    for (auto it = text.begin(); it != text.end(); )
+    {
+        unsigned char c = static_cast<unsigned char>(*it);
+        std::size_t char_len = 1;
+        if ((c & 0x80) == 0)
+        {
+            char_len = 1;
+        }
+        else if ((c & 0xE0) == 0xC0)
+        {
+            char_len = 2;
+        }
+        else if ((c & 0xF0) == 0xE0)
+        {
+            char_len = 3;
+        }
+        else if ((c & 0xF8) == 0xF0)
+        {
+            char_len = 4;
+        }
+        chars.push_back(std::string{text.substr(static_cast<std::size_t>(it - text.begin()), char_len)});
+        it += static_cast<std::ptrdiff_t>(char_len);
+    }
+
     StyledLine segments;
-    segments.reserve(text.size());
-    const auto char_count = static_cast<int>(text.size());
+    segments.reserve(chars.size());
+    const auto char_count = static_cast<int>(chars.size());
     const auto base = TuiTheme::shimmer_base_rgb();
     const auto highlight = TuiTheme::shimmer_highlight_rgb();
 
@@ -237,7 +263,7 @@ auto shimmer_text_segments(std::string_view text, int frame, bool enabled, Shimm
     {
         const auto intensity = shimmer_intensity(index, frame, char_count);
         auto segment = StyledSegment{
-            .text = std::string{text.substr(static_cast<std::size_t>(index), 1)},
+            .text = chars.at(static_cast<std::size_t>(index)),
             .role = intensity >= 0.60 ? StyledColorRole::shimmer_highlight : StyledColorRole::shimmer_base,
             .bold = intensity >= 0.60,
             .dim = intensity < 0.20,
@@ -262,7 +288,7 @@ auto shimmer_text_segments(std::string_view text, int frame, bool enabled, Shimm
 
 auto shimmer_text_element(std::string_view text, int frame, bool enabled) -> ftxui::Element
 {
-    return styled_line_element(shimmer_text_segments(text, frame, enabled));
+    return styled_line_element(shimmer_text_segments(text, frame, enabled, ShimmerColorMode::TrueColor));
 }
 
 auto brightest_shimmer_index(const StyledLine& line) -> std::optional<std::size_t>
