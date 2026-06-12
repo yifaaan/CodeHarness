@@ -1,13 +1,5 @@
 #pragma once
 
-#include "codeharness/core/message.h"
-#include "codeharness/core/cancellation.h"
-#include "codeharness/core/result.h"
-#include "codeharness/hooks/hook_executor.h"
-#include "codeharness/permissions/permission.h"
-#include "codeharness/provider/provider.h"
-#include "codeharness/tools/tool_registry.h"
-
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -16,155 +8,137 @@
 #include <variant>
 #include <vector>
 
-namespace codeharness
-{
+#include "absl/status/statusor.h"
+#include "codeharness/core/cancellation.h"
+#include "codeharness/core/error.h"
+#include "codeharness/core/message.h"
+#include "codeharness/hooks/hook_executor.h"
+#include "codeharness/permissions/permission.h"
+#include "codeharness/provider/provider.h"
+#include "codeharness/tools/tool_registry.h"
 
-struct EngineOptions
-{
-    int max_turns = 10;
+namespace codeharness {
+
+struct EngineOptions {
+  int max_turns = 10;
 };
 
-struct PermissionPrompt
-{
-    std::string id;
-    std::string tool_use_id;
-    std::string tool_name;
-    std::string reason;
-    std::optional<std::filesystem::path> path;
-    std::optional<std::string> command;
+struct PermissionPrompt {
+  std::string id;
+  std::string tool_use_id;
+  std::string tool_name;
+  std::string reason;
+  std::optional<std::filesystem::path> path;
+  std::optional<std::string> command;
 };
 
-struct PermissionResponse
-{
-    bool allowed = false;
-    std::string reason;
-    bool remember_session = false;
+struct PermissionResponse {
+  bool allowed = false;
+  std::string reason;
+  bool remember_session = false;
 };
 
-using PermissionPromptHandler = std::function<Result<PermissionResponse>(const PermissionPrompt&)>;
+using PermissionPromptHandler = std::function<absl::StatusOr<PermissionResponse>(const PermissionPrompt&)>;
 
-struct UserQuestionPrompt
-{
-    std::string id;
-    std::string tool_use_id;
-    std::string question;
-    std::string reason;
+struct UserQuestionPrompt {
+  std::string id;
+  std::string tool_use_id;
+  std::string question;
+  std::string reason;
 };
 
-struct UserQuestionResponse
-{
-    std::string answer;
+struct UserQuestionResponse {
+  std::string answer;
 };
 
-using UserQuestionHandler = std::function<Result<UserQuestionResponse>(const UserQuestionPrompt&)>;
+using UserQuestionHandler = std::function<absl::StatusOr<UserQuestionResponse>(const UserQuestionPrompt&)>;
 
-struct RunRequest
-{
-    std::string prompt;
-    std::optional<std::string> system_prompt;
-    std::optional<std::vector<Message>> initial_messages;
-    PermissionPromptHandler permission_prompt;
-    UserQuestionHandler user_question;
-    CancellationToken cancellation;
-    EngineOptions options;
+struct RunRequest {
+  std::string prompt;
+  std::optional<std::string> system_prompt;
+  std::optional<std::vector<Message>> initial_messages;
+  PermissionPromptHandler permission_prompt;
+  UserQuestionHandler user_question;
+  CancellationToken cancellation;
+  EngineOptions options;
 };
 
-struct RunResult
-{
-    std::vector<Message> messages;
-    std::string output_text;
-    ProviderUsage usage;
+struct RunResult {
+  std::vector<Message> messages;
+  std::string output_text;
+  ProviderUsage usage;
 };
 
-struct EngineAssistantTextDelta
-{
-    std::string text;
+struct EngineAssistantTextDelta {
+  std::string text;
 };
 
-struct EngineToolStarted
-{
-    std::string id;
-    std::string name;
+struct EngineToolStarted {
+  std::string id;
+  std::string name;
 };
 
-struct EngineToolInputDelta
-{
-    std::string id;
-    std::string input_json_delta;
+struct EngineToolInputDelta {
+  std::string id;
+  std::string input_json_delta;
 };
 
-struct EngineToolFinished
-{
-    std::string id;
+struct EngineToolFinished {
+  std::string id;
 };
 
-struct EngineToolResult
-{
-    std::string id;
-    std::string content;
-    bool is_error = false;
+struct EngineToolResult {
+  std::string id;
+  std::string content;
+  bool is_error = false;
 };
 
-struct EngineError
-{
-    std::string message;
+struct EngineError {
+  std::string message;
 };
 
 // Events emitted by the engine during a run, which can be consumed by the caller to get intermediate results or update
 // UI.
-using EngineEvent = std::variant<
-    EngineAssistantTextDelta,
-    EngineToolStarted,
-    EngineToolInputDelta,
-    EngineToolFinished,
-    EngineToolResult,
-    EngineError>;
+using EngineEvent = std::variant<EngineAssistantTextDelta, EngineToolStarted, EngineToolInputDelta, EngineToolFinished,
+                                 EngineToolResult, EngineError>;
 
 using EngineEventSink = std::function<void(const EngineEvent&)>;
 
-class Engine
-{
-public:
-    Engine(
-        Provider& provider,
-        ToolRegistry& tools,
-        const PermissionChecker* permissions = nullptr,
-        const HookExecutor* hooks = nullptr,
-        PermissionPromptHandler permission_prompt = {},
-        UserQuestionHandler user_question = {});
+class Engine {
+ public:
+  Engine(Provider& provider, ToolRegistry& tools, const PermissionChecker* permissions = nullptr,
+         const HookExecutor* hooks = nullptr, PermissionPromptHandler permission_prompt = {},
+         UserQuestionHandler user_question = {});
 
-    auto run(const RunRequest& request) -> Result<RunResult>;
-    auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> Result<RunResult>;
+  auto run(const RunRequest& request) -> absl::StatusOr<RunResult>;
+  auto run_streaming(const RunRequest& request, const EngineEventSink& sink) -> absl::StatusOr<RunResult>;
 
-    /// Replace the permission checker mid-session (e.g. on /plan toggle).
-    auto set_permission_checker(const PermissionChecker* checker) -> void { permissions_ = checker; }
+  /// Replace the permission checker mid-session (e.g. on /plan toggle).
+  auto set_permission_checker(const PermissionChecker* checker) -> void { permissions_ = checker; }
 
-    /// Replace the provider mid-session (e.g. on /model profile switch).
-    auto set_provider(Provider& provider) noexcept -> void { provider_ = &provider; }
+  /// Replace the provider mid-session (e.g. on /model profile switch).
+  auto set_provider(Provider& provider) noexcept -> void { provider_ = &provider; }
 
-    /// Set the agent identity used to auto-populate ToolContext::sender_id
-    /// before each tool execution.
-    auto set_sender_id(std::string id) -> void { sender_id_ = std::move(id); }
+  /// Set the agent identity used to auto-populate ToolContext::sender_id
+  /// before each tool execution.
+  auto set_sender_id(std::string id) -> void { sender_id_ = std::move(id); }
 
-private:
-    auto execute_tool_use(const ToolUseBlock& tool_use,
-                          const PermissionPromptHandler& permission_prompt,
-                          const UserQuestionHandler& user_question)
-        -> ToolResultBlock;
+ private:
+  auto execute_tool_use(const ToolUseBlock& tool_use, const PermissionPromptHandler& permission_prompt,
+                        const UserQuestionHandler& user_question) -> ToolResultBlock;
 
-    // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
-    auto stream_provider_turn(std::span<const Message> messages,
-                              const EngineEventSink& sink,
-                              const CancellationToken& cancellation,
-                              ProviderUsage& usage) const -> Result<Message>;
+  // Streams a single turn of the provider, returning the final assistant message once MessageFinished is received.
+  auto stream_provider_turn(std::span<const Message> messages, const EngineEventSink& sink,
+                            const CancellationToken& cancellation, ProviderUsage& usage) const
+      -> absl::StatusOr<Message>;
 
-    Provider* provider_ = nullptr;
-    ToolRegistry& tools_;
-    const PermissionChecker* permissions_ = nullptr;
-    const HookExecutor* hooks_ = nullptr;
-    PermissionPromptHandler permission_prompt_;
-    UserQuestionHandler user_question_;
-    std::string sender_id_;
+  Provider* provider_ = nullptr;
+  ToolRegistry& tools_;
+  const PermissionChecker* permissions_ = nullptr;
+  const HookExecutor* hooks_ = nullptr;
+  PermissionPromptHandler permission_prompt_;
+  UserQuestionHandler user_question_;
+  std::string sender_id_;
 };
 
-} // namespace codeharness
+}  // namespace codeharness

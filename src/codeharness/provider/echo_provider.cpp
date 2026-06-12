@@ -1,41 +1,36 @@
 #include "codeharness/provider/echo_provider.h"
 
-#include "codeharness/core/error.h"
-
 #include <optional>
 
-namespace codeharness
-{
+#include "absl/status/status.h"
+#include "codeharness/core/error.h"
 
-auto EchoProvider::stream(std::span<const Message> messages, const ProviderEventSink& sink) -> Result<void>
-{
-    std::optional<std::string> latest_user_text;
+namespace codeharness {
 
-    for (int index = messages.size() - 1; index >= 0; index--)
-    {
-        const auto& message = messages[index];
+auto EchoProvider::stream(std::span<const Message> messages, const ProviderEventSink& sink) -> absl::Status {
+  std::optional<std::string> latest_user_text;
 
-        if (message.role != Role::User)
-        {
-            continue;
-        }
+  for (int index = messages.size() - 1; index >= 0; index--) {
+    const auto& message = messages[index];
 
-        const auto text = collect_text(message);
-        if (!text.empty())
-        {
-            latest_user_text = text;
-            break;
-        }
+    if (message.role != Role::kUser) {
+      continue;
     }
 
-    if (!latest_user_text)
-    {
-        return fail<void>(ErrorKind::InvalidArgument, "prompt is empty");
+    const auto text = CollectText(message);
+    if (!text.empty()) {
+      latest_user_text = text;
+      break;
     }
+  }
 
-    sink(AssistantTextDelta{*latest_user_text});
-    sink(MessageFinished{});
-    return {};
+  if (!latest_user_text) {
+    return absl::InvalidArgumentError("prompt is empty");
+  }
+
+  sink(AssistantTextDelta{*latest_user_text});
+  sink(MessageFinished{});
+  return absl::OkStatus();
 }
 
-} // namespace codeharness
+}  // namespace codeharness
