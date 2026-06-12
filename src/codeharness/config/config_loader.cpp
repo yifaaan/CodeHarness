@@ -13,7 +13,7 @@ namespace codeharness::config
 
 ConfigLoader::ConfigLoader() = default;
 
-auto ConfigLoader::load(const CliOptions& cli) -> Result<Settings>
+auto ConfigLoader::load(const CliOptions& cli) -> absl::StatusOr<Settings>
 {
     // Layer 1: defaults
     auto settings = load_defaults();
@@ -26,7 +26,7 @@ auto ConfigLoader::load(const CliOptions& cli) -> Result<Settings>
         {
             // File not found is not an error; other errors propagate.
             // load_file returns success with defaults on missing file.
-            return nonstd::make_unexpected(file_result.error());
+            return file_result.error();
         }
         // Merge file values onto defaults.
         auto& file_settings = *file_result;
@@ -136,7 +136,7 @@ auto ConfigLoader::load_defaults() -> Settings
     return s;
 }
 
-auto ConfigLoader::load_file(const std::filesystem::path& path) -> Result<Settings>
+auto ConfigLoader::load_file(const std::filesystem::path& path) -> absl::StatusOr<Settings>
 {
     std::ifstream file(path);
     if (!file.is_open())
@@ -154,8 +154,7 @@ auto ConfigLoader::load_file(const std::filesystem::path& path) -> Result<Settin
     }
     catch (const nlohmann::json::exception& e)
     {
-        return fail<Settings>(ErrorKind::Config,
-                              "failed to parse " + path.string() + ": " + e.what());
+        return absl::StatusOr<Settings>(absl::FailedPreconditionError("failed to parse " + path.string()) + ": " + e.what());
     }
 }
 
@@ -268,7 +267,7 @@ void ConfigLoader::resolve_active_profile(Settings& settings)
     if (settings.api_key.empty())
     {
         // Cache credentials on first resolve.
-        if (!cached_credentials_.has_value())
+        if (!cached_credentials_.ok())
         {
             auto creds = load_credentials(settings.config_dir);
             if (creds)
@@ -277,7 +276,7 @@ void ConfigLoader::resolve_active_profile(Settings& settings)
             }
             else
             {
-                spdlog::warn("failed to load credentials: {}", creds.error().message);
+                spdlog::warn("failed to load credentials: {}", creds.status().message());
                 cached_credentials_ = Credentials{};
             }
         }

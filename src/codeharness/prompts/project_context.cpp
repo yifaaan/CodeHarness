@@ -1,7 +1,5 @@
 #include "codeharness/prompts/project_context.h"
 
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <system_error>
 #include <utility>
@@ -15,18 +13,18 @@ namespace
 {
 
 // 从当前工作目录 cwd 开始，向上找到项目边界，然后生成一组 要搜索上下文文件的目录
-auto collect_search_dirs(const std::filesystem::path& cwd) -> Result<std::vector<std::filesystem::path>>
+auto collect_search_dirs(const std::filesystem::path& cwd) -> absl::StatusOr<std::vector<std::filesystem::path>>
 {
     std::error_code error;
     auto current = std::filesystem::weakly_canonical(cwd, error);
     if (error)
     {
-        return fail<std::vector<std::filesystem::path>>(ErrorKind::Io, "failed to resolve cwd: " + error.message());
+        return fail<std::vector<std::filesystem::path>>(absl::InternalError , "failed to resolve cwd: " + error.message());
     }
 
     if (!std::filesystem::is_directory(current, error))
     {
-        return fail<std::vector<std::filesystem::path>>(ErrorKind::InvalidArgument, "cwd is not a directory");
+        return fail<std::vector<std::filesystem::path>>(absl::InvalidArgumentError , "cwd is not a directory");
     }
 
     std::vector<std::filesystem::path> dirs;
@@ -56,7 +54,7 @@ auto collect_search_dirs(const std::filesystem::path& cwd) -> Result<std::vector
 } // namespace
 
 auto load_project_context_files(const std::filesystem::path& cwd, ProjectContextOptions options)
-    -> Result<std::vector<ContextFile>>
+    -> absl::StatusOr<std::vector<ContextFile>>
 {
     if (options.max_total_chars == 0 || options.file_names.empty())
     {
@@ -66,7 +64,7 @@ auto load_project_context_files(const std::filesystem::path& cwd, ProjectContext
     auto dirs = collect_search_dirs(cwd);
     if (!dirs)
     {
-        return nonstd::make_unexpected(dirs.error());
+        return dirs.error();
     }
 
     std::vector<ContextFile> files;
@@ -83,10 +81,10 @@ auto load_project_context_files(const std::filesystem::path& cwd, ProjectContext
                 continue;
             }
 
-            auto content = codeharness::read_text_file(candidate);
+            auto content = codeharness::ReadTextFile(candidate);
             if (!content)
             {
-                return nonstd::make_unexpected(content.error());
+                return content.error();
             }
 
             if (content->size() > remaining_chars)

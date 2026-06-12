@@ -2,8 +2,6 @@
 
 #include <date/date.h>
 #include <git2.h>
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -281,13 +279,13 @@ auto append_relevant_memories_section(std::ostringstream& output, const std::vec
 
 } // namespace
 
-auto detect_environment(const std::filesystem::path& cwd) -> Result<EnvironmentInfo>
+auto detect_environment(const std::filesystem::path& cwd) -> absl::StatusOr<EnvironmentInfo>
 {
     std::error_code error;
     auto resolved_cwd = std::filesystem::weakly_canonical(cwd, error);
     if (error)
     {
-        return fail<EnvironmentInfo>(ErrorKind::Io, "failed to resolve cwd: " + error.message());
+        return absl::StatusOr<EnvironmentInfo>(absl::InternalError("failed to resolve cwd: " + error.message()));
     }
 
     EnvironmentInfo environment{
@@ -306,12 +304,12 @@ auto detect_environment(const std::filesystem::path& cwd) -> Result<EnvironmentI
     return environment;
 }
 
-auto build_system_prompt(const PromptBuildRequest& request) -> Result<std::string>
+auto build_system_prompt(const PromptBuildRequest& request) -> absl::StatusOr<std::string>
 {
     auto environment = detect_environment(request.cwd);
     if (!environment)
     {
-        return nonstd::make_unexpected(environment.error());
+        return environment.error();
     }
 
     std::ostringstream output;

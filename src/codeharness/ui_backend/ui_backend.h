@@ -37,7 +37,7 @@
 //   sink 直接打印文本，而非走 JSON Lines。
 //==============================================================================
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/runtime/runtime.h"
 
 #include <iosfwd>
@@ -180,7 +180,7 @@ using BackendEvent = std::variant<BackendReady,
                                   BackendError,
                                   BackendShutdown>;
 
-auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>;
+auto parse_frontend_request(std::string_view line) -> absl::StatusOr<FrontendRequest>;
 auto format_backend_event(const BackendEvent& event) -> std::string;
 
 class BackendHost
@@ -188,7 +188,7 @@ class BackendHost
 public:
     BackendHost(runtime::RuntimeBundle& runtime, std::istream& input, std::ostream& output, int max_turns);
 
-    auto run() -> Result<void>;
+    auto run() -> absl::Status;
 
 private:
     auto emit(const BackendEvent& event) -> void;
@@ -203,9 +203,9 @@ private:
     auto handle_user_question_response(const FrontendRequest& request) -> void;
     auto handle_interrupt() -> void;
     auto emit_engine_event(const EngineEvent& event) -> void;
-    auto request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>;
-    auto request_user_question(const UserQuestionPrompt& prompt) -> Result<UserQuestionResponse>;
-    auto next_frontend_request() -> Result<std::optional<FrontendRequest>>;
+    auto request_permission(const PermissionPrompt& prompt) -> absl::StatusOr<PermissionResponse>;
+    auto request_user_question(const UserQuestionPrompt& prompt) -> absl::StatusOr<UserQuestionResponse>;
+    auto next_frontend_request() -> absl::StatusOr<std::optional<FrontendRequest>>;
     auto has_active_run() const -> bool;
     auto reap_finished_run() -> void;
     auto wait_for_active_run() -> void;

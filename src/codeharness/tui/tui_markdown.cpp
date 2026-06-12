@@ -200,7 +200,7 @@ auto parse_pipe_row(std::string_view line) -> std::vector<std::string>
         if (end == std::string_view::npos)
         {
             auto cell = std::string{trimmed.substr(start)};
-            // trim whitespace
+            // Trim whitespace
             auto cell_view = std::string_view{cell};
             while (!cell_view.empty() && (cell_view.front() == ' ' || cell_view.front() == '\t'))
             {
@@ -530,7 +530,7 @@ auto parse_blocks(std::string_view markdown) -> std::vector<Block>
                 }
                 remaining += lines.at(i);
             }
-            auto [table, next_line] = parse_table(remaining, 0);
+            auto [table, NextLine] = parse_table(remaining, 0);
             if (!table.header.cells.empty())
             {
                 // Serialize the table for storage in the Block
@@ -549,7 +549,7 @@ auto parse_blocks(std::string_view markdown) -> std::vector<Block>
                     serialized << '\n';
                 }
                 blocks.push_back(Block{.kind = BlockKind::table, .text = serialized.str()});
-                line_index = next_line - 1; // -1 because the loop will ++line_index
+                line_index = NextLine - 1; // -1 because the loop will ++line_index
                 continue;
             }
         }

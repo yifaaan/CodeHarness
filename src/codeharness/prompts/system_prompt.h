@@ -1,7 +1,7 @@
 #pragma once
 
 #include "codeharness/commands/command_registry.h"
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/prompts/project_context.h"
 #include "codeharness/skills/skill.h"
@@ -50,10 +50,10 @@ struct PromptBuildRequest
 };
 
 // 探测环境
-auto detect_environment(const std::filesystem::path& cwd) -> Result<EnvironmentInfo>;
+auto detect_environment(const std::filesystem::path& cwd) -> absl::StatusOr<EnvironmentInfo>;
 
 // 把 PromptBuildRequest 拼装成一段完整的 system prompt 文本。
 // 内部按"基础人格 → 环境 → 权限 → 能力 → 项目上下文 → 记忆"的固定顺序拼接
-auto build_system_prompt(const PromptBuildRequest& request) -> Result<std::string>;
+auto build_system_prompt(const PromptBuildRequest& request) -> absl::StatusOr<std::string>;
 
 } // namespace codeharness

@@ -25,7 +25,7 @@ auto ChatSurface::has_streamed_assistant_output() const noexcept -> bool
 
 auto ChatSurface::has_active_response() const noexcept -> bool
 {
-    return active_response_index_.has_value()
+    return active_response_index_.ok()
         || std::ranges::any_of(items_, [](const TranscriptItem& item) { return item.live; });
 }
 

@@ -10,7 +10,7 @@ namespace codeharness
 
 // 初始化全局 logger。读取环境变量 LOG_CODEHARNESS_LEVEL（trace/debug/info/warn/error/critical）。
 // 默认 info。未调用前 spdlog 默认级别是 off，所有日志都会被丢弃。
-inline auto init_logger() -> void
+inline auto InitLogger() -> void
 {
     static bool initialized = false;
     if (initialized)

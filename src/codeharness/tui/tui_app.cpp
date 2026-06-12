@@ -11,8 +11,6 @@
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/dom/elements.hpp>
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -127,7 +125,7 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime,
         return prompt;
     }
 
-    const auto trimmed = std::string{trim(prompt)};
+    const auto trimmed = std::string{Trim(prompt)};
     if (trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter")
     {
         runtime.set_permission_mode(PermissionMode::Plan);
@@ -165,7 +163,7 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime,
     auto command_result = execute_slash_command(runtime.commands(), prompt);
     if (!command_result)
     {
-        model.append_system_message(command_result.error().message);
+        model.append_system_message(command_result.status().message());
         return std::nullopt;
     }
 
@@ -186,7 +184,7 @@ auto resolve_submit_prompt(runtime::RuntimeBundle& runtime,
         auto switched = runtime.switch_model_profile(*profile);
         if (!switched)
         {
-            model.append_system_message(switched.error().message);
+            model.append_system_message(switched.status().message());
             return std::nullopt;
         }
         display_config.model = switched->provider_config.model;
@@ -364,7 +362,7 @@ auto TuiAppModel::handle_composer_submit(std::string content) -> TuiComposerSubm
     TuiComposerSubmitResult result{.handled = true};
     set_composer(std::move(content));
 
-    const auto trimmed = std::string{trim(state_.composer)};
+    const auto trimmed = std::string{Trim(state_.composer)};
     if (trimmed == "/model")
     {
         set_composer("");
@@ -876,7 +874,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
              int max_turns,
              TuiDisplayConfig display_config,
              ModelListProvider model_list_provider,
-             ModelSelectCallback model_select_callback) -> Result<int>
+             ModelSelectCallback model_select_callback) -> absl::StatusOr<int>
 {
     using namespace ftxui;
 
@@ -979,12 +977,12 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                     prompt,
                     runtime::RunPromptOptions{
                         .max_turns = max_turns,
-                        .permission_prompt = [&](const PermissionPrompt& permission_prompt) -> Result<PermissionResponse> {
+                        .permission_prompt = [&](const PermissionPrompt& permission_prompt) -> absl::StatusOr<PermissionResponse> {
                             event_sender.send(TuiPermissionRequested{.prompt = permission_prompt});
 
                             {
                                 std::unique_lock lock{mutex};
-                                permission_cv.wait(lock, [&] { return permission_response.has_value() || model.state().interrupt_requested; });
+                                permission_cv.wait(lock, [&] { return permission_response.ok() || model.state().interrupt_requested; });
                                 auto response = permission_response.value_or(PermissionResponse{.allowed = false, .reason = "interrupted"});
                                 permission_response.reset();
                                 lock.unlock();
@@ -993,19 +991,19 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                                 return response;
                             }
                         },
-                        .user_question = [&](const UserQuestionPrompt& question_prompt) -> Result<UserQuestionResponse> {
+                        .user_question = [&](const UserQuestionPrompt& question_prompt) -> absl::StatusOr<UserQuestionResponse> {
                             event_sender.send(TuiQuestionRequested{.prompt = question_prompt});
 
                             {
                                 std::unique_lock lock{mutex};
                                 user_question_cv.wait(lock, [&] {
-                                    return user_question_response.has_value() || model.state().interrupt_requested;
+                                    return user_question_response.ok() || model.state().interrupt_requested;
                                 });
                                 if (!user_question_response)
                                 {
                                     lock.unlock();
                                     event_sender.send(TuiRefreshRequested{});
-                                    return fail<UserQuestionResponse>(ErrorKind::Cancelled, "interrupted");
+                                    return absl::StatusOr<UserQuestionResponse>(absl::CancelledError("interrupted"));
                                 }
 
                                 auto response = *user_question_response;
@@ -1022,9 +1020,9 @@ auto run_tui(runtime::RuntimeBundle& runtime,
                         event_sender.send(TuiEngineEvent{.event = event});
                     });
 
-                if (!result)
+                if(!result.ok())
                 {
-                    event_sender.send(TuiRunCompleted{.success = false, .error_message = result.error().message});
+                    event_sender.send(TuiRunCompleted{.success = false, .error_message = result.status().message()});
                     return;
                 }
 
@@ -1063,7 +1061,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         }
         else
         {
-            model.append_system_message(switched.error().message);
+            model.append_system_message(switched.status().message());
         }
     };
 

@@ -11,7 +11,7 @@
 namespace codeharness::config
 {
 
-auto load_credentials(std::optional<std::filesystem::path> config_dir) -> Result<Credentials>
+auto load_credentials(std::optional<std::filesystem::path> config_dir) -> absl::StatusOr<Credentials>
 {
     auto dir = config_dir.value_or(config::config_dir());
     auto path = dir / "credentials.json";
@@ -49,8 +49,7 @@ auto load_credentials(std::optional<std::filesystem::path> config_dir) -> Result
     }
     catch (const nlohmann::json::exception& e)
     {
-        return fail<Credentials>(ErrorKind::Config,
-                                 "failed to parse " + path.string() + ": " + e.what());
+        return absl::StatusOr<Credentials>(absl::FailedPreconditionError("failed to parse " + path.string()) + ": " + e.what());
     }
 }
 

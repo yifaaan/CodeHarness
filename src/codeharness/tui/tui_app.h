@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/permissions/permission.h"
 #include "codeharness/runtime/runtime.h"
@@ -234,7 +234,7 @@ private:
 };
 
 using ModelListProvider = std::function<std::vector<ModelOption>()>;
-using ModelSelectCallback = std::function<Result<ModelOption>(const ModelOption&)>;
+using ModelSelectCallback = std::function<absl::StatusOr<ModelOption>(const ModelOption&)>;
 
 auto apply_transcript_follow_wheel(bool current_follow, bool wheel_up, bool wheel_down) -> bool;
 
@@ -242,6 +242,6 @@ auto run_tui(runtime::RuntimeBundle& runtime,
              int max_turns,
              TuiDisplayConfig display_config = {},
              ModelListProvider model_list_provider = {},
-             ModelSelectCallback model_select_callback = {}) -> Result<int>;
+             ModelSelectCallback model_select_callback = {}) -> absl::StatusOr<int>;
 
 } // namespace codeharness::tui

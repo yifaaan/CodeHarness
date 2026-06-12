@@ -9,12 +9,12 @@
 namespace codeharness
 {
 
-inline auto lower_ascii(char character) -> char
+inline auto LowerAscii(char character) -> char
 {
     return static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
 }
 
-inline auto slugify(std::string_view text) -> std::string
+inline auto Slugify(std::string_view text) -> std::string
 {
     std::string slug;
     bool previous_separator = true;
@@ -24,7 +24,7 @@ inline auto slugify(std::string_view text) -> std::string
         const auto byte = static_cast<unsigned char>(character);
         if (std::isalnum(byte) != 0)
         {
-            slug.push_back(lower_ascii(character));
+            slug.push_back(LowerAscii(character));
             previous_separator = false;
             continue;
         }
@@ -49,7 +49,7 @@ inline auto slugify(std::string_view text) -> std::string
     return slug;
 }
 
-inline auto trim(std::string_view value) -> std::string_view
+inline auto Trim(std::string_view value) -> std::string_view
 {
     constexpr auto whitespace = " \t\n\r\f\v";
     const auto first = value.find_first_not_of(whitespace);
@@ -61,7 +61,7 @@ inline auto trim(std::string_view value) -> std::string_view
     return value.substr(first, last - first + 1);
 }
 
-inline auto strip_trailing_cr(std::string_view value) -> std::string_view
+inline auto StripTrailingCr(std::string_view value) -> std::string_view
 {
     if (!value.empty() && value.back() == '\r')
     {
@@ -71,7 +71,7 @@ inline auto strip_trailing_cr(std::string_view value) -> std::string_view
 }
 
 // 从 offset 起读一行，并返回下一行的起始 offset
-inline auto next_line(std::string_view text, std::size_t offset)
+inline auto NextLine(std::string_view text, std::size_t offset)
     -> std::pair<std::string_view, std::size_t>
 {
     const auto newline = text.find('\n', offset);

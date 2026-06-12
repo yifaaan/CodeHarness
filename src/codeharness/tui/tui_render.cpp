@@ -618,7 +618,7 @@ auto transcript_view_element(const std::vector<TranscriptItem>& transcript,
             start_idx--;
         }
         // start_idx is now one before the first visible cell
-        // If we went past, we need to trim the first visible cell
+        // If we went past, we need to Trim the first visible cell
         for (int i = start_idx + 1; i < static_cast<int>(transcript.size()); ++i)
         {
             if (i == start_idx + 1 && remaining < 0)

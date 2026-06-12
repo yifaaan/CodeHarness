@@ -2,7 +2,7 @@
 
 #include "codeharness/config/config.h"
 #include "codeharness/config/credentials.h"
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <filesystem>
 #include <string>
@@ -42,14 +42,14 @@ public:
 
     // Load, merge, and resolve Settings from all available sources.
     // This is the main entry point.
-    auto load(const CliOptions& cli) -> Result<Settings>;
+    auto load(const CliOptions& cli) -> absl::StatusOr<Settings>;
 
 private:
     // Layer 1: hardcoded defaults
     auto load_defaults() -> Settings;
 
     // Layer 2: read settings.json (if it exists)
-    auto load_file(const std::filesystem::path& path) -> Result<Settings>;
+    auto load_file(const std::filesystem::path& path) -> absl::StatusOr<Settings>;
 
     // Layer 3: environment variable overrides
     void apply_env(Settings& settings);

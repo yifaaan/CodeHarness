@@ -6,8 +6,6 @@
 #include "codeharness/core/strings.h"
 
 #include <nlohmann/json.hpp>
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <istream>
 #include <ostream>
@@ -128,7 +126,7 @@ auto format_command_line(std::string_view command, std::string_view args) -> std
 
 auto is_runtime_permission_command(std::string_view prompt) -> bool
 {
-    const auto trimmed = trim(prompt);
+    const auto trimmed = Trim(prompt);
     return trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter" ||
            trimmed == "/act" || trimmed == "/plan off" || trimmed == "/plan exit" ||
            trimmed == "/fullauto" || trimmed == "/full_auto" || trimmed == "/permissions full_auto" ||
@@ -138,7 +136,7 @@ auto is_runtime_permission_command(std::string_view prompt) -> bool
 
 } // namespace
 
-auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
+auto parse_frontend_request(std::string_view line) -> absl::StatusOr<FrontendRequest>
 {
     nlohmann::json input;
     try
@@ -147,66 +145,64 @@ auto parse_frontend_request(std::string_view line) -> Result<FrontendRequest>
     }
     catch (const nlohmann::json::parse_error& error)
     {
-        return fail<FrontendRequest>(
-            ErrorKind::InvalidArgument,
-            std::string{"failed to parse frontend request: "} + error.what());
+        return absl::StatusOr<FrontendRequest>(absl::InvalidArgumentError(std::string{"failed to parse frontend request: "} + error.what()));
     }
 
     if (!input.is_object())
     {
-        return fail<FrontendRequest>(ErrorKind::InvalidArgument, "frontend request must be a JSON object");
+        return absl::StatusOr<FrontendRequest>(absl::InvalidArgumentError("frontend request must be a JSON object"));
     }
 
-    auto type = read_json_field<std::string>(input, "type", "frontend request");
+    auto type = ReadJsonField<std::string>(input, "type", "frontend request");
     if (!type)
     {
-        return nonstd::make_unexpected(type.error());
+        return type.error();
     }
 
-    auto request_line = read_optional_json_field<std::string>(input, "line", "frontend request");
+    auto request_line = ReadOptionalJsonField<std::string>(input, "line", "frontend request");
     if (!request_line)
     {
-        return nonstd::make_unexpected(request_line.error());
+        return request_line.error();
     }
-    auto request_id = read_optional_json_field<std::string>(input, "request_id", "frontend request");
+    auto request_id = ReadOptionalJsonField<std::string>(input, "request_id", "frontend request");
     if (!request_id)
     {
-        return nonstd::make_unexpected(request_id.error());
+        return request_id.error();
     }
-    auto allowed = read_optional_json_field<bool>(input, "allowed", "frontend request");
+    auto allowed = ReadOptionalJsonField<bool>(input, "allowed", "frontend request");
     if (!allowed)
     {
-        return nonstd::make_unexpected(allowed.error());
+        return allowed.error();
     }
-    auto remember_session = read_optional_json_field<bool>(input, "remember_session", "frontend request");
+    auto remember_session = ReadOptionalJsonField<bool>(input, "remember_session", "frontend request");
     if (!remember_session)
     {
-        return nonstd::make_unexpected(remember_session.error());
+        return remember_session.error();
     }
-    auto command = read_optional_json_field<std::string>(input, "command", "frontend request");
-    if (!command)
+    auto command = ReadOptionalJsonField<std::string>(input, "command", "frontend request");
+    if(!command.ok())
     {
-        return nonstd::make_unexpected(command.error());
+        return command.status();
     }
-    auto args = read_optional_json_field<std::string>(input, "args", "frontend request");
+    auto args = ReadOptionalJsonField<std::string>(input, "args", "frontend request");
     if (!args)
     {
-        return nonstd::make_unexpected(args.error());
+        return args.error();
     }
-    auto query = read_optional_json_field<std::string>(input, "query", "frontend request");
+    auto query = ReadOptionalJsonField<std::string>(input, "query", "frontend request");
     if (!query)
     {
-        return nonstd::make_unexpected(query.error());
+        return query.error();
     }
-    auto answer = read_optional_json_field<std::string>(input, "answer", "frontend request");
+    auto answer = ReadOptionalJsonField<std::string>(input, "answer", "frontend request");
     if (!answer)
     {
-        return nonstd::make_unexpected(answer.error());
+        return answer.error();
     }
-    auto profile_id = read_optional_json_field<std::string>(input, "profile_id", "frontend request");
+    auto profile_id = ReadOptionalJsonField<std::string>(input, "profile_id", "frontend request");
     if (!profile_id)
     {
-        return nonstd::make_unexpected(profile_id.error());
+        return profile_id.error();
     }
 
     return FrontendRequest{
@@ -344,7 +340,7 @@ BackendHost::BackendHost(runtime::RuntimeBundle& runtime, std::istream& input, s
 {
 }
 
-auto BackendHost::run() -> Result<void>
+auto BackendHost::run() -> absl::Status
 {
     emit(BackendReady{});
 
@@ -354,7 +350,7 @@ auto BackendHost::run() -> Result<void>
         auto request = next_frontend_request();
         if (!request)
         {
-            emit(BackendError{.message = request.error().message});
+            emit(BackendError{.message = request.status().message()});
             continue;
         }
         if (!*request)
@@ -470,7 +466,7 @@ auto BackendHost::handle_request(const FrontendRequest& request) -> bool
     return true;
 }
 
-auto BackendHost::next_frontend_request() -> Result<std::optional<FrontendRequest>>
+auto BackendHost::next_frontend_request() -> absl::StatusOr<std::optional<FrontendRequest>>
 {
     if (!queued_requests_.empty())
     {
@@ -488,7 +484,7 @@ auto BackendHost::next_frontend_request() -> Result<std::optional<FrontendReques
     auto request = parse_frontend_request(line);
     if (!request)
     {
-        return nonstd::make_unexpected(request.error());
+        return request.error();
     }
 
     return std::move(*request);
@@ -540,9 +536,9 @@ auto BackendHost::run_submit_line(std::string line) -> void
             auto result = runtime_.run_prompt(prompt, runtime::RunPromptOptions{.max_turns = max_turns_}, [this](const EngineEvent& event) {
                 emit_engine_event(event);
             });
-            if (!result)
+            if(!result.ok())
             {
-                emit(BackendError{.message = result.error().message});
+                emit(BackendError{.message = result.status().message()});
             }
             else if (!result->output_text.empty())
             {
@@ -555,7 +551,7 @@ auto BackendHost::run_submit_line(std::string line) -> void
         auto command_result = execute_slash_command(runtime_.commands(), prompt);
         if (!command_result)
         {
-            emit(BackendError{.message = command_result.error().message});
+            emit(BackendError{.message = command_result.status().message()});
             return;
         }
 
@@ -583,7 +579,7 @@ auto BackendHost::run_submit_line(std::string line) -> void
             auto switched = runtime_.switch_model_profile(*profile);
             if (!switched)
             {
-                emit(BackendError{.message = switched.error().message});
+                emit(BackendError{.message = switched.status().message()});
                 emit(BackendLineComplete{});
                 return;
             }
@@ -616,9 +612,9 @@ auto BackendHost::run_submit_line(std::string line) -> void
         [this](const EngineEvent& event) {
             emit_engine_event(event);
         });
-    if (!result)
+    if(!result.ok())
     {
-        emit(BackendError{.message = result.error().message});
+        emit(BackendError{.message = result.status().message()});
         emit(BackendLineComplete{});
         return;
     }
@@ -693,7 +689,7 @@ auto BackendHost::handle_apply_model(const FrontendRequest& request) -> void
     auto switched = runtime_.switch_model_profile(*profile);
     if (!switched)
     {
-        emit(BackendError{.message = switched.error().message});
+        emit(BackendError{.message = switched.status().message()});
         return;
     }
 
@@ -707,7 +703,7 @@ auto BackendHost::handle_permission_response(const FrontendRequest& request) -> 
     if (active_run_ && !pending_permission_)
     {
         permission_cv_.wait(lock, [this] {
-            return pending_permission_.has_value() || !active_run_;
+            return pending_permission_.ok() || !active_run_;
         });
     }
 
@@ -746,7 +742,7 @@ auto BackendHost::handle_user_question_response(const FrontendRequest& request) 
     if (active_run_ && !pending_user_question_)
     {
         user_question_cv_.wait(lock, [this] {
-            return pending_user_question_.has_value() || !active_run_;
+            return pending_user_question_.ok() || !active_run_;
         });
     }
 
@@ -810,7 +806,7 @@ auto BackendHost::emit_engine_event(const EngineEvent& event) -> void
     emit(engine_event_to_backend_event(event));
 }
 
-auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<PermissionResponse>
+auto BackendHost::request_permission(const PermissionPrompt& prompt) -> absl::StatusOr<PermissionResponse>
 {
     {
         std::lock_guard lock{state_mutex_};
@@ -830,7 +826,7 @@ auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<P
 
     std::unique_lock lock{state_mutex_};
     permission_cv_.wait(lock, [this] {
-        return pending_permission_response_.has_value() ||
+        return pending_permission_response_.ok() ||
                (active_cancellation_ != nullptr && active_cancellation_->is_cancelled());
     });
 
@@ -846,7 +842,7 @@ auto BackendHost::request_permission(const PermissionPrompt& prompt) -> Result<P
     return response;
 }
 
-auto BackendHost::request_user_question(const UserQuestionPrompt& prompt) -> Result<UserQuestionResponse>
+auto BackendHost::request_user_question(const UserQuestionPrompt& prompt) -> absl::StatusOr<UserQuestionResponse>
 {
     {
         std::lock_guard lock{state_mutex_};
@@ -864,14 +860,14 @@ auto BackendHost::request_user_question(const UserQuestionPrompt& prompt) -> Res
 
     std::unique_lock lock{state_mutex_};
     user_question_cv_.wait(lock, [this] {
-        return pending_user_question_response_.has_value() ||
+        return pending_user_question_response_.ok() ||
                (active_cancellation_ != nullptr && active_cancellation_->is_cancelled());
     });
 
     if (!pending_user_question_response_)
     {
         pending_user_question_.reset();
-        return fail<UserQuestionResponse>(ErrorKind::Cancelled, "interrupted");
+        return absl::StatusOr<UserQuestionResponse>(absl::CancelledError("interrupted"));
     }
 
     auto response = *pending_user_question_response_;

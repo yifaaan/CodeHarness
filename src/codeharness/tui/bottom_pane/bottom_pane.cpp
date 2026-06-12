@@ -112,7 +112,7 @@ auto BottomPane::can_quit() const -> bool
 
 auto BottomPane::has_pending_permission() const -> bool
 {
-    return state_.pending_permission.has_value();
+    return state_.pending_permission.ok();
 }
 
 auto BottomPane::clear_for_interrupt() -> void

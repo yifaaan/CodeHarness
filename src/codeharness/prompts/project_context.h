@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <cstddef>
 #include <filesystem>
@@ -23,6 +23,6 @@ struct ProjectContextOptions
 };
 
 auto load_project_context_files(const std::filesystem::path& cwd, ProjectContextOptions options = {})
-    -> Result<std::vector<ContextFile>>;
+    -> absl::StatusOr<std::vector<ContextFile>>;
 
 } // namespace codeharness

@@ -282,7 +282,7 @@ void from_json(const nlohmann::json& j, Settings& s)
             auto hook = hook_definition_from_json(hooks_json[i], "settings hooks[" + std::to_string(i) + "]");
             if (!hook)
             {
-                throw nlohmann::json::type_error::create(302, hook.error().message, nullptr);
+                throw nlohmann::json::type_error::create(302, hook.status().message(), nullptr);
             }
             s.hooks.push_back(std::move(*hook));
         }

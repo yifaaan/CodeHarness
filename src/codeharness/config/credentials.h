@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <filesystem>
 #include <map>
@@ -21,7 +21,7 @@ struct Credentials
 
 // Load credentials from ~/.codeharness/credentials.json (or an explicit dir).
 // Returns empty Credentials (not an error) if the file does not exist.
-auto load_credentials(std::optional<std::filesystem::path> config_dir = std::nullopt) -> Result<Credentials>;
+auto load_credentials(std::optional<std::filesystem::path> config_dir = std::nullopt) -> absl::StatusOr<Credentials>;
 
 // Resolve an API key from an auth_source string:
 //   "env:VAR_NAME"         → read from environment variable

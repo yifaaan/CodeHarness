@@ -137,7 +137,7 @@ auto command_regex_matches(std::string_view pattern, const std::string& command)
 auto is_sensitive_path(const std::filesystem::path& path) -> bool
 {
     auto text = normalize_path_text(path);
-    for (char& ch : text) ch = lower_ascii(ch);
+    for (char& ch : text) ch = LowerAscii(ch);
 
     static constexpr auto sensitive_patterns = std::to_array<std::string_view>({
         ".ssh/", "/.ssh", ".aws/credentials", ".aws/config",
@@ -153,7 +153,7 @@ auto is_sensitive_path(const std::filesystem::path& path) -> bool
 auto looks_dangerous_command(const std::string& command) -> bool
 {
     auto text = command;
-    for (char& ch : text) ch = lower_ascii(ch);
+    for (char& ch : text) ch = LowerAscii(ch);
 
     static constexpr auto dangerous_patterns = std::to_array<std::string_view>({
         "rm -rf /", "del /s /q c:\\", "format c:", "drop database",
