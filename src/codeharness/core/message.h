@@ -5,91 +5,98 @@
 #include <variant>
 #include <vector>
 
-namespace codeharness
-{
+namespace codeharness {
 
-enum class Role
-{
-    System,
-    User,
-    Assistant,
-    Tool
+enum class Role {
+  kSystem,
+  kUser,
+  kAssistant,
+  kTool,
 };
 
-struct TextBlock
-{
-    std::string text;
+struct TextBlock {
+  std::string text;
 };
 
-struct ToolUseBlock
-{
-    std::string id;
-    std::string name;
-    std::string input_json;
+struct ThinkingBlock {
+  std::string text;
 };
 
-struct ToolResultBlock
-{
-    std::string tool_use_id;
-    std::string content;
-    bool is_error = false;
+struct ToolUseBlock {
+  std::string id;
+  std::string name;
+  std::string input_json;
 };
 
-using ContentBlock = std::variant<TextBlock, ToolUseBlock, ToolResultBlock>;
-
-struct Message
-{
-    Role role = Role::User;
-    std::vector<ContentBlock> content;
+struct ToolResultBlock {
+  std::string tool_use_id;
+  std::string content;
+  bool is_error = false;
 };
 
-inline auto make_text_message(Role role, std::string text) -> Message
-{
-    Message message;
-    message.role = role;
-    message.content.emplace_back(TextBlock{std::move(text)});
-    return message;
+using ContentBlock = std::variant<TextBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock>;
+
+struct Message {
+  Role role = Role::kUser;
+  std::vector<ContentBlock> content;
+};
+
+// Factories.
+
+inline Message MakeTextMessage(Role role, std::string text) {
+  Message message;
+  message.role = role;
+  message.content.emplace_back(TextBlock{std::move(text)});
+  return message;
 }
 
-inline auto make_tool_result_message(std::vector<ToolResultBlock> results) -> Message
-{
-    Message message;
-    message.role = Role::Tool;
+inline Message MakeToolResultMessage(std::vector<ToolResultBlock> results) {
+  Message message;
+  message.role = Role::kTool;
+  for (auto& result : results) {
+    message.content.emplace_back(std::move(result));
+  }
+  return message;
+}
 
-    for (auto& result : results)
-    {
-        message.content.emplace_back(std::move(result));
+inline ToolResultBlock MakeErrorToolResult(std::string_view tool_use_id, std::string error_message) {
+  return ToolResultBlock{
+      .tool_use_id = std::string(tool_use_id),
+      .content = std::move(error_message),
+      .is_error = true,
+  };
+}
+
+// Accessors.
+
+inline std::string CollectText(const Message& message) {
+  std::string result;
+  for (const auto& block : message.content) {
+    if (auto* text_block = std::get_if<TextBlock>(&block)) {
+      result += text_block->text;
     }
-
-    return message;
+  }
+  return result;
 }
 
-inline auto collect_text(const Message& message) -> std::string
-{
-    std::string result;
-    for (const auto& block : message.content)
-    {
-        if (auto text_block = std::get_if<TextBlock>(&block))
-        {
-            result += text_block->text;
-        }
+inline std::vector<ToolUseBlock> CollectToolUses(const Message& message) {
+  std::vector<ToolUseBlock> result;
+  for (auto& block : message.content) {
+    if (auto* tool_use = std::get_if<ToolUseBlock>(&block)) {
+      result.push_back(*tool_use);
     }
-    return result;
+  }
+  return result;
 }
 
-inline auto collect_tool_uses(const Message& message) -> std::vector<ToolUseBlock>
-{
-    std::vector<ToolUseBlock> result;
-
-    for (auto& block : message.content)
-    {
-        if (auto tool_use = std::get_if<ToolUseBlock>(&block))
-        {
-            result.push_back(*tool_use);
-        }
+inline std::vector<ToolResultBlock> CollectToolResults(const Message& message) {
+  std::vector<ToolResultBlock> result;
+  for (auto& block : message.content) {
+    if (auto* tool_result = std::get_if<ToolResultBlock>(&block)) {
+      result.push_back(*tool_result);
     }
-
-    return result;
+  }
+  return result;
 }
 
-} // namespace codeharness
+}  // namespace codeharness

@@ -5,6 +5,7 @@
   "dependencies": [
     "cli11",
     "date",
+    "abseil",
     "expected-lite",
     "fmt",
     "pugixml",

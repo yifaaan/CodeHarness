@@ -1,20 +1,7 @@
 #pragma once
 
-#include <nonstd/expected.hpp>
-#include <string>
+// DEPRECATED: Include "codeharness/core/error.h" instead and use
+// absl::StatusOr<T> / absl::Status directly.
+// This header is kept temporarily for migration and will be removed.
 
 #include "codeharness/core/error.h"
-
-namespace codeharness
-{
-
-template <typename T>
-using Result = nonstd::expected<T, CodeHarnessError>;
-
-template <typename T>
-auto fail(ErrorKind kind, std::string message) -> Result<T>
-{
-    return nonstd::make_unexpected(make_error(kind, std::move(message)));
-}
-
-} // namespace codeharness

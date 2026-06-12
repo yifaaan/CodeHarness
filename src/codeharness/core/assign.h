@@ -1,23 +1,21 @@
 #pragma once
 
-#include "codeharness/core/result.h"
-
-#include <nonstd/expected.hpp>
 #include <utility>
 
-namespace codeharness
-{
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
 
-// 解包 Result<Value> 并赋给 target；失败则把同一个 error 透传成 Result<void>。
+namespace codeharness {
+
+// Unpacks absl::StatusOr<Value> into target.
+// On failure, propagates the error as absl::Status.
 template <typename Target, typename Value>
-auto assign(Target& target, Result<Value>&& source) -> Result<void>
-{
-    if (!source)
-    {
-        return nonstd::make_unexpected(source.error());
-    }
-    target = std::move(*source);
-    return {};
+absl::Status Assign(Target& target, absl::StatusOr<Value>&& source) {
+  if (!source.ok()) {
+    return source.status();
+  }
+  target = std::move(*source);
+  return absl::OkStatus();
 }
 
-} // namespace codeharness
+}  // namespace codeharness

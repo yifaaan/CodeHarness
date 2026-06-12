@@ -1,33 +1,16 @@
 #pragma once
 
-#include <string>
+// Convenience header: brings in absl::Status and absl::StatusOr.
+// Use absl's own error factories directly:
+//   absl::InternalError("msg")
+//   absl::NotFoundError("msg")
+//   absl::InvalidArgumentError("msg")
+//   absl::CancelledError("msg")
+//   absl::AlreadyExistsError("msg")
+//   absl::DeadlineExceededError("msg")
+//   absl::UnavailableError("msg")
+//   absl::FailedPreconditionError("msg")
+//   etc.
 
-namespace codeharness
-{
-
-enum class ErrorKind
-{
-    InvalidArgument,
-    Config,
-    Io,
-    Network,
-    Provider,
-    Tool,
-    Cancelled,
-    Internal,
-    AlreadyExists, // 资源已存在（例如重复创建团队）
-    NotFound,      // 资源不存在（例如查找不存在的团队或成员）
-};
-
-struct CodeHarnessError
-{
-    ErrorKind kind = ErrorKind::Internal;
-    std::string message;
-};
-
-inline auto make_error(ErrorKind kind, std::string message) -> CodeHarnessError
-{
-    return CodeHarnessError{kind, std::move(message)};
-}
-
-} // namespace codeharness
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"

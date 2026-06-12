@@ -33,6 +33,7 @@ endfunction()
 
 find_package(CLI11 CONFIG REQUIRED)
 find_package(date CONFIG REQUIRED)
+find_package(absl CONFIG REQUIRED)
 find_package(expected-lite CONFIG REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(Glob CONFIG REQUIRED)

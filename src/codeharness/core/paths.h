@@ -1,59 +1,49 @@
 #pragma once
 
-#include "codeharness/core/error.h"
-#include "codeharness/core/result.h"
-
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
 
-namespace codeharness
-{
+#include "absl/status/status.h"
 
-inline auto home_directory() -> std::optional<std::filesystem::path>
-{
+namespace codeharness {
+
+inline std::optional<std::filesystem::path> HomeDirectory() {
 #ifdef _WIN32
-    const auto* home = std::getenv("USERPROFILE");
+  const auto* home = std::getenv("USERPROFILE");
 #else
-    const auto* home = std::getenv("HOME");
+  const auto* home = std::getenv("HOME");
 #endif
 
-    if (home == nullptr || *home == '\0')
-    {
-        return std::nullopt;
+  if (home == nullptr || *home == '\0') {
+    return std::nullopt;
+  }
+
+  return std::filesystem::path{home};
+}
+
+inline bool PathHasParentReference(const std::filesystem::path& path) {
+  for (const auto& part : path) {
+    if (part == "..") {
+      return true;
     }
+  }
 
-    return std::filesystem::path{home};
+  return false;
 }
 
-inline auto path_has_parent_reference(const std::filesystem::path& path) -> bool
-{
-    for (const auto& part : path)
-    {
-        if (part == "..")
-        {
-            return true;
-        }
-    }
-
-    return false;
+inline bool IsSafeRelativePath(const std::filesystem::path& path) {
+  return !path.empty() && !path.is_absolute() && !path.has_root_name() && !PathHasParentReference(path);
 }
 
-inline auto is_safe_relative_path(const std::filesystem::path& path) -> bool
-{
-    return !path.empty() && !path.is_absolute() && !path.has_root_name() && !path_has_parent_reference(path);
+inline absl::Status EnsureDirectory(const std::filesystem::path& path, std::string_view label = "directory") {
+  std::error_code error;
+  std::filesystem::create_directories(path, error);
+  if (error) {
+    return absl::InternalError("failed to create " + std::string{label} + ": " + error.message());
+  }
+
+  return absl::OkStatus();
 }
 
-inline auto ensure_directory(const std::filesystem::path& path, std::string_view label = "directory") -> Result<void>
-{
-    std::error_code error;
-    std::filesystem::create_directories(path, error);
-    if (error)
-    {
-        return fail<void>(ErrorKind::Io, "failed to create " + std::string{label} + ": " + error.message());
-    }
-
-    return {};
-}
-
-} // namespace codeharness
+}  // namespace codeharness
