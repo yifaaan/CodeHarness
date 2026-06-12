@@ -55,7 +55,8 @@ auto is_printable_ascii(char character) -> bool
 
 auto is_permission_approve_input(const TuiInput& input) -> bool
 {
-    return input.kind == TuiInputKind::character && (input.character == 'y' || input.character == 'Y');
+    return input.kind == TuiInputKind::submit
+        || (input.kind == TuiInputKind::character && (input.character == 'y' || input.character == 'Y'));
 }
 
 auto is_permission_approve_session_input(const TuiInput& input) -> bool
@@ -279,8 +280,19 @@ auto TuiAppModel::render_text(int width) const -> std::string
     output << render::render_status_footer_line({}, state_) << '\n';
     if (bottom_pane_accepts_composer_input(state_.bottom_pane_focus))
     {
-        output << (state_.busy ? "Working" : "Ready") << '\n';
-        output << "> " << state_.composer;
+        if (state_.busy)
+        {
+            output << "\xe2\x80\xa2 Working (0s \xe2\x80\xa2 esc to interrupt)\n";
+        }
+        else if (state_.interrupt_requested)
+        {
+            output << "\xe2\x80\xa2 Interrupting...\n";
+        }
+        else
+        {
+            output << "Use /skills to list available skills\n";
+        }
+        output << "\xe2\x80\xba " << state_.composer;
     }
     return output.str();
 }
@@ -883,8 +895,8 @@ auto run_tui(runtime::RuntimeBundle& runtime,
     TuiEventQueue tui_events;
     auto wake_ui = [&terminal] { terminal.post_refresh(); };
     TuiEventSender event_sender{tui_events, wake_ui};
-    int spinner_frame = 0;
-    auto last_spinner_tick = std::chrono::steady_clock::now();
+    int animation_frame = 0;
+    auto last_frame_time = std::chrono::steady_clock::now();
 
     auto drain_tui_events = [&] {
         auto events = tui_events.drain();
@@ -925,6 +937,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             if (result.run_completed)
             {
                 worker_finished = true;
+                terminal.stop_animation_timer();
             }
         }
     };
@@ -953,6 +966,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             cancellation = cancellation_source->token();
         }
         terminal.post_refresh();
+        terminal.start_animation_timer(150);
 
         worker = std::thread{[&, prompt = std::move(prompt), cancellation] {
             const auto complete_with_error = [&](std::string message) {
@@ -1076,7 +1090,7 @@ auto run_tui(runtime::RuntimeBundle& runtime,
 
     ComposerState composer_state;
     auto composer_component = make_multiline_composer(composer_state);
-    auto component = CatchEvent(composer_component, [&](Event event) {
+    auto handle_event = [&](Event event) {
         drain_tui_events();
         reap_worker();
 
@@ -1312,28 +1326,33 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             }
         }
 
-        return false;
-    });
+        {
+            std::lock_guard lock{mutex};
+            if (model.state().bottom_pane_focus != BottomPaneFocus::composer)
+            {
+                return false;
+            }
+        }
 
-    auto renderer = Renderer(component, [&] {
+        return composer_component->OnEvent(event);
+    };
+
+    auto renderer = Renderer([&] {
         drain_tui_events();
 
         std::lock_guard lock{mutex};
 
-        if (model.state().busy)
+        const auto now = std::chrono::steady_clock::now();
+        if (model.state().busy && !model.state().interrupt_requested)
         {
-            const auto now = std::chrono::steady_clock::now();
-            if (now - last_spinner_tick >= std::chrono::milliseconds{120})
-            {
-                spinner_frame = (spinner_frame + 1) % 10;
-                last_spinner_tick = now;
-            }
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_frame_time).count();
+            animation_frame = (animation_frame + static_cast<int>(elapsed_ms / 150)) % 360;
         }
         else
         {
-            spinner_frame = 0;
-            last_spinner_tick = std::chrono::steady_clock::now();
+            animation_frame = 0;
         }
+        last_frame_time = now;
 
         const auto terminal_width = std::max(terminal.screen().dimx(), 40);
         Elements rows;
@@ -1344,13 +1363,15 @@ auto run_tui(runtime::RuntimeBundle& runtime,
         }
         else
         {
-            constexpr auto kFixedComposerRows = 7;
-            const auto transcript_height = std::max(1, terminal.screen().dimy() - kFixedComposerRows);
+            const auto transcript_height = std::max(
+                1,
+                terminal.screen().dimy() - render::bottom_pane_reserved_rows(model.state().bottom_pane_focus));
             rows.push_back(render::transcript_view_element(
-                model.state().transcript,
-                terminal_width,
-                transcript_height,
-                model.state().follow_transcript));
+                               model.state().transcript,
+                               terminal_width,
+                               transcript_height,
+                               model.state().follow_transcript) |
+                            size(HEIGHT, EQUAL, transcript_height));
         }
 
         if (model.state().bottom_pane_focus == BottomPaneFocus::permission_prompt && model.state().pending_permission)
@@ -1374,24 +1395,51 @@ auto run_tui(runtime::RuntimeBundle& runtime,
             rows.push_back(render::command_palette_element(*model.state().command_palette, terminal_width));
         }
 
-        rows.push_back(text(" "));
-        rows.push_back(text(render::horizontal_rule(terminal_width)) | dim);
-        rows.push_back(render::status_footer_element(display_config, model.state()));
-
+        // Codex: working status indicator + composer area
         if (bottom_pane_accepts_composer_input(model.state().bottom_pane_focus))
         {
-            const auto status_text = model.state().busy ? render::busy_spinner_frame(spinner_frame) + " Working"
-                                                        : "Ready";
-            rows.push_back(hbox({
-                text(status_text) | (model.state().busy ? color(TuiTheme::warning()) : color(TuiTheme::success())),
-                text(" "),
-                composer_component->Render() | borderRounded | size(HEIGHT, GREATER_THAN, 3) | flex,
-            }));
-            rows.push_back(text(render::render_composer_hint(model.state().busy, composer_state.history_index())) | dim);
+            // Codex: status indicator line (when busy)
+            if (render::should_animate_working_status(model.state()))
+            {
+                rows.push_back(render::working_status_element(0, "Working", animation_frame) |
+                               size(HEIGHT, EQUAL, render::k_codex_status_rows));
+            }
+            else if (model.state().interrupt_requested)
+            {
+                rows.push_back(hbox({
+                                   text(std::string{k_codex_bullet}) | color(TuiTheme::warning()),
+                                   text("Interrupting...") | color(TuiTheme::warning()) | bold,
+                               }) |
+                               size(HEIGHT, EQUAL, render::k_codex_status_rows));
+            }
+            else
+            {
+                rows.push_back(text(" ") | size(HEIGHT, EQUAL, render::k_codex_status_rows));
+            }
+
+            // Codex composer with prompt prefix and no border.
+            rows.push_back(render::composer_input_area_element(
+                hbox({
+                    render::composer_prompt_prefix_column_element(),
+                    composer_component->Render() | size(HEIGHT, EQUAL, render::composer_fixed_height_rows()) | flex,
+                }) | size(HEIGHT, EQUAL, render::composer_fixed_height_rows())));
+
+            // Codex single-line footer: hint left, status right
+            const auto hint = composer_state.content().empty()
+                                  ? "Use /skills to list available skills"
+                                  : render::render_composer_hint(model.state().busy, composer_state.history_index());
+            rows.push_back(render::codex_footer_element(display_config, model.state(), hint) |
+                           size(HEIGHT, EQUAL, render::k_codex_footer_rows));
+        }
+        else
+        {
+            // Minimal status footer when modals are active
+            rows.push_back(render::status_footer_element(display_config, model.state()) |
+                           size(HEIGHT, EQUAL, 1));
         }
 
-        return vbox(std::move(rows)) | flex;
-    });
+        return vbox(std::move(rows)) | flex | codex_background_style();
+    }) | CatchEvent(handle_event);
 
     terminal.run(renderer);
 

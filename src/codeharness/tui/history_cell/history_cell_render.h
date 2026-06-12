@@ -12,6 +12,8 @@ namespace codeharness::tui::render
 {
 
 constexpr int k_tool_error_max_lines = 8;
+constexpr int k_codex_tool_max_lines = 5;
+constexpr std::string_view k_transcript_hint = "ctrl + t to view transcript";
 
 [[nodiscard]] auto tool_line_count(std::string_view detail) -> int;
 [[nodiscard]] auto tool_summary_text(const TranscriptItem& item) -> std::string;

@@ -122,7 +122,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     app.add_option("-p,--prompt", prompt, "Prompt to run in non-interactive mode");
     app.add_option("--cwd", cwd, "Working directory");
     app.add_option("--max-turns", max_turns, "Maximum number of turns");
-    app.add_option("--provider", provider_type, "Provider type: echo (default), openai, anthropic");
+    app.add_option("--provider", provider_type, "Provider type: openai (default), anthropic, echo");
     app.add_option("--model", model, "Model name (provider default when omitted)");
     app.add_option("--api-key", api_key, "API key (defaults to env or credentials file)");
     app.add_option("--base-url", base_url, "API base URL");
@@ -241,6 +241,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
                 .model = settings->model,
                 .provider_type = settings->provider_type,
                 .version = std::string{VERSION},
+                .directory = settings->cwd.string(),
                 .skill_count = static_cast<int>((*runtime_bundle)->skills().list().size()),
             },
             tui::ModelListProvider{model_list},

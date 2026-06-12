@@ -5,7 +5,9 @@
 #include "codeharness/tui/tui_markdown.h"
 #include "codeharness/tui/tui_theme.h"
 
+#include <algorithm>
 #include <sstream>
+#include <string>
 
 namespace codeharness::tui::render
 {
@@ -24,113 +26,113 @@ auto split_lines(std::string_view text) -> std::vector<std::string>
         {
             line.pop_back();
         }
-        if (!line.empty())
-        {
-            lines.push_back(std::move(line));
-        }
+        lines.push_back(std::move(line));
     }
     return lines;
 }
 
-auto tool_status_suffix(const TranscriptItem& item) -> std::string
-{
-    if (item.tool_status == ToolStatus::running)
-    {
-        return "";
-    }
-    if (item.is_error)
-    {
-        return " error";
-    }
-    const auto lines = tool_line_count(item.detail);
-    if (lines > 0)
-    {
-        return " " + std::to_string(lines) + "L";
-    }
-    return "";
-}
-
-auto should_show_live_tool_input(const TranscriptItem& item) -> bool
-{
-    return item.kind == HistoryCellKind::tool && item.live && !item.input_json.empty() && item.detail.empty();
-}
-
-/// Get the color for a tool based on its status.
 auto tool_status_color(const TranscriptItem& item) -> ftxui::Color
 {
     if (item.tool_status == ToolStatus::running)
     {
-        return TuiTheme::tool_running();
+        return TuiTheme::codex_bullet();
     }
     if (item.is_error || item.tool_status == ToolStatus::failed)
     {
-        return TuiTheme::tool_failed();
+        return TuiTheme::error();
     }
-    return TuiTheme::tool_completed();
+    return TuiTheme::success();
 }
 
-/// Create a tree prefix for tool details display.
-auto tool_tree_prefix(std::size_t index, std::size_t total, std::size_t max_lines) -> std::string
-{
-    const auto visible = std::min(total, max_lines);
-    if (index + 1 == visible)
-    {
-        return std::string{k_tree_last};
-    }
-    return std::string{k_tree_branch};
-}
-
-/// Render tool details with tree-drawing characters, limited to max lines.
-auto render_tool_details(const TranscriptItem& item, int width) -> Elements
+auto render_tool_output(const std::vector<std::string>& all_lines, int width) -> Elements
 {
     Elements rows;
-
-    // Show live tool input if applicable
-    if (should_show_live_tool_input(item))
+    if (all_lines.empty())
     {
         rows.push_back(hbox({
-            text("  input: ") | muted_style(),
-            text(item.input_json) | dim,
+            text("  \xe2\x94\x94 ") | color(TuiTheme::codex_output_dim()) | dim,
+            text("(no output)") | color(TuiTheme::codex_output_dim()) | dim,
         }));
         return rows;
     }
 
-    // Show error details with tree lines (limited)
-    if (item.is_error && item.expanded && !item.detail.empty())
+    const auto total = all_lines.size();
+    constexpr std::size_t line_limit = k_codex_tool_max_lines;
+    const bool show_ellipsis = total > 2 * line_limit;
+
+    const auto head_end = std::min(total, line_limit);
+    for (std::size_t i = 0; i < head_end; ++i)
     {
-        const auto error_lines = split_lines(item.detail);
-        const auto visible = std::min(error_lines.size(), static_cast<std::size_t>(k_tool_error_max_lines));
-        for (std::size_t i = 0; i < visible; ++i)
-        {
-            rows.push_back(hbox({
-                text(tool_tree_prefix(i, error_lines.size(), k_tool_error_max_lines)) | color(TuiTheme::error()),
-                text(error_lines.at(i)) | color(TuiTheme::error()),
-            }));
-        }
-        if (error_lines.size() > visible)
-        {
-            rows.push_back(
-                text(std::string{k_tree_last} + " ... (" + std::to_string(error_lines.size() - visible) +
-                     " more lines)") |
-                dim);
-        }
-        return rows;
+        const bool is_last_line = (i + 1 == head_end) && !show_ellipsis && (head_end == total);
+        const std::string prefix = is_last_line ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+        rows.push_back(hbox({
+            text(prefix) | color(TuiTheme::codex_output_dim()) | dim,
+            text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()) | dim,
+        }));
     }
 
-    // Show expanded tool output
-    if (item.expanded && !item.detail.empty())
+    if (show_ellipsis)
     {
-        for (const auto& line : split_lines(item.detail))
+        rows.push_back(hbox({
+            text("  \xe2\x80\xa6 +" + std::to_string(total - 2 * line_limit) + " lines (" +
+                 std::string{k_transcript_hint} + ")") |
+                color(TuiTheme::codex_output_dim()) | dim,
+        }));
+
+        const auto tail_start = total - line_limit;
+        for (std::size_t i = tail_start; i < total; ++i)
         {
-            rows.push_back(text(trim_to_width(line, width)) | dim);
+            const bool is_last = (i + 1 == total);
+            const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+            rows.push_back(hbox({
+                text(prefix) | color(TuiTheme::codex_output_dim()) | dim,
+                text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()) | dim,
+            }));
         }
-        return rows;
+    }
+    else if (head_end < total)
+    {
+        for (std::size_t i = head_end; i < total; ++i)
+        {
+            const bool is_last = (i + 1 == total);
+            const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+            rows.push_back(hbox({
+                text(prefix) | color(TuiTheme::codex_output_dim()) | dim,
+                text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()) | dim,
+            }));
+        }
     }
 
     return rows;
 }
 
-} // namespace
+auto render_error_output(const std::vector<std::string>& err_lines, int width) -> Elements
+{
+    Elements rows;
+    constexpr std::size_t visible = k_tool_error_max_lines;
+    const auto show_count = std::min(err_lines.size(), visible);
+
+    for (std::size_t i = 0; i < show_count; ++i)
+    {
+        const bool is_last = (i + 1 == show_count);
+        const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+        rows.push_back(hbox({
+            text(prefix) | color(TuiTheme::error()) | bold,
+            text(trim_to_width(err_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::error()),
+        }));
+    }
+
+    if (err_lines.size() > visible)
+    {
+        rows.push_back(hbox({
+            text("  \xe2\x80\xa6 +" + std::to_string(err_lines.size() - visible) + " more lines") | color(TuiTheme::error()) | dim,
+        }));
+    }
+
+    return rows;
+}
+
+} // anonymous namespace
 
 auto tool_line_count(std::string_view detail) -> int
 {
@@ -139,85 +141,177 @@ auto tool_line_count(std::string_view detail) -> int
 
 auto tool_summary_text(const TranscriptItem& item) -> std::string
 {
-    std::ostringstream output;
+    if (!item.summary_text.empty())
+    {
+        return item.summary_text;
+    }
+    if (!item.text.empty())
+    {
+        return item.text;
+    }
+
+    auto label = item.label;
+    if (label.empty())
+    {
+        label = item.id.empty() ? "tool" : item.id;
+    }
+
+    std::ostringstream summary;
     if (item.tool_status == ToolStatus::running)
     {
-        output << "Running " << item.label;
+        summary << "Running " << label;
     }
     else
     {
-        output << "Ran " << item.label << tool_status_suffix(item);
+        summary << "Ran " << label;
+        if (item.is_error || item.tool_status == ToolStatus::failed)
+        {
+            summary << " error";
+        }
     }
-    return output.str();
+
+    if (!item.duration_label.empty())
+    {
+        summary << ' ' << item.duration_label;
+    }
+    return summary.str();
 }
 
 auto render_history_cell_lines(const TranscriptItem& item, int width) -> std::vector<std::string>
 {
     std::vector<std::string> lines;
 
-    // Left prefix bar for Codex-style alignment
-    std::string prefix = "  ";
-    std::string type_marker;
-
     if (item.kind == HistoryCellKind::user)
     {
-        type_marker = "> ";
-        for (const auto& line : split_lines(item.text))
+        if (item.text.empty())
         {
-            lines.push_back(prefix + type_marker + trim_to_width(line, width > 4 ? width - 4 : width));
+            return lines;
         }
-        return lines;
-    }
-    if (item.kind == HistoryCellKind::assistant)
-    {
-        const auto rendered = markdown::render_plain_text(item.text, width - 2);
-        for (const auto& line : split_lines(rendered))
+        const auto text_lines = split_lines(item.text);
+        if (text_lines.empty())
         {
-            lines.push_back(prefix + trim_to_width(line, width > 2 ? width - 2 : width));
+            return lines;
         }
+        lines.push_back("");
+        for (std::size_t i = 0; i < text_lines.size(); ++i)
+        {
+            const std::string prefix = (i == 0) ? "\xe2\x80\xba " : "  ";
+            lines.push_back(prefix + trim_to_width(text_lines.at(i), std::max(0, width - 4)));
+        }
+        lines.push_back("");
         return lines;
     }
-    if (item.kind == HistoryCellKind::system)
-    {
-        lines.push_back(prefix + "\xe2\x97\x8b " + trim_to_width(item.text, width > 5 ? width - 5 : width));
-        return lines;
-    }
+
     if (item.kind == HistoryCellKind::tool)
     {
-        lines.push_back(prefix + "\xe2\x96\xb8 " + trim_to_width(tool_summary_text(item), width > 4 ? width - 4 : width));
-        if (should_show_live_tool_input(item))
+        lines.push_back(std::string{k_codex_bullet} + tool_summary_text(item));
+
+        if (item.tool_status == ToolStatus::running && !item.input_json.empty() &&
+            item.detail.empty() && item.output_text.empty() && item.stderr_text.empty())
         {
-            lines.push_back(prefix + "  input: " + trim_to_width(item.input_json, width > 11 ? width - 11 : width));
+            lines.push_back("  " + trim_to_width("input: " + item.input_json, std::max(0, width - 2)));
+            return lines;
         }
-        if (item.expanded && !item.detail.empty())
+
+        const auto error_text = item.stderr_text.empty() ? item.detail : item.stderr_text;
+        const auto output_text = item.output_text.empty() ? item.detail : item.output_text;
+        if ((item.tool_status == ToolStatus::completed || item.tool_status == ToolStatus::failed || item.is_error) &&
+            (!output_text.empty() || !error_text.empty()))
         {
             if (item.is_error)
             {
-                const auto error_lines = split_lines(item.detail);
-                const auto visible = std::min(error_lines.size(), static_cast<std::size_t>(k_tool_error_max_lines));
-                for (std::size_t index = 0; index < visible; ++index)
+                const auto err_lines = split_lines(error_text);
+                if (!err_lines.empty())
                 {
-                    const auto tree_prefix = index + 1 == visible ? "  \xe2\x94\x94 " : "  \xe2\x94\x9c ";
-                    lines.push_back(prefix + tree_prefix + trim_to_width(error_lines.at(index), width > 6 ? width - 6 : width));
+                    const auto visible = std::min(err_lines.size(), static_cast<std::size_t>(k_tool_error_max_lines));
+                    for (std::size_t i = 0; i < visible; ++i)
+                    {
+                        const bool is_last = (i + 1 == visible);
+                        const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+                        lines.push_back(prefix + trim_to_width(err_lines.at(i), std::max(0, width - 4)));
+                    }
+                    if (err_lines.size() > visible)
+                    {
+                        lines.push_back("  \xe2\x80\xa6 +" + std::to_string(err_lines.size() - visible) + " more lines");
+                    }
                 }
-                if (error_lines.size() > visible)
+                else
                 {
-                    lines.push_back(prefix + "  \xe2\x94\x94 ... (" + std::to_string(error_lines.size() - visible) + " more lines)");
+                    lines.push_back("  \xe2\x94\x94 (no output)");
                 }
             }
             else
             {
-                for (const auto& line : split_lines(item.detail))
+                const auto out_lines = split_lines(output_text);
+                if (out_lines.empty())
                 {
-                    lines.push_back(prefix + trim_to_width(line, width > 2 ? width - 2 : width));
+                    lines.push_back("  \xe2\x94\x94 (no output)");
+                }
+                else
+                {
+                    const auto total = out_lines.size();
+                    constexpr std::size_t line_limit = k_codex_tool_max_lines;
+                    const bool show_ellipsis = total > 2 * line_limit;
+
+                    const auto head_end = std::min(total, line_limit);
+                    for (std::size_t i = 0; i < head_end; ++i)
+                    {
+                        const bool is_last_line = (i + 1 == head_end) && !show_ellipsis && (head_end == total);
+                        const std::string prefix = is_last_line ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+                        lines.push_back(prefix + trim_to_width(out_lines.at(i), std::max(0, width - 4)));
+                    }
+
+                    if (show_ellipsis)
+                    {
+                        lines.push_back("  \xe2\x80\xa6 +" + std::to_string(total - 2 * line_limit) +
+                                        " lines (" + std::string{k_transcript_hint} + ")");
+                        const auto tail_start = total - line_limit;
+                        for (std::size_t i = tail_start; i < total; ++i)
+                        {
+                            const bool is_last = (i + 1 == total);
+                            const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+                            lines.push_back(prefix + trim_to_width(out_lines.at(i), std::max(0, width - 4)));
+                        }
+                    }
+                    else if (head_end < total)
+                    {
+                        for (std::size_t i = head_end; i < total; ++i)
+                        {
+                            const bool is_last = (i + 1 == total);
+                            const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
+                            lines.push_back(prefix + trim_to_width(out_lines.at(i), std::max(0, width - 4)));
+                        }
+                    }
                 }
             }
         }
         return lines;
     }
+
+    if (item.kind == HistoryCellKind::system)
+    {
+        lines.push_back(std::string{k_codex_bullet} + trim_to_width(item.text, std::max(0, width - 2)));
+        return lines;
+    }
+
     if (item.kind == HistoryCellKind::error)
     {
-        lines.push_back(prefix + "\xe2\x9c\x95 " + trim_to_width(item.text, width > 4 ? width - 4 : width));
+        lines.push_back("  \xe2\x9c\x95 " + trim_to_width(item.text, std::max(0, width - 5)));
+        return lines;
+    }
+
+    // Assistant
+    const auto rendered = markdown::render_plain_text(item.text, std::max(0, width - 2));
+    for (const auto& line : split_lines(rendered))
+    {
+        if (lines.empty())
+        {
+            lines.push_back("\xe2\x80\xa2 " + trim_to_width(line, std::max(0, width - 2)));
+        }
+        else
+        {
+            lines.push_back("  " + trim_to_width(line, std::max(0, width - 2)));
+        }
     }
     return lines;
 }
@@ -227,60 +321,91 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
     if (item.kind == HistoryCellKind::user)
     {
         Elements rows;
-        for (const auto& line : split_lines(item.text))
+        const auto text_lines = split_lines(item.text);
+        if (text_lines.empty())
         {
-            rows.push_back(hbox({
-                text("  > ") | color(TuiTheme::primary()),
-                text(line),
-            }));
+            return text("");
         }
-        return rows.empty() ? text("") : vbox(std::move(rows));
+
+        // Empty line with user_message_bg (full width via padded text)
+        rows.push_back(text("  ") | bgcolor(TuiTheme::user_message_bg()));
+        for (std::size_t i = 0; i < text_lines.size(); ++i)
+        {
+            const auto content = trim_to_width(text_lines.at(i), std::max(0, width - 4));
+            if (i == 0)
+            {
+                rows.push_back(hbox({
+                    text("\xe2\x80\xba ") | color(TuiTheme::codex_user_prefix()) | bold | dim,
+                    text(content),
+                }) | bgcolor(TuiTheme::user_message_bg()));
+            }
+            else
+            {
+                rows.push_back(hbox({
+                    text("  "),
+                    text(content),
+                }) | bgcolor(TuiTheme::user_message_bg()));
+            }
+        }
+        // Empty line with user_message_bg (full width via padded text)
+        rows.push_back(text("  ") | bgcolor(TuiTheme::user_message_bg()));
+        return vbox(std::move(rows));
     }
 
     if (item.kind == HistoryCellKind::assistant)
     {
-        return markdown::render_text(item.text, width);
+        return hbox({
+            text("\xe2\x80\xa2 ") | color(TuiTheme::codex_bullet()) | dim,
+            markdown::render_text(item.text, std::max(0, width - 2)),
+        });
     }
 
     if (item.kind == HistoryCellKind::system)
     {
         return hbox({
-            text("  \xe2\x97\x8b ") | color(TuiTheme::warning()),
-            text(item.text),
+            text(std::string{k_codex_bullet}) | color(TuiTheme::codex_bullet()) | dim,
+            text(item.text) | color(TuiTheme::text_muted()),
         });
     }
 
     if (item.kind == HistoryCellKind::tool)
     {
         Elements rows;
-
-        // Tool header with status-appropriate color and bullet
         const auto status_color = tool_status_color(item);
-        std::string bullet;
-        if (item.tool_status == ToolStatus::running)
+
+        rows.push_back(hbox({
+            text("\xe2\x80\xa2 ") | color(status_color) | bold,
+            styled_line_element(codex_command_header_segments(tool_summary_text(item))),
+        }));
+
+        if (item.tool_status == ToolStatus::running && !item.input_json.empty() &&
+            item.detail.empty() && item.output_text.empty() && item.stderr_text.empty())
         {
-            bullet = "  \xe2\x96\xb8";  // ▸
+            rows.push_back(hbox({
+                text("  input: ") | color(TuiTheme::codex_output_dim()),
+                text(item.input_json) | color(TuiTheme::codex_output_dim()),
+            }));
         }
         else if (item.is_error)
         {
-            bullet = "  \xe2\x9c\x95";  // ✕
+            const auto err_lines = split_lines(item.stderr_text.empty() ? item.detail : item.stderr_text);
+            if (!err_lines.empty())
+            {
+                const auto err_rows = render_error_output(err_lines, width);
+                for (const auto& row : err_rows)
+                {
+                    rows.push_back(row);
+                }
+            }
         }
-        else
+        else if (!item.output_text.empty() || item.tool_status == ToolStatus::completed)
         {
-            bullet = "  \xe2\x9c\x93";  // ✓
-        }
-
-        auto summary = hbox({
-            text(bullet + " ") | color(status_color),
-            text(tool_summary_text(item)) | color(status_color),
-        });
-        rows.push_back(summary);
-
-        // Render details subtree
-        const auto detail_rows = render_tool_details(item, width);
-        for (const auto& detail : detail_rows)
-        {
-            rows.push_back(detail);
+            const auto out_lines = split_lines(item.output_text.empty() ? item.detail : item.output_text);
+            const auto out_rows = render_tool_output(out_lines, width);
+            for (const auto& row : out_rows)
+            {
+                rows.push_back(row);
+            }
         }
 
         return vbox(std::move(rows));
@@ -289,8 +414,8 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
     if (item.kind == HistoryCellKind::error)
     {
         return hbox({
-            text("  \xe2\x9c\x95 ") | error_style(),
-            text(item.text) | error_style(),
+            text("  \xe2\x9c\x95 ") | color(TuiTheme::error()),
+            text(item.text) | color(TuiTheme::error()),
         });
     }
 

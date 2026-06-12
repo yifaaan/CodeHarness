@@ -28,9 +28,14 @@ struct TranscriptItem
     HistoryCellKind kind = HistoryCellKind::system;
     std::string text;
     std::string detail;
+    std::string summary_text;
+    std::string output_text;
+    std::string stderr_text;
     std::string input_json;
     std::string id;
     std::string label;
+    std::string duration_label;
+    int omitted_line_count = 0;
     ToolStatus tool_status = ToolStatus::none;
     bool is_error = false;
     bool expanded = false;

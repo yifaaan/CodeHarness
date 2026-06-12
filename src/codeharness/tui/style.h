@@ -20,12 +20,7 @@ namespace codeharness::tui
 [[nodiscard]] inline auto user_message_bg_style() -> ftxui::Decorator
 {
     return [](ftxui::Element child) -> ftxui::Element {
-        if (const auto bg = default_bg())
-        {
-            const auto user_bg = codeharness::tui::user_message_bg(*bg);
-            return child | ftxui::bgcolor(best_color(user_bg));
-        }
-        return child;
+        return child | ftxui::bgcolor(TuiTheme::user_message_bg());
     };
 }
 
@@ -33,6 +28,17 @@ namespace codeharness::tui
 [[nodiscard]] inline auto proposed_plan_bg_style() -> ftxui::Decorator
 {
     return user_message_bg_style();
+}
+
+/// Fill the top-level TUI with the Codex dark background when the terminal supports it.
+[[nodiscard]] inline auto codex_background_style() -> ftxui::Decorator
+{
+    return [](ftxui::Element child) -> ftxui::Element {
+        return ftxui::dbox({
+            ftxui::filler() | ftxui::bgcolor(TuiTheme::background()),
+            child | ftxui::bgcolor(TuiTheme::background()),
+        });
+    };
 }
 
 /// Accent style for active or selected TUI controls.
@@ -55,7 +61,9 @@ namespace codeharness::tui
 /// Style for dimmed/de-emphasized text.
 [[nodiscard]] inline auto dim_style() -> ftxui::Decorator
 {
-    return ftxui::dim;
+    return [](ftxui::Element child) -> ftxui::Element {
+        return child | ftxui::color(TuiTheme::text_dim()) | ftxui::dim;
+    };
 }
 
 /// Style for strong/prominent text.
@@ -134,7 +142,7 @@ namespace codeharness::tui
 /// Create a styled bullet point.
 [[nodiscard]] inline auto styled_bullet(const std::string& text, bool is_error = false) -> ftxui::Element
 {
-    auto bullet = ftxui::text("\xe2\x80\xa2 ");  // •
+    auto bullet = ftxui::text(std::string{k_codex_bullet});
     if (is_error)
     {
         bullet = bullet | ftxui::color(TuiTheme::error());
@@ -188,9 +196,9 @@ namespace codeharness::tui
     }
 
     return ftxui::hbox({
-        ftxui::text(header) | accent_style(),
-        ftxui::text(" "),
-        ftxui::text("(" + elapsed_str + " \xe2\x80\xa2 Esc to interrupt)") | muted_style(),
+        ftxui::text(std::string{k_codex_bullet}) | ftxui::color(TuiTheme::codex_bullet()),
+        ftxui::text(header) | ftxui::color(TuiTheme::text_strong()) | ftxui::bold,
+        ftxui::text(" (" + elapsed_str + " \xe2\x80\xa2 esc to interrupt)") | muted_style(),
     });
 }
 
@@ -212,7 +220,7 @@ namespace codeharness::tui
     }
     else
     {
-        status_text = label + " completed";
+        status_text = "Ran " + label;
         status_color = TuiTheme::tool_completed();
     }
 

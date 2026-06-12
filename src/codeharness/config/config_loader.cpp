@@ -116,7 +116,7 @@ auto ConfigLoader::load_defaults() -> Settings
 {
     Settings s;
     s.active_profile = "default";
-    s.provider_type = "echo";
+    s.provider_type = "openai";
     s.max_tokens = 4096;
     s.max_turns = 200;
     s.allow_project_skills = true;
@@ -130,7 +130,7 @@ auto ConfigLoader::load_defaults() -> Settings
     ProviderProfile default_profile;
     default_profile.name = "default";
     default_profile.label = "Default";
-    default_profile.provider_type = "echo";
+    default_profile.provider_type = "openai";
     s.profiles["default"] = std::move(default_profile);
 
     return s;
