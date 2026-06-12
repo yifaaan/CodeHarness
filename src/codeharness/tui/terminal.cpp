@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <utility>
+#include <chrono>
 
 namespace codeharness::tui
 {
@@ -55,6 +56,7 @@ TuiTerminalSession::TuiTerminalSession()
 
 TuiTerminalSession::~TuiTerminalSession()
 {
+    stop_animation_timer();
     close();
 }
 
@@ -81,6 +83,32 @@ auto TuiTerminalSession::close() -> void
 auto TuiTerminalSession::post_refresh() -> void
 {
     alive_.post_if_alive([&] { screen_.PostEvent(ftxui::Event::Custom); });
+}
+
+auto TuiTerminalSession::start_animation_timer(int interval_ms) -> void
+{
+    stop_animation_timer();
+    animation_active_.store(true, std::memory_order_release);
+    animation_timer_thread_ = std::thread{[this, interval_ms] {
+        while (animation_active_.load(std::memory_order_acquire))
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+            if (!animation_active_.load(std::memory_order_acquire))
+            {
+                break;
+            }
+            alive_.post_if_alive([&] { screen_.PostEvent(ftxui::Event::Custom); });
+        }
+    }};
+}
+
+auto TuiTerminalSession::stop_animation_timer() -> void
+{
+    animation_active_.store(false, std::memory_order_release);
+    if (animation_timer_thread_.joinable())
+    {
+        animation_timer_thread_.join();
+    }
 }
 
 auto TuiTerminalSession::exit_loop() -> void

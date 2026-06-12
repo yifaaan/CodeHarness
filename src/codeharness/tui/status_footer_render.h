@@ -26,7 +26,7 @@ constexpr std::string_view k_separator = " \xe2\x94\x82 ";
 /// Get a legacy spinner frame by index.
 [[nodiscard]] auto busy_spinner_frame(int frame) -> std::string;
 
-/// True when the Codex working shimmer should request animation frames.
+/// True when the working status should be visible.
 [[nodiscard]] auto should_animate_working_status(const TuiState& state) -> bool;
 
 /// Render the status footer as a ftxui element.
@@ -45,5 +45,13 @@ constexpr std::string_view k_separator = " \xe2\x94\x82 ";
                                               const TuiState& state,
                                               int elapsed_seconds,
                                               int animation_frame = 0) -> ftxui::Element;
+
+/// Render a combined Codex-style single-line footer.
+/// Left side: hint text (e.g., "? for shortcuts").
+/// Right side: status line (model, directory, mode) via status_footer_element().
+/// Uses filler() to right-align the status content.
+[[nodiscard]] auto codex_footer_element(const TuiDisplayConfig& config,
+                                        const TuiState& state,
+                                        const std::string& hint) -> ftxui::Element;
 
 } // namespace codeharness::tui::render

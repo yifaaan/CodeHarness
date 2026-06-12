@@ -49,19 +49,58 @@ struct TerminalPaletteGuard
     return -1;
 }
 
-[[nodiscard]] auto screen_lines(ftxui::Element element, int width, int height) -> std::vector<std::string>
+[[nodiscard]] auto line_count_containing(const std::vector<std::string>& lines, std::string_view needle) -> int
 {
-    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(width), ftxui::Dimension::Fixed(height));
-    ftxui::Render(screen, std::move(element));
+    int count = 0;
+    for (const auto& line : lines)
+    {
+        if (line.find(needle) != std::string::npos)
+        {
+            ++count;
+        }
+    }
+    return count;
+}
 
+[[nodiscard]] auto screen_text_lines(const std::string& text) -> std::vector<std::string>
+{
     std::vector<std::string> lines;
-    std::istringstream stream{screen.ToString()};
+    std::istringstream stream{text};
     std::string line;
     while (std::getline(stream, line))
     {
         lines.push_back(std::move(line));
     }
     return lines;
+}
+
+[[nodiscard]] auto screen_lines(ftxui::Element element, int width, int height) -> std::vector<std::string>
+{
+    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(width), ftxui::Dimension::Fixed(height));
+    ftxui::Render(screen, std::move(element));
+    return screen_text_lines(screen.ToString());
+}
+
+[[nodiscard]] auto rendered_screen(ftxui::Element element, int width, int height) -> ftxui::Screen
+{
+    auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(width), ftxui::Dimension::Fixed(height));
+    ftxui::Render(screen, std::move(element));
+    return screen;
+}
+
+[[nodiscard]] auto same_pixel_style(const ftxui::Pixel& lhs, const ftxui::Pixel& rhs) -> bool
+{
+    return lhs.character == rhs.character &&
+           lhs.foreground_color == rhs.foreground_color &&
+           lhs.background_color == rhs.background_color &&
+           lhs.bold == rhs.bold &&
+           lhs.dim == rhs.dim &&
+           lhs.inverted == rhs.inverted &&
+           lhs.blink == rhs.blink &&
+           lhs.italic == rhs.italic &&
+           lhs.underlined == rhs.underlined &&
+           lhs.underlined_double == rhs.underlined_double &&
+           lhs.strikethrough == rhs.strikethrough;
 }
 
 } // namespace
@@ -312,6 +351,35 @@ TEST_CASE("tui list dialog render covers overflow and current selected row")
     CHECK(lines.at(4).find("  Alpha") != std::string::npos);
     CHECK(lines.at(5).find("\xe2\x9d\xaf Beta  two \xe2\x86\x90 current") != std::string::npos);
     CHECK(lines.at(6).find("\xe2\x96\xbc 1 more") != std::string::npos);
+}
+
+TEST_CASE("tui model picker render matches codex numbered layout")
+{
+    auto lines = codeharness::tui::render::render_list_dialog_lines(
+        codeharness::tui::render::ListDialogSpec{
+            .title = "Select Model and Effort",
+            .cursor = 1,
+            .page_size = 3,
+            .layout = codeharness::tui::render::ListDialogLayout::model_picker,
+            .rows = {
+                codeharness::tui::render::ListDialogRow{
+                    .primary = "gpt-5.5",
+                    .secondary = "Frontier model for complex coding, research, and real-world work.",
+                },
+                codeharness::tui::render::ListDialogRow{
+                    .primary = "gpt-5.2",
+                    .secondary = "Optimized for professional work and long-running agents.",
+                    .is_current = true,
+                },
+            },
+        },
+        80);
+
+    CHECK(lines.at(1).find("Select Model and Effort") != std::string::npos);
+    CHECK(line_index_containing(lines, "\xe2\x9d\xaf 2. gpt-5.2 (current)") >= 0);
+    CHECK(line_index_containing(lines, "Optimized for professional work") >= 0);
+    CHECK(line_index_containing(lines, "Press enter to confirm or esc to go back") >= 0);
+    CHECK(line_index_containing(lines, "(type to search)") == -1);
 }
 
 TEST_CASE("tui render primitives trim and draw horizontal rules")
@@ -599,13 +667,13 @@ TEST_CASE("tui bottom pane reserves stable rows across working states")
 {
     codeharness::tui::TuiState state;
     state.bottom_pane_focus = codeharness::tui::BottomPaneFocus::composer;
-    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 6);
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 5);
 
     state.busy = true;
-    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 6);
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 5);
 
     state.interrupt_requested = true;
-    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 6);
+    CHECK(codeharness::tui::render::bottom_pane_reserved_rows(state.bottom_pane_focus) == 5);
 
     CHECK(codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::permission_prompt) == 2);
     CHECK(codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::select_modal) == 2);
@@ -711,6 +779,183 @@ TEST_CASE("tui busy screen keeps y positions stable across shimmer frames")
     CHECK(line_index_containing(frame5, "gpt-5.5 xhigh") == line_index_containing(frame10, "gpt-5.5 xhigh"));
 }
 
+TEST_CASE("tui busy screen only changes working status pixels across shimmer frames")
+{
+    using namespace ftxui;
+
+    constexpr int width = 80;
+    constexpr int height = 14;
+    codeharness::tui::TuiState state;
+    state.busy = true;
+    state.bottom_pane_focus = codeharness::tui::BottomPaneFocus::composer;
+    state.follow_transcript = true;
+    state.transcript = {
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "older transcript line\nstable transcript bottom",
+        },
+    };
+    const codeharness::tui::TuiDisplayConfig display{
+        .model = "gpt-5.5 xhigh",
+        .directory = R"(D:\code\CodeHarness)",
+    };
+    const auto transcript_height =
+        height - codeharness::tui::render::bottom_pane_reserved_rows(codeharness::tui::BottomPaneFocus::composer);
+
+    const auto make_screen = [&](int animation_frame) {
+        Elements rows;
+        rows.push_back(codeharness::tui::render::transcript_view_element(
+                           state.transcript,
+                           width,
+                           transcript_height,
+                           state.follow_transcript) |
+                       size(HEIGHT, EQUAL, transcript_height));
+        rows.push_back(codeharness::tui::render::working_status_element(0, "Working", animation_frame));
+        rows.push_back(hbox({
+                           text(std::string{codeharness::tui::k_codex_prompt_prefix}) |
+                               color(codeharness::tui::TuiTheme::codex_user_prefix()) | bold | dim,
+                           text("Ask CodeHarness to do anything") | dim,
+                       }) |
+                       size(HEIGHT, EQUAL, codeharness::tui::render::composer_fixed_height_rows()));
+        rows.push_back(text("  Use /skills to list available skills") | dim);
+        rows.push_back(codeharness::tui::render::status_footer_element(display, state));
+
+        return rendered_screen(vbox(std::move(rows)) | flex | codeharness::tui::codex_background_style(), width, height);
+    };
+
+    const auto frame0 = make_screen(0);
+    const auto frame5 = make_screen(5);
+    const auto frame10 = make_screen(10);
+    const auto working_row = line_index_containing(screen_text_lines(frame0.ToString()), "esc to interrupt");
+    REQUIRE(working_row >= 0);
+    CHECK(working_row == line_index_containing(screen_text_lines(frame5.ToString()), "esc to interrupt"));
+    CHECK(working_row == line_index_containing(screen_text_lines(frame10.ToString()), "esc to interrupt"));
+
+    for (int y = 0; y < height; ++y)
+    {
+        if (y == working_row)
+        {
+            continue;
+        }
+        for (int x = 0; x < width; ++x)
+        {
+            CAPTURE(x);
+            CAPTURE(y);
+            CHECK(same_pixel_style(frame0.PixelAt(x, y), frame5.PixelAt(x, y)));
+            CHECK(same_pixel_style(frame5.PixelAt(x, y), frame10.PixelAt(x, y)));
+        }
+    }
+}
+
+TEST_CASE("tui codex screen keeps submitted prompt stable while working animates")
+{
+    TerminalPaletteGuard guard;
+    codeharness::tui::g_terminal_palette.color_level = codeharness::tui::ColorLevel::TrueColor;
+
+    constexpr int width = 80;
+    constexpr int height = 24;
+    codeharness::tui::TuiState state;
+    state.busy = true;
+    state.bottom_pane_focus = codeharness::tui::BottomPaneFocus::composer;
+    state.follow_transcript = true;
+    state.transcript = {
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::user,
+            .text = "123",
+        },
+    };
+
+    const auto make_screen = [&](int animation_frame) {
+        return codeharness::tui::render::render_codex_screen(
+            codeharness::tui::CodexFrameState{
+                .display = codeharness::tui::TuiDisplayConfig{
+                    .model = "gpt-5.5",
+                    .directory = R"(D:\code\CodeHarness\build\cmake\windows-msvc\src\Debug)",
+                },
+                .state = state,
+                .width = width,
+                .height = height,
+                .elapsed_seconds = animation_frame,
+            });
+    };
+
+    const auto frame0 = make_screen(0);
+    const auto frame5 = make_screen(5);
+    const auto frame10 = make_screen(10);
+    const auto lines0 = screen_text_lines(frame0.ToString());
+    const auto lines5 = screen_text_lines(frame5.ToString());
+    const auto lines10 = screen_text_lines(frame10.ToString());
+    const auto working_row = line_index_containing(lines0, "esc to interrupt");
+    REQUIRE(working_row >= 0);
+
+    CHECK(line_index_containing(lines0, "\xe2\x80\xba 123") == line_index_containing(lines5, "\xe2\x80\xba 123"));
+    CHECK(line_index_containing(lines5, "\xe2\x80\xba 123") == line_index_containing(lines10, "\xe2\x80\xba 123"));
+    CHECK(working_row == line_index_containing(lines5, "esc to interrupt"));
+    CHECK(working_row == line_index_containing(lines10, "esc to interrupt"));
+    CHECK(line_index_containing(lines0, "Ask CodeHarness to do anything") ==
+          line_index_containing(lines5, "Ask CodeHarness to do anything"));
+    CHECK(line_index_containing(lines5, "Ask CodeHarness to do anything") ==
+          line_index_containing(lines10, "Ask CodeHarness to do anything"));
+    CHECK(line_index_containing(lines0, "Use /skills to list available skills") ==
+          line_index_containing(lines5, "Use /skills to list available skills"));
+    CHECK(line_index_containing(lines5, "Use /skills to list available skills") ==
+          line_index_containing(lines10, "Use /skills to list available skills"));
+    CHECK(line_index_containing(lines0, R"(D:\code\CodeHarness\build\cmake\windows-msvc\src\Debug)") ==
+          line_index_containing(lines5, R"(D:\code\CodeHarness\build\cmake\windows-msvc\src\Debug)"));
+    CHECK(line_index_containing(lines5, R"(D:\code\CodeHarness\build\cmake\windows-msvc\src\Debug)") ==
+          line_index_containing(lines10, R"(D:\code\CodeHarness\build\cmake\windows-msvc\src\Debug)"));
+
+    for (int y = 0; y < height; ++y)
+    {
+        if (y == working_row)
+        {
+            continue;
+        }
+        for (int x = 0; x < width; ++x)
+        {
+            CAPTURE(x);
+            CAPTURE(y);
+            CHECK(same_pixel_style(frame0.PixelAt(x, y), frame5.PixelAt(x, y)));
+            CHECK(same_pixel_style(frame5.PixelAt(x, y), frame10.PixelAt(x, y)));
+        }
+    }
+}
+
+TEST_CASE("tui codex screen helper renders fixed viewport cells")
+{
+    TerminalPaletteGuard guard;
+    codeharness::tui::g_terminal_palette.color_level = codeharness::tui::ColorLevel::TrueColor;
+
+    codeharness::tui::TuiState state;
+    state.bottom_pane_focus = codeharness::tui::BottomPaneFocus::composer;
+    state.follow_transcript = true;
+    state.transcript = {
+        codeharness::tui::TranscriptItem{
+            .kind = codeharness::tui::HistoryCellKind::assistant,
+            .text = "hello from assistant",
+        },
+    };
+
+    auto screen = codeharness::tui::render::render_codex_screen(
+        codeharness::tui::CodexFrameState{
+            .display = codeharness::tui::TuiDisplayConfig{
+                .model = "gpt-5.5 xhigh",
+                .directory = R"(D:\code\CodeHarness)",
+            },
+            .state = state,
+            .width = 80,
+            .height = 14,
+        });
+
+    const auto lines = screen_text_lines(screen.ToString());
+    CHECK(line_index_containing(lines, "hello from assistant") >= 0);
+    CHECK(line_index_containing(lines, "Ask CodeHarness to do anything") >= 0);
+    CHECK(line_index_containing(lines, "Use /skills to list available skills") >= 0);
+    CHECK(line_index_containing(lines, "gpt-5.5 xhigh") >= 0);
+    CHECK(screen.PixelAt(0, 0).background_color == codeharness::tui::TuiTheme::background());
+    CHECK(screen.PixelAt(79, 13).background_color == codeharness::tui::TuiTheme::background());
+}
+
 TEST_CASE("tui codex frame keeps composer area three rows")
 {
     const auto make_lines = [](std::string composer) {
@@ -765,6 +1010,47 @@ TEST_CASE("tui codex frame keeps composer area three rows")
     CHECK(multi.at(static_cast<std::size_t>(composer_start + 1)).find("  two") != std::string::npos);
     CHECK(multi.at(static_cast<std::size_t>(composer_start + 2)).find("  three") != std::string::npos);
     CHECK(line_index_containing(multi, "four") == -1);
+}
+
+TEST_CASE("tui runtime composer prefix column prevents duplicate input rows")
+{
+    using namespace ftxui;
+
+    codeharness::tui::ComposerState state;
+    state.set_content("listcurrentdir");
+    auto composer = codeharness::tui::make_multiline_composer(state);
+
+    auto lines = screen_lines(
+        codeharness::tui::render::composer_input_area_element(
+            hbox({
+                codeharness::tui::render::composer_prompt_prefix_column_element(),
+                composer->Render() |
+                    size(HEIGHT, EQUAL, codeharness::tui::render::composer_fixed_height_rows()) |
+                    flex,
+            }) |
+            size(HEIGHT, EQUAL, codeharness::tui::render::composer_fixed_height_rows())),
+        40,
+        codeharness::tui::render::composer_fixed_height_rows());
+
+    REQUIRE(lines.size() == static_cast<std::size_t>(codeharness::tui::render::composer_fixed_height_rows()));
+    CHECK(line_count_containing(lines, "listcurrentdir") == 1);
+    const auto input_row = line_index_containing(lines, "listcurrentdir");
+    REQUIRE(input_row == 0);
+    CHECK(lines.at(static_cast<std::size_t>(input_row)).find("\xe2\x80\xba") != std::string::npos);
+    CHECK(lines.at(static_cast<std::size_t>(input_row)).find("listcurrentdir") != std::string::npos);
+    CHECK(lines.at(1).find("listcurrentdir") == std::string::npos);
+    CHECK(lines.at(2).find("listcurrentdir") == std::string::npos);
+}
+
+TEST_CASE("tui runtime routes composer events without rendering a hidden child")
+{
+    const auto source_root = std::filesystem::path{CODEHARNESS_SOURCE_DIR};
+    const auto app_source = read_file_text(source_root / "src" / "codeharness" / "tui" / "tui_app.cpp");
+
+    CHECK(app_source.find("Renderer(component,") == std::string::npos);
+    CHECK(app_source.find("CatchEvent(composer_component") == std::string::npos);
+    CHECK(app_source.find("composer_component->OnEvent(event)") != std::string::npos);
+    CHECK(app_source.find("composer_component->Render()") != std::string::npos);
 }
 
 TEST_CASE("tui codex welcome frame renders status card")
@@ -1221,11 +1507,12 @@ TEST_CASE("tui model renders pending permission modal")
 
     auto rendered = model.render_text();
 
-    CHECK(rendered.find("Allow write_file?") != std::string::npos);
+    CHECK(rendered.find("Would you like to allow write_file?") != std::string::npos);
     CHECK(rendered.find("write_file") != std::string::npos);
     CHECK(rendered.find("output.txt") != std::string::npos);
-    CHECK(rendered.find("allow once") != std::string::npos);
-    CHECK(rendered.find("allow session") != std::string::npos);
+    CHECK(rendered.find("Yes, allow once") != std::string::npos);
+    CHECK(rendered.find("Yes, allow for this session") != std::string::npos);
+    CHECK(rendered.find("Press enter to confirm or esc to cancel") != std::string::npos);
     CHECK(model.handle_permission_approve() == codeharness::tui::TuiAction::ApprovePermission);
     CHECK(!model.state().pending_permission.has_value());
 
@@ -1248,6 +1535,51 @@ TEST_CASE("tui model renders pending permission modal")
         });
     CHECK(model.handle_permission_deny() == codeharness::tui::TuiAction::DenyPermission);
     CHECK(!model.state().pending_permission.has_value());
+}
+
+TEST_CASE("tui permission and question modals render codex cell styles")
+{
+    using namespace ftxui;
+
+    TerminalPaletteGuard guard;
+    codeharness::tui::g_terminal_palette.color_level = codeharness::tui::ColorLevel::TrueColor;
+
+    const auto permission = codeharness::PermissionPrompt{
+        .id = "perm-1",
+        .tool_use_id = "tool-use-1",
+        .tool_name = "bash",
+        .reason = "need workspace access",
+        .command = "git status --short",
+    };
+    auto permission_screen = rendered_screen(
+        codeharness::tui::render::permission_modal_element(permission, 100) |
+            codeharness::tui::codex_background_style(),
+        100,
+        10);
+    const auto permission_lines = screen_text_lines(permission_screen.ToString());
+    const auto selected_row = line_index_containing(permission_lines, "1. Yes, allow once");
+    REQUIRE(selected_row >= 0);
+    CHECK(permission_screen.PixelAt(0, selected_row).foreground_color == codeharness::tui::TuiTheme::primary());
+    CHECK(permission_screen.PixelAt(2, selected_row).bold);
+    CHECK(line_index_containing(permission_lines, "Permission rule: command `git status --short`") >= 0);
+
+    const auto question = codeharness::tui::QuestionModalState{
+        .request_id = "q-1",
+        .question = "Which file?",
+        .tool_name = "ask_user",
+        .reason = "Need target",
+        .answer = "ab",
+    };
+    auto question_screen = rendered_screen(
+        codeharness::tui::render::question_modal_element(question, 80) |
+            codeharness::tui::codex_background_style(),
+        80,
+        10);
+    const auto question_lines = screen_text_lines(question_screen.ToString());
+    const auto hint_row = line_index_containing(question_lines, "Shift+Enter newline");
+    REQUIRE(hint_row >= 1);
+    const auto answer_row = hint_row - 1;
+    CHECK(question_screen.PixelAt(3, answer_row).inverted);
 }
 
 TEST_CASE("tui model composer submit and quit states")
@@ -1815,15 +2147,15 @@ TEST_CASE("tui select modal uses list dialog style and supports search cancel")
     });
 
     auto rendered = model.render_text();
-    CHECK(rendered.find("Select model  (type to search)") != std::string::npos);
-    CHECK(rendered.find("↑↓ navigate · Enter select · Esc cancel") != std::string::npos);
-    CHECK(rendered.find("\xe2\x9d\xaf Echo  echo") != std::string::npos);
-    CHECK(rendered.find("\xe2\x86\x90 current") != std::string::npos);
+    CHECK(rendered.find("Select Model and Effort") != std::string::npos);
+    CHECK(rendered.find("\xe2\x9d\xaf 2. Echo (current)") != std::string::npos);
+    CHECK(rendered.find("Press enter to confirm or esc to go back") != std::string::npos);
+    CHECK(rendered.find("(type to search)") == std::string::npos);
 
     model.select_modal_input('g');
     rendered = model.render_text();
     CHECK(rendered.find("Search: g") != std::string::npos);
-    CHECK(rendered.find("Backspace clear") != std::string::npos);
+    CHECK(rendered.find("Backspace clear") == std::string::npos);
     REQUIRE(model.state().select_modal.has_value());
     CHECK(model.state().select_modal->matches.size() == 1);
     auto selected = model.select_modal_current();
@@ -1991,6 +2323,22 @@ TEST_CASE("tui model routes focused bottom pane input")
         codeharness::PermissionPrompt{
             .id = "perm-1",
             .tool_use_id = "tool-use-1",
+            .tool_name = "write_file",
+            .reason = "confirm",
+        });
+    routed = model.handle_focused_bottom_pane_input(
+        codeharness::tui::TuiInput{.kind = codeharness::tui::TuiInputKind::submit});
+    CHECK(routed.handled);
+    CHECK(routed.action == codeharness::tui::TuiAction::ApprovePermission);
+    REQUIRE(routed.permission_response.has_value());
+    CHECK(routed.permission_response->allowed);
+    CHECK(!routed.permission_response->remember_session);
+    CHECK(!model.state().pending_permission.has_value());
+
+    model.show_permission(
+        codeharness::PermissionPrompt{
+            .id = "perm-2",
+            .tool_use_id = "tool-use-2",
             .tool_name = "write_file",
             .reason = "confirm",
         });
@@ -2305,6 +2653,17 @@ TEST_CASE("tui codex background style fills empty screen cells")
     CHECK(screen.PixelAt(7, 2).background_color == expected);
 }
 
+TEST_CASE("tui working status avoids continuous animation repaint")
+{
+    const auto source_root = std::filesystem::path{CODEHARNESS_SOURCE_DIR};
+    const auto app_source = read_file_text(source_root / "src" / "codeharness" / "tui" / "tui_app.cpp");
+    const auto style_source = read_file_text(source_root / "src" / "codeharness" / "tui" / "style.h");
+
+    CHECK(app_source.find("RequestAnimationFrame") == std::string::npos);
+    CHECK(app_source.find("component/animation.hpp") == std::string::npos);
+    CHECK(style_source.find("clear_under") == std::string::npos);
+}
+
 TEST_CASE("tui codex command header segments carry semantic styles")
 {
     const auto segments = codeharness::tui::render::codex_command_header_segments(
@@ -2336,7 +2695,7 @@ TEST_CASE("tui codex command header segments carry semantic styles")
     CHECK(saw_path);
 }
 
-TEST_CASE("tui working animation only runs while busy and not interrupting")
+TEST_CASE("tui working status only shows while busy and not interrupting")
 {
     codeharness::tui::TuiState state;
     CHECK(!codeharness::tui::render::should_animate_working_status(state));
@@ -2387,7 +2746,7 @@ TEST_CASE("tui shimmer frame changes do not alter transcript or footer text")
     CHECK(footer5 == footer8);
 }
 
-TEST_CASE("tui working shimmer fallback band moves left to right")
+TEST_CASE("tui working shimmer fallback band moves right to left")
 {
     const auto frame0 = codeharness::tui::render::shimmer_text_segments(
         "Working",
@@ -2416,7 +2775,7 @@ TEST_CASE("tui working shimmer fallback band moves left to right")
     CHECK(!bright0.has_value());
     REQUIRE(bright5.has_value());
     REQUIRE(bright8.has_value());
-    CHECK(*bright5 < *bright8);
+    CHECK(*bright5 > *bright8);
 }
 
 TEST_CASE("tui working shimmer disabled returns plain foreground segment")

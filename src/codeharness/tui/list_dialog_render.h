@@ -16,6 +16,12 @@ struct ListDialogRow
     bool is_current = false;
 };
 
+enum class ListDialogLayout
+{
+    standard,
+    model_picker,
+};
+
 struct ListDialogSpec
 {
     std::string title;
@@ -23,6 +29,7 @@ struct ListDialogSpec
     bool is_searchable = false;
     std::size_t cursor = 0;
     std::size_t page_size = 8;
+    ListDialogLayout layout = ListDialogLayout::standard;
     std::vector<ListDialogRow> rows;
 };
 

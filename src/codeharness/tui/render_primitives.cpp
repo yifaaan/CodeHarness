@@ -48,10 +48,11 @@ namespace
 [[nodiscard]] auto shimmer_intensity(int char_index, int frame, int char_count) noexcept -> double
 {
     constexpr auto padding = 10.0;
-    constexpr auto band_half_width = 5.0;
+    constexpr auto band_half_width = 1.5;
     constexpr auto pi = 3.14159265358979323846;
     const auto period = static_cast<double>(char_count) + padding * 2.0;
-    const auto position = std::fmod(static_cast<double>(std::max(frame, 0)) * 2.0, period) - padding;
+    const auto position =
+        static_cast<double>(char_count - 1) + padding - std::fmod(static_cast<double>(std::max(frame, 0)) * 2.0, period);
     const auto distance = std::abs(static_cast<double>(char_index) - position);
     if (distance >= band_half_width)
     {

@@ -190,4 +190,18 @@ auto full_status_footer_element(const TuiDisplayConfig& config,
     return vbox(std::move(rows));
 }
 
+auto codex_footer_element(const TuiDisplayConfig& config,
+                          const TuiState& state,
+                          const std::string& hint) -> Element
+{
+    auto left_hint = text("  " + hint) | dim;
+    auto right_status = status_footer_element(config, state);
+    return hbox({
+        std::move(left_hint),
+        filler(),
+        std::move(right_status),
+        text("  "),
+    });
+}
+
 } // namespace codeharness::tui::render

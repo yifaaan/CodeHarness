@@ -8,6 +8,7 @@
 #include "codeharness/tui/tui_app.h"
 
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/screen/screen.hpp>
 
 #include <string>
 #include <vector>
@@ -18,7 +19,6 @@ namespace codeharness::tui::render
 constexpr int k_command_palette_page_size = 8;
 constexpr int k_codex_status_rows = 1;
 constexpr int k_codex_composer_rows = 3;
-constexpr int k_codex_hint_rows = 1;
 constexpr int k_codex_footer_rows = 1;
 
 [[nodiscard]] auto horizontal_rule(int width) -> std::string;
@@ -27,9 +27,12 @@ constexpr int k_codex_footer_rows = 1;
 {
     return k_codex_composer_rows;
 }
+[[nodiscard]] auto composer_prompt_prefix_column_element() -> ftxui::Element;
+[[nodiscard]] auto composer_input_area_element(ftxui::Element child) -> ftxui::Element;
 
 [[nodiscard]] auto render_welcome_lines(const TuiDisplayConfig& config) -> std::vector<std::string>;
 [[nodiscard]] auto render_codex_frame_lines(const CodexFrameState& frame) -> std::vector<std::string>;
+[[nodiscard]] auto render_codex_screen(const CodexFrameState& frame) -> ftxui::Screen;
 [[nodiscard]] auto render_transcript_lines(const std::vector<TranscriptItem>& transcript, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_command_palette_lines(const CommandPaletteState& palette, int width) -> std::vector<std::string>;
 [[nodiscard]] auto render_select_modal_lines(const SelectModalState& modal, int width) -> std::vector<std::string>;

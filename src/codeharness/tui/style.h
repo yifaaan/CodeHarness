@@ -36,7 +36,7 @@ namespace codeharness::tui
     return [](ftxui::Element child) -> ftxui::Element {
         return ftxui::dbox({
             ftxui::filler() | ftxui::bgcolor(TuiTheme::background()),
-            ftxui::clear_under(child | ftxui::bgcolor(TuiTheme::background())),
+            child | ftxui::bgcolor(TuiTheme::background()),
         });
     };
 }

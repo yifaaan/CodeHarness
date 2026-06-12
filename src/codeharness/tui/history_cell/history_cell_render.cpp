@@ -35,13 +35,13 @@ auto tool_status_color(const TranscriptItem& item) -> ftxui::Color
 {
     if (item.tool_status == ToolStatus::running)
     {
-        return TuiTheme::tool_running();
+        return TuiTheme::codex_bullet();
     }
     if (item.is_error || item.tool_status == ToolStatus::failed)
     {
-        return TuiTheme::tool_failed();
+        return TuiTheme::error();
     }
-    return TuiTheme::codex_bullet();
+    return TuiTheme::success();
 }
 
 auto render_tool_output(const std::vector<std::string>& all_lines, int width) -> Elements
@@ -50,8 +50,8 @@ auto render_tool_output(const std::vector<std::string>& all_lines, int width) ->
     if (all_lines.empty())
     {
         rows.push_back(hbox({
-            text("  \xe2\x94\x94 ") | color(TuiTheme::codex_output_dim()),
-            text("(no output)") | color(TuiTheme::codex_output_dim()),
+            text("  \xe2\x94\x94 ") | color(TuiTheme::codex_output_dim()) | dim,
+            text("(no output)") | color(TuiTheme::codex_output_dim()) | dim,
         }));
         return rows;
     }
@@ -66,8 +66,8 @@ auto render_tool_output(const std::vector<std::string>& all_lines, int width) ->
         const bool is_last_line = (i + 1 == head_end) && !show_ellipsis && (head_end == total);
         const std::string prefix = is_last_line ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
         rows.push_back(hbox({
-            text(prefix) | color(TuiTheme::codex_output_dim()),
-            text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()),
+            text(prefix) | color(TuiTheme::codex_output_dim()) | dim,
+            text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()) | dim,
         }));
     }
 
@@ -76,7 +76,7 @@ auto render_tool_output(const std::vector<std::string>& all_lines, int width) ->
         rows.push_back(hbox({
             text("  \xe2\x80\xa6 +" + std::to_string(total - 2 * line_limit) + " lines (" +
                  std::string{k_transcript_hint} + ")") |
-                color(TuiTheme::codex_output_dim()),
+                color(TuiTheme::codex_output_dim()) | dim,
         }));
 
         const auto tail_start = total - line_limit;
@@ -85,8 +85,8 @@ auto render_tool_output(const std::vector<std::string>& all_lines, int width) ->
             const bool is_last = (i + 1 == total);
             const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
             rows.push_back(hbox({
-                text(prefix) | color(TuiTheme::codex_output_dim()),
-                text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()),
+                text(prefix) | color(TuiTheme::codex_output_dim()) | dim,
+                text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()) | dim,
             }));
         }
     }
@@ -97,8 +97,8 @@ auto render_tool_output(const std::vector<std::string>& all_lines, int width) ->
             const bool is_last = (i + 1 == total);
             const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
             rows.push_back(hbox({
-                text(prefix) | color(TuiTheme::codex_output_dim()),
-                text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()),
+                text(prefix) | color(TuiTheme::codex_output_dim()) | dim,
+                text(trim_to_width(all_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::codex_output_dim()) | dim,
             }));
         }
     }
@@ -117,7 +117,7 @@ auto render_error_output(const std::vector<std::string>& err_lines, int width) -
         const bool is_last = (i + 1 == show_count);
         const std::string prefix = is_last ? "  \xe2\x94\x94 " : "  \xe2\x94\x82 ";
         rows.push_back(hbox({
-            text(prefix) | color(TuiTheme::error()),
+            text(prefix) | color(TuiTheme::error()) | bold,
             text(trim_to_width(err_lines.at(i), std::max(0, width - 4))) | color(TuiTheme::error()),
         }));
     }
@@ -125,7 +125,7 @@ auto render_error_output(const std::vector<std::string>& err_lines, int width) -
     if (err_lines.size() > visible)
     {
         rows.push_back(hbox({
-            text("  \xe2\x80\xa6 +" + std::to_string(err_lines.size() - visible) + " more lines") | color(TuiTheme::error()),
+            text("  \xe2\x80\xa6 +" + std::to_string(err_lines.size() - visible) + " more lines") | color(TuiTheme::error()) | dim,
         }));
     }
 
@@ -327,7 +327,8 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
             return text("");
         }
 
-        rows.push_back(text("  ") | user_message_bg_style());
+        // Empty line with user_message_bg (full width via padded text)
+        rows.push_back(text("  ") | bgcolor(TuiTheme::user_message_bg()));
         for (std::size_t i = 0; i < text_lines.size(); ++i)
         {
             const auto content = trim_to_width(text_lines.at(i), std::max(0, width - 4));
@@ -336,24 +337,25 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
                 rows.push_back(hbox({
                     text("\xe2\x80\xba ") | color(TuiTheme::codex_user_prefix()) | bold | dim,
                     text(content),
-                }) | user_message_bg_style());
+                }) | bgcolor(TuiTheme::user_message_bg()));
             }
             else
             {
                 rows.push_back(hbox({
                     text("  "),
                     text(content),
-                }) | user_message_bg_style());
+                }) | bgcolor(TuiTheme::user_message_bg()));
             }
         }
-        rows.push_back(text("  ") | user_message_bg_style());
+        // Empty line with user_message_bg (full width via padded text)
+        rows.push_back(text("  ") | bgcolor(TuiTheme::user_message_bg()));
         return vbox(std::move(rows));
     }
 
     if (item.kind == HistoryCellKind::assistant)
     {
         return hbox({
-            text("\xe2\x80\xa2 ") | color(TuiTheme::codex_bullet()),
+            text("\xe2\x80\xa2 ") | color(TuiTheme::codex_bullet()) | dim,
             markdown::render_text(item.text, std::max(0, width - 2)),
         });
     }
@@ -361,7 +363,7 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
     if (item.kind == HistoryCellKind::system)
     {
         return hbox({
-            text(std::string{k_codex_bullet}) | color(TuiTheme::codex_bullet()),
+            text(std::string{k_codex_bullet}) | color(TuiTheme::codex_bullet()) | dim,
             text(item.text) | color(TuiTheme::text_muted()),
         });
     }
@@ -372,7 +374,7 @@ auto history_cell_element(const TranscriptItem& item, int width) -> Element
         const auto status_color = tool_status_color(item);
 
         rows.push_back(hbox({
-            text("\xe2\x80\xa2 ") | color(status_color),
+            text("\xe2\x80\xa2 ") | color(status_color) | bold,
             styled_line_element(codex_command_header_segments(tool_summary_text(item))),
         }));
 

@@ -329,6 +329,12 @@ inline constexpr std::string_view k_box_corner_tl = "\xe2\x94\x8c";
 inline constexpr std::string_view k_box_corner_tr = "\xe2\x94\x90";
 inline constexpr std::string_view k_box_corner_bl = "\xe2\x94\x94";
 inline constexpr std::string_view k_box_corner_br = "\xe2\x94\x98";
+
+// Rounded corners (Codex-style session header card)
+inline constexpr std::string_view k_round_corner_tl = "\xe2\x95\xad";
+inline constexpr std::string_view k_round_corner_tr = "\xe2\x95\xae";
+inline constexpr std::string_view k_round_corner_bl = "\xe2\x95\xb0";
+inline constexpr std::string_view k_round_corner_br = "\xe2\x95\xaf";
 inline constexpr std::string_view k_box_tee_right = "\xe2\x94\x9c";
 inline constexpr std::string_view k_box_tee_left = "\xe2\x94\xa4";
 inline constexpr std::string_view k_tree_branch = "\xe2\x94\x82 ";
