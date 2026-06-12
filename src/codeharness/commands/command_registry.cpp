@@ -27,7 +27,7 @@ namespace
 //   "skills"        -> "skills"
 auto strip_leading_slash(std::string_view input) -> std::string_view
 {
-    input = trim(input);
+    input = Trim(input);
     if (!input.empty() && input.front() == '/')
     {
         input.remove_prefix(1);
@@ -47,7 +47,7 @@ auto split_command_line(std::string_view input) -> std::pair<std::string_view, s
         return {input, {}};
     }
 
-    auto args = std::string{trim(input.substr(separator + 1))};
+    auto args = std::string{Trim(input.substr(separator + 1))};
     return {input.substr(0, separator), std::move(args)};
 }
 
@@ -106,7 +106,7 @@ auto has_argument_placeholder(std::string_view content) -> bool
 auto apply_argument_placeholders(std::string prompt, std::string_view args, std::string_view placeholder_source)
     -> std::string
 {
-    const auto raw_args = std::string{trim(args)};
+    const auto raw_args = std::string{Trim(args)};
     prompt = replace_all(std::move(prompt), "${ARGUMENTS}", raw_args);
     prompt = replace_all(std::move(prompt), "$ARGUMENTS", raw_args);
 
@@ -147,7 +147,7 @@ auto make_skill_slash_command(SkillDefinition skill) -> SlashCommand
     return SlashCommand{
         .name = std::move(name),
         .description = std::move(description),
-        .handler = [skill = std::move(skill)](std::string_view args) -> Result<CommandResult> {
+        .handler = [skill = std::move(skill)](std::string_view args) -> absl::StatusOr<CommandResult> {
             return CommandResult{
                 .submit_prompt = render_skill_command_prompt(skill, args),
                 .submit_model = skill.model,
@@ -159,7 +159,7 @@ auto make_skill_slash_command(SkillDefinition skill) -> SlashCommand
 
 auto split_subcommand(std::string_view args) -> std::pair<std::string_view, std::string>
 {
-    args = trim(args);
+    args = Trim(args);
     if (args.empty())
     {
         return {"list", {}};
@@ -171,7 +171,7 @@ auto split_subcommand(std::string_view args) -> std::pair<std::string_view, std:
         return {args, {}};
     }
 
-    return {args.substr(0, separator), std::string{trim(args.substr(separator + 1))}};
+    return {args.substr(0, separator), std::string{Trim(args.substr(separator + 1))}};
 }
 
 auto format_memory_list(const std::vector<memory::MemoryHeader>& memories) -> std::string
@@ -218,19 +218,19 @@ auto format_memory_search_results(const std::vector<memory::MemoryEntry>& memori
     return output.str();
 }
 
-auto parse_add_memory_request(std::string_view args) -> Result<memory::AddMemoryRequest>
+auto parse_add_memory_request(std::string_view args) -> absl::StatusOr<memory::AddMemoryRequest>
 {
     const auto separator = args.find("::");
     if (separator == std::string_view::npos)
     {
-        return fail<memory::AddMemoryRequest>(ErrorKind::InvalidArgument, "usage: /memory add TITLE :: BODY");
+        return fail<memory::AddMemoryRequest>(absl::InvalidArgumentError , "usage: /memory add TITLE :: BODY");
     }
 
-    auto title = std::string{trim(args.substr(0, separator))};
-    auto body = std::string{trim(args.substr(separator + 2))};
+    auto title = std::string{Trim(args.substr(0, separator))};
+    auto body = std::string{Trim(args.substr(separator + 2))};
     if (title.empty() || body.empty())
     {
-        return fail<memory::AddMemoryRequest>(ErrorKind::InvalidArgument, "usage: /memory add TITLE :: BODY");
+        return fail<memory::AddMemoryRequest>(absl::InvalidArgumentError , "usage: /memory add TITLE :: BODY");
     }
 
     return memory::AddMemoryRequest{
@@ -239,7 +239,7 @@ auto parse_add_memory_request(std::string_view args) -> Result<memory::AddMemory
     };
 }
 
-auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -> Result<CommandResult>
+auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -> absl::StatusOr<CommandResult>
 {
     const auto [subcommand, rest] = split_subcommand(args);
 
@@ -248,7 +248,7 @@ auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -
         auto memories = store.scan();
         if (!memories)
         {
-            return nonstd::make_unexpected(memories.error());
+            return memories.error();
         }
 
         return CommandResult{.message = format_memory_list(*memories)};
@@ -259,13 +259,13 @@ auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -
         auto request = parse_add_memory_request(rest);
         if (!request)
         {
-            return nonstd::make_unexpected(request.error());
+            return request.error();
         }
 
         auto memory = store.add(*request);
         if (!memory)
         {
-            return nonstd::make_unexpected(memory.error());
+            return memory.error();
         }
 
         return CommandResult{
@@ -275,16 +275,16 @@ auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -
 
     if (subcommand == "search")
     {
-        const auto query = std::string{trim(rest)};
+        const auto query = std::string{Trim(rest)};
         if (query.empty())
         {
-            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /memory search QUERY");
+            return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("usage: /memory search QUERY"));
         }
 
         auto memories = store.search(query);
         if (!memories)
         {
-            return nonstd::make_unexpected(memories.error());
+            return memories.error();
         }
 
         return CommandResult{.message = format_memory_search_results(*memories)};
@@ -292,16 +292,16 @@ auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -
 
     if (subcommand == "remove")
     {
-        const auto target = std::string{trim(rest)};
+        const auto target = std::string{Trim(rest)};
         if (target.empty())
         {
-            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /memory remove NAME_OR_ID");
+            return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("usage: /memory remove NAME_OR_ID"));
         }
 
         auto removed = store.soft_remove(target);
         if (!removed)
         {
-            return nonstd::make_unexpected(removed.error());
+            return removed.error();
         }
 
         if (*removed)
@@ -312,7 +312,7 @@ auto execute_memory_command(memory::MemoryStore& store, std::string_view args) -
         return CommandResult{.message = "No memory found: " + target + "\n"};
     }
 
-    return fail<CommandResult>(ErrorKind::InvalidArgument, "unknown memory command: " + std::string{subcommand});
+    return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("unknown memory command: " + std::string{subcommand}));
 }
 
 auto register_memory_command(CommandRegistry& registry, memory::MemoryStore* memory_store) -> void
@@ -326,7 +326,7 @@ auto register_memory_command(CommandRegistry& registry, memory::MemoryStore* mem
         SlashCommand{
             .name = "memory",
             .description = "Manage project memory.",
-            .handler = [memory_store](std::string_view args) -> Result<CommandResult> {
+            .handler = [memory_store](std::string_view args) -> absl::StatusOr<CommandResult> {
                 return execute_memory_command(*memory_store, args);
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -359,12 +359,12 @@ auto format_sessions_list(const std::vector<sessions::SessionSnapshot>& snapshot
     return output.str();
 }
 
-auto execute_sessions_command(sessions::SessionStore& store, std::string_view args) -> Result<CommandResult>
+auto execute_sessions_command(sessions::SessionStore& store, std::string_view args) -> absl::StatusOr<CommandResult>
 {
-    auto rest = std::string{trim(args)};
+    auto rest = std::string{Trim(args)};
     if (rest.starts_with("list"))
     {
-        rest = std::string{trim(std::string_view{rest}.substr(4))};
+        rest = std::string{Trim(std::string_view{rest}.substr(4))};
     }
 
     int limit = 20;
@@ -374,26 +374,26 @@ auto execute_sessions_command(sessions::SessionStore& store, std::string_view ar
         {
             std::size_t parsed_chars = 0;
             limit = std::stoi(rest, &parsed_chars);
-            if (trim(std::string_view{rest}.substr(parsed_chars)).empty() == false)
+            if (Trim(std::string_view{rest}.substr(parsed_chars)).empty() == false)
             {
-                return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /sessions [LIMIT]");
+                return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("usage: /sessions [LIMIT]"));
             }
         }
         catch (const std::exception&)
         {
-            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /sessions [LIMIT]");
+            return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("usage: /sessions [LIMIT]"));
         }
 
         if (limit <= 0)
         {
-            return fail<CommandResult>(ErrorKind::InvalidArgument, "usage: /sessions [LIMIT]");
+            return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("usage: /sessions [LIMIT]"));
         }
     }
 
     auto snapshots = store.list(limit);
     if (!snapshots)
     {
-        return nonstd::make_unexpected(snapshots.error());
+        return snapshots.error();
     }
 
     return CommandResult{.message = format_sessions_list(*snapshots)};
@@ -410,22 +410,22 @@ auto register_sessions_command(CommandRegistry& registry, sessions::SessionStore
         SlashCommand{
             .name = "sessions",
             .description = "List saved sessions.",
-            .handler = [session_store](std::string_view args) -> Result<CommandResult> {
+            .handler = [session_store](std::string_view args) -> absl::StatusOr<CommandResult> {
                 return execute_sessions_command(*session_store, args);
             },
             .invocation = CommandInvocationKind::MessageOnly,
         });
 }
 
-auto execute_resume_command(const std::function<Result<SessionCommandSummary>(std::string_view id)>& resume_session,
-                            std::string_view args) -> Result<CommandResult>
+auto execute_resume_command(const std::function<absl::StatusOr<SessionCommandSummary>(std::string_view id)>& resume_session,
+                            std::string_view args) -> absl::StatusOr<CommandResult>
 {
     if (!resume_session)
     {
-        return fail<CommandResult>(ErrorKind::InvalidArgument, "session resume is not available");
+        return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("session resume is not available"));
     }
 
-    auto id = std::string{trim(args)};
+    auto id = std::string{Trim(args)};
     if (id.empty())
     {
         id = "latest";
@@ -434,7 +434,7 @@ auto execute_resume_command(const std::function<Result<SessionCommandSummary>(st
     auto summary = resume_session(id);
     if (!summary)
     {
-        return nonstd::make_unexpected(summary.error());
+        return summary.error();
     }
 
     std::ostringstream output;
@@ -449,13 +449,13 @@ auto execute_resume_command(const std::function<Result<SessionCommandSummary>(st
 }
 
 auto register_resume_command(CommandRegistry& registry,
-                             std::function<Result<SessionCommandSummary>(std::string_view id)> resume_session) -> void
+                             std::function<absl::StatusOr<SessionCommandSummary>(std::string_view id)> resume_session) -> void
 {
     registry.register_command(
         SlashCommand{
             .name = "resume",
             .description = "Resume a saved session.",
-            .handler = [resume_session = std::move(resume_session)](std::string_view args) -> Result<CommandResult> {
+            .handler = [resume_session = std::move(resume_session)](std::string_view args) -> absl::StatusOr<CommandResult> {
                 return execute_resume_command(resume_session, args);
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -487,7 +487,7 @@ auto format_plugin_list(std::span<const LoadedPlugin> plugins) -> std::string
     return output.str();
 }
 
-auto execute_plugin_command(std::string_view plugin_list, std::string_view args) -> Result<CommandResult>
+auto execute_plugin_command(std::string_view plugin_list, std::string_view args) -> absl::StatusOr<CommandResult>
 {
     const auto [subcommand, rest] = split_subcommand(args);
     std::ignore = rest;
@@ -497,7 +497,7 @@ auto execute_plugin_command(std::string_view plugin_list, std::string_view args)
         return CommandResult{.message = std::string{plugin_list}};
     }
 
-    return fail<CommandResult>(ErrorKind::InvalidArgument, "unknown plugin command: " + std::string{subcommand});
+    return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("unknown plugin command: " + std::string{subcommand}));
 }
 
 auto register_plugin_command(CommandRegistry& registry, std::span<const LoadedPlugin> plugins) -> void
@@ -507,7 +507,7 @@ auto register_plugin_command(CommandRegistry& registry, std::span<const LoadedPl
         SlashCommand{
             .name = "plugin",
             .description = "List loaded plugins.",
-            .handler = [plugin_list = std::move(plugin_list)](std::string_view args) -> Result<CommandResult> {
+            .handler = [plugin_list = std::move(plugin_list)](std::string_view args) -> absl::StatusOr<CommandResult> {
                 return execute_plugin_command(plugin_list, args);
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -530,7 +530,7 @@ auto make_plugin_slash_command(PluginCommandDefinition command) -> SlashCommand
     return SlashCommand{
         .name = command.command_name,
         .description = std::move(description),
-        .handler = [command = std::move(command)](std::string_view args) -> Result<CommandResult> {
+        .handler = [command = std::move(command)](std::string_view args) -> absl::StatusOr<CommandResult> {
             auto prompt = render_plugin_command_prompt(command, args);
             if (command.disable_model_invocation)
             {
@@ -635,7 +635,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         SlashCommand{
             .name = "skills",
             .description = "List loaded skills.",
-            .handler = [&skills](std::string_view) -> Result<CommandResult> {
+            .handler = [&skills](std::string_view) -> absl::StatusOr<CommandResult> {
                 return CommandResult{.message = format_skills_list(skills)};
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -644,7 +644,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         SlashCommand{
             .name = "plan",
             .description = "Enter plan mode (read-only analysis).",
-            .handler = [](std::string_view) -> Result<CommandResult> {
+            .handler = [](std::string_view) -> absl::StatusOr<CommandResult> {
                 return CommandResult{.message = "Entered plan mode. Read-only tools only."};
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -653,7 +653,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         SlashCommand{
             .name = "act",
             .description = "Exit plan mode and return to default execution mode.",
-            .handler = [](std::string_view) -> Result<CommandResult> {
+            .handler = [](std::string_view) -> absl::StatusOr<CommandResult> {
                 return CommandResult{.message = "Default mode. Mutating tools allowed with confirmation."};
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -662,7 +662,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         SlashCommand{
             .name = "fullauto",
             .description = "Enter full-auto mode while keeping safety hard-denies.",
-            .handler = [](std::string_view) -> Result<CommandResult> {
+            .handler = [](std::string_view) -> absl::StatusOr<CommandResult> {
                 return CommandResult{.message = "Full-auto mode. Mutating tools are allowed unless blocked by safety rules."};
             },
             .aliases = {"full_auto"},
@@ -672,7 +672,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         SlashCommand{
             .name = "default",
             .description = "Return to default permission mode.",
-            .handler = [](std::string_view) -> Result<CommandResult> {
+            .handler = [](std::string_view) -> absl::StatusOr<CommandResult> {
                 return CommandResult{.message = "Default mode. Mutating tools allowed with confirmation."};
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -681,7 +681,7 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
         SlashCommand{
             .name = "mode",
             .description = "Show the current permission mode.",
-            .handler = [](std::string_view) -> Result<CommandResult> {
+            .handler = [](std::string_view) -> absl::StatusOr<CommandResult> {
                 return CommandResult{.message = "Use /mode in the runtime to show the current permission mode."};
             },
             .invocation = CommandInvocationKind::MessageOnly,
@@ -716,13 +716,13 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
     return registry;
 }
 
-auto execute_slash_command(const CommandRegistry& registry, std::string_view input) -> Result<CommandResult>
+auto execute_slash_command(const CommandRegistry& registry, std::string_view input) -> absl::StatusOr<CommandResult>
 {
     auto lookup = registry.lookup(input);
     if (lookup.command == nullptr)
     {
         const auto [name, _] = split_command_line(input);
-        return fail<CommandResult>(ErrorKind::InvalidArgument, "unknown command: /" + std::string{name});
+        return absl::StatusOr<CommandResult>(absl::InvalidArgumentError("unknown command: /" + std::string{name}));
     }
 
     return lookup.command->handler(lookup.args);

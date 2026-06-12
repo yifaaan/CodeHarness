@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/sessions/session_store.h"
 #include "codeharness/skills/skill_registry.h"
 
@@ -35,7 +35,7 @@ struct BuiltinCommandRegistryOptions
 {
     memory::MemoryStore* memory_store = nullptr;
     sessions::SessionStore* session_store = nullptr;
-    std::function<Result<SessionCommandSummary>(std::string_view id)> resume_session;
+    std::function<absl::StatusOr<SessionCommandSummary>(std::string_view id)> resume_session;
     std::span<const LoadedPlugin> plugins;
 };
 
@@ -56,7 +56,7 @@ enum class CommandInvocationKind
     SubmitsPrompt,
 };
 
-using CommandHandler = std::function<Result<CommandResult>(std::string_view args)>;
+using CommandHandler = std::function<absl::StatusOr<CommandResult>(std::string_view args)>;
 
 // slash command
 struct SlashCommand
@@ -83,7 +83,7 @@ public:
     auto register_command(SlashCommand command) -> void;
 
     // 解析 input("/name args...")并查找:
-    //   - 命中:command 指向 map 中的对象,args 是 trim 过的剩余部分
+    //   - 命中:command 指向 map 中的对象,args 是 Trim 过的剩余部分
     //   - 未命中:command == nullptr,args 被填好
     auto lookup(std::string_view input) const -> CommandLookup;
 
@@ -102,6 +102,6 @@ auto build_builtin_command_registry(const SkillRegistry& skills, BuiltinCommandR
 
 // CLI 用的顶层入口:"解析 + 查找 + 调用"一次完成。
 // 未找到命令时返回 InvalidArgument 错误,行为与其它模块的失败约定一致。
-auto execute_slash_command(const CommandRegistry& registry, std::string_view input) -> Result<CommandResult>;
+auto execute_slash_command(const CommandRegistry& registry, std::string_view input) -> absl::StatusOr<CommandResult>;
 
 } // namespace codeharness

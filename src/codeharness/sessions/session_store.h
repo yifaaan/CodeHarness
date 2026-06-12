@@ -1,7 +1,7 @@
 #pragma once
 
 #include "codeharness/core/message.h"
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
@@ -46,7 +46,7 @@ auto generate_session_id() -> std::string;
 // where slug is the cwd directory basename and sha1_prefix is the first 12
 // hex characters of the SHA1 hash of the resolved absolute path.
 auto project_session_dir(const std::filesystem::path& cwd,
-                         const std::filesystem::path& sessions_root) -> Result<std::filesystem::path>;
+                         const std::filesystem::path& sessions_root) -> absl::StatusOr<std::filesystem::path>;
 
 // Persistent session storage backed by the filesystem.
 //
@@ -70,45 +70,45 @@ public:
 
     // Factory: create a store rooted at the default sessions directory
     // (~/.codeharness/data/sessions/<slug>-<hash>).
-    static auto for_project(const std::filesystem::path& cwd) -> Result<SessionStore>;
+    static auto for_project(const std::filesystem::path& cwd) -> absl::StatusOr<SessionStore>;
 
     // Factory: same but with an explicit sessions_root (for testing).
     static auto for_project(const std::filesystem::path& cwd,
-                            const std::filesystem::path& sessions_root) -> Result<SessionStore>;
+                            const std::filesystem::path& sessions_root) -> absl::StatusOr<SessionStore>;
 
     [[nodiscard]] auto root() const noexcept -> const std::filesystem::path&;
 
     // Persist a snapshot. Writes both latest.json and session-<id>.json.
     // Returns the path to latest.json.
-    auto save(const SessionSnapshot& snapshot) -> Result<std::filesystem::path>;
+    auto save(const SessionSnapshot& snapshot) -> absl::StatusOr<std::filesystem::path>;
 
     // Load the most recent snapshot (from latest.json).
     // Returns nullopt if no snapshot exists.
-    auto load_latest() -> Result<std::optional<SessionSnapshot>>;
+    auto load_latest() -> absl::StatusOr<std::optional<SessionSnapshot>>;
 
     // List saved sessions, newest first. Capped by limit.
-    auto list(int limit = 20) -> Result<std::vector<SessionSnapshot>>;
+    auto list(int limit = 20) -> absl::StatusOr<std::vector<SessionSnapshot>>;
 
     // Load a specific snapshot by session_id. Falls back to latest.json when
     // session_id is "latest".
-    auto load_by_id(const std::string& session_id) -> Result<std::optional<SessionSnapshot>>;
+    auto load_by_id(const std::string& session_id) -> absl::StatusOr<std::optional<SessionSnapshot>>;
 
     // Export messages as a Markdown transcript. Writes transcript.md and
     // returns the path.
-    auto export_markdown(const std::vector<Message>& messages) -> Result<std::filesystem::path>;
+    auto export_markdown(const std::vector<Message>& messages) -> absl::StatusOr<std::filesystem::path>;
 
 private:
     std::filesystem::path root_;
 
-    auto ensure_root() -> Result<void>;
+    auto ensure_root() -> absl::Status;
 };
 
 // --- JSON serialization (declared for testability) ---
 
 auto snapshot_to_json(const SessionSnapshot& snapshot) -> nlohmann::json;
-auto snapshot_from_json(const nlohmann::json& data) -> Result<SessionSnapshot>;
+auto snapshot_from_json(const nlohmann::json& data) -> absl::StatusOr<SessionSnapshot>;
 
 auto message_to_json(const Message& msg) -> nlohmann::json;
-auto message_from_json(const nlohmann::json& data) -> Result<Message>;
+auto message_from_json(const nlohmann::json& data) -> absl::StatusOr<Message>;
 
 } // namespace codeharness::sessions

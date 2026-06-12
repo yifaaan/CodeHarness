@@ -38,7 +38,7 @@
 
 #include "codeharness/commands/command_registry.h"
 #include "codeharness/coordinator/runtime.h"
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/engine/engine.h"
 #include "codeharness/hooks/hook_executor.h"
 #include "codeharness/hooks/hook_registry.h"
@@ -118,7 +118,7 @@ public:
     [[nodiscard]] auto current_model_profile() const -> RuntimeModelProfile;
     [[nodiscard]] auto model_profiles() const noexcept -> const std::vector<RuntimeModelProfile>&;
     [[nodiscard]] auto find_model_profile(std::string_view id_or_model) const -> std::optional<RuntimeModelProfile>;
-    auto switch_model_profile(const RuntimeModelProfile& profile) -> Result<RuntimeModelProfile>;
+    auto switch_model_profile(const RuntimeModelProfile& profile) -> absl::StatusOr<RuntimeModelProfile>;
 
     [[nodiscard]] auto skills() const noexcept -> const SkillRegistry&;
     [[nodiscard]] auto plugins() const noexcept -> const std::vector<LoadedPlugin>&;
@@ -133,12 +133,12 @@ public:
     [[nodiscard]] auto sessions() const noexcept -> const sessions::SessionStore&;
     [[nodiscard]] auto active_session_summary() const noexcept -> std::optional<SessionCommandSummary>;
     [[nodiscard]] auto latest_usage() const noexcept -> sessions::UsageSnapshot;
-    auto resume_session(std::string_view id) -> Result<SessionCommandSummary>;
+    auto resume_session(std::string_view id) -> absl::StatusOr<SessionCommandSummary>;
 
-    auto build_run_request(std::string_view prompt, int max_turns) -> Result<RunRequest>;
-    auto run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> Result<RunResult>;
+    auto build_run_request(std::string_view prompt, int max_turns) -> absl::StatusOr<RunRequest>;
+    auto run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> absl::StatusOr<RunResult>;
     auto run_prompt(std::string_view prompt, const RunPromptOptions& options, const EngineEventSink& sink)
-        -> Result<RunResult>;
+        -> absl::StatusOr<RunResult>;
 
 private:
     auto remember_permission_for_session(const PermissionPrompt& prompt) -> void;
@@ -165,6 +165,6 @@ private:
     std::optional<sessions::SessionSnapshot> active_session_;
 };
 
-auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_ptr<RuntimeBundle>>;
+auto create_runtime_bundle(RuntimeBundleOptions options) -> absl::StatusOr<std::unique_ptr<RuntimeBundle>>;
 
 } // namespace codeharness::runtime

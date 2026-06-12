@@ -12,7 +12,7 @@
 //   4. 无参数（交互式）：打印帮助后退出（TUI 交互由前端实现）
 //
 // 启动流程：
-//   1. 初始化日志（init_logger）
+//   1. 初始化日志（InitLogger）
 //   2. 切换工作目录（--cwd）
 //   3. 创建 RuntimeBundle（组装所有子系统）
 //   4. 根据 --backend-only 选择不同路由：
@@ -36,8 +36,6 @@
 
 #include <spdlog/spdlog.h>
 #include <CLI/CLI.hpp>
-#include <nonstd/expected.hpp>
-
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -60,12 +58,12 @@ auto make_profile_description(const runtime::RuntimeModelProfile& profile) -> st
     return description;
 }
 
-auto build_runtime_model_profiles(const config::Settings& settings) -> Result<std::vector<runtime::RuntimeModelProfile>>
+auto build_runtime_model_profiles(const config::Settings& settings) -> absl::StatusOr<std::vector<runtime::RuntimeModelProfile>>
 {
     auto credentials = config::load_credentials(settings.config_dir);
-    if (!credentials)
+    if(!credentials.ok())
     {
-        return nonstd::make_unexpected(credentials.error());
+        return credentials.status();
     }
 
     std::vector<runtime::RuntimeModelProfile> profiles;
@@ -97,9 +95,9 @@ auto build_runtime_model_profiles(const config::Settings& settings) -> Result<st
 
 } // namespace
 
-auto run_cli(int argc, char** argv) -> Result<int>
+auto run_cli(int argc, char** argv) -> absl::StatusOr<int>
 {
-    init_logger();
+    InitLogger();
     spdlog::info("codeharness starting ({} {})", PROJECT_NAME, VERSION);
 
     CLI::App app{"CodeHarness"};
@@ -150,7 +148,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
 
         if (error)
         {
-            return fail<int>(ErrorKind::Io, "failed to change cwd: " + error.message());
+            return absl::StatusOr<int>(absl::InternalError("failed to change cwd: " + error.message()));
         }
     }
 
@@ -167,8 +165,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     });
     if (!settings)
     {
-        return fail<int>(ErrorKind::Config,
-                         "configuration error: " + settings.error().message);
+        return absl::StatusOr<int>(absl::FailedPreconditionError("configuration error: " + settings.error()).message);
     }
 
     auto permission = settings->permission;
@@ -180,7 +177,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     auto model_profiles = build_runtime_model_profiles(*settings);
     if (!model_profiles)
     {
-        return nonstd::make_unexpected(model_profiles.error());
+        return model_profiles.error();
     }
     const auto has_explicit_provider_config = !provider_type.empty() || !model.empty() || !base_url.empty();
 
@@ -202,7 +199,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
         });
     if (!runtime_bundle)
     {
-        return nonstd::make_unexpected(runtime_bundle.error());
+        return runtime_bundle.error();
     }
 
     if (backend_only)
@@ -211,7 +208,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
         auto hosted = host.run();
         if (!hosted)
         {
-            return nonstd::make_unexpected(hosted.error());
+            return hosted.error();
         }
 
         return 0;
@@ -245,17 +242,17 @@ auto run_cli(int argc, char** argv) -> Result<int>
                 .skill_count = static_cast<int>((*runtime_bundle)->skills().list().size()),
             },
             tui::ModelListProvider{model_list},
-            tui::ModelSelectCallback{[&](const tui::ModelOption& selected) -> Result<tui::ModelOption> {
+            tui::ModelSelectCallback{[&](const tui::ModelOption& selected) -> absl::StatusOr<tui::ModelOption> {
                 auto profile = (*runtime_bundle)->find_model_profile(selected.value);
                 if (!profile)
                 {
-                    return fail<tui::ModelOption>(ErrorKind::InvalidArgument, "unknown model profile: " + selected.value);
+                    return fail<tui::ModelOption>(absl::InvalidArgumentError , "unknown model profile: " + selected.value);
                 }
 
                 auto switched = (*runtime_bundle)->switch_model_profile(*profile);
                 if (!switched)
                 {
-                    return nonstd::make_unexpected(switched.error());
+                    return switched.error();
                 }
 
                 return tui::ModelOption{
@@ -270,7 +267,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
     if (!prompt.empty() && prompt.front() == '/')
     {
         // Plan mode toggle commands are handled directly (no engine needed).
-        auto trimmed = std::string{codeharness::trim(prompt)};
+        auto trimmed = std::string{codeharness::Trim(prompt)};
         if (trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter")
         {
             (*runtime_bundle)->set_permission_mode(codeharness::PermissionMode::Plan);
@@ -305,7 +302,7 @@ auto run_cli(int argc, char** argv) -> Result<int>
         auto command_result = execute_slash_command((*runtime_bundle)->commands(), prompt);
         if (!command_result)
         {
-            return nonstd::make_unexpected(command_result.error());
+            return command_result.error();
         }
 
         if (command_result->message)
@@ -330,12 +327,12 @@ auto run_cli(int argc, char** argv) -> Result<int>
             auto profile = (*runtime_bundle)->find_model_profile(*command_result->submit_model);
             if (!profile)
             {
-                return fail<int>(ErrorKind::InvalidArgument, "unknown model profile: " + *command_result->submit_model);
+                return absl::StatusOr<int>(absl::InvalidArgumentError("unknown model profile: " + *command_result->submit_model));
             }
             auto switched = (*runtime_bundle)->switch_model_profile(*profile);
             if (!switched)
             {
-                return nonstd::make_unexpected(switched.error());
+                return switched.error();
             }
         }
 
@@ -352,9 +349,9 @@ auto run_cli(int argc, char** argv) -> Result<int>
         }
     });
 
-    if (!result)
+    if(!result.ok())
     {
-        return nonstd::make_unexpected(result.error());
+        return result.status();
     }
 
     if (printed_text)

@@ -51,7 +51,6 @@
 
 #include "codeharness/core/strings.h"
 
-#include <nonstd/expected.hpp>
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -67,7 +66,7 @@
 namespace codeharness::runtime
 {
 
-auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) -> Result<std::unique_ptr<Provider>>;
+auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) -> absl::StatusOr<std::unique_ptr<Provider>>;
 
 namespace
 {
@@ -75,12 +74,12 @@ namespace
 auto load_relevant_memories_for_prompt(const memory::MemoryStore& store,
                                        std::string_view prompt,
                                        std::size_t max_results = 5)
-    -> Result<std::vector<RelevantMemory>>
+    -> absl::StatusOr<std::vector<RelevantMemory>>
 {
     auto entries = store.search(prompt, max_results);
-    if (!entries)
+    if(!entries.ok())
     {
-        return nonstd::make_unexpected(entries.error());
+        return entries.status();
     }
 
     std::vector<RelevantMemory> memories;
@@ -99,7 +98,7 @@ auto load_relevant_memories_for_prompt(const memory::MemoryStore& store,
 auto create_command_registry(SkillRegistry& skills,
                              memory::MemoryStore& memory_store,
                              sessions::SessionStore& session_store,
-                             std::function<Result<SessionCommandSummary>(std::string_view id)> resume_session,
+                             std::function<absl::StatusOr<SessionCommandSummary>(std::string_view id)> resume_session,
                              std::span<const LoadedPlugin> plugins) -> CommandRegistry
 {
     return build_builtin_command_registry(
@@ -194,9 +193,9 @@ auto extract_system_prompt(const std::vector<Message>& messages) -> std::string
 {
     for (const auto& msg : messages)
     {
-        if (msg.role == Role::System)
+        if (msg.role == Role::kSystem)
         {
-            return collect_text(msg);
+            return CollectText(msg);
         }
     }
 
@@ -207,12 +206,12 @@ auto extract_summary(const std::vector<Message>& messages, std::size_t max_chars
 {
     for (const auto& msg : messages)
     {
-        if (msg.role != Role::User)
+        if (msg.role != Role::kUser)
         {
             continue;
         }
 
-        auto text = collect_text(msg);
+        auto text = CollectText(msg);
         if (!text.empty())
         {
             if (text.size() > max_chars)
@@ -242,14 +241,14 @@ public:
         previous_ = std::filesystem::current_path(error);
         if (error)
         {
-            failed_ = make_error(ErrorKind::Io, "failed to read current directory: " + error.message());
+            failed_ = MakeError(absl::InternalError , "failed to read current directory: " + error.message());
             return;
         }
 
         std::filesystem::current_path(path, error);
         if (error)
         {
-            failed_ = make_error(ErrorKind::Io, "failed to change cwd: " + error.message());
+            failed_ = MakeError(absl::InternalError , "failed to change cwd: " + error.message());
         }
     }
 
@@ -265,14 +264,14 @@ public:
     ScopedCurrentPath(const ScopedCurrentPath&) = delete;
     auto operator=(const ScopedCurrentPath&) -> ScopedCurrentPath& = delete;
 
-    [[nodiscard]] auto error() const -> const std::optional<CodeHarnessError>&
+    [[nodiscard]] auto error() const -> const std::optional<absl::Status>&
     {
         return failed_;
     }
 
 private:
     std::filesystem::path previous_;
-    std::optional<CodeHarnessError> failed_;
+    std::optional<absl::Status> failed_;
 };
 
 } // namespace
@@ -403,12 +402,12 @@ auto RuntimeBundle::find_model_profile(std::string_view id_or_model) const -> st
     return *profile;
 }
 
-auto RuntimeBundle::switch_model_profile(const RuntimeModelProfile& profile) -> Result<RuntimeModelProfile>
+auto RuntimeBundle::switch_model_profile(const RuntimeModelProfile& profile) -> absl::StatusOr<RuntimeModelProfile>
 {
     auto provider = create_provider(profile.provider_config, tools_);
     if (!provider)
     {
-        return nonstd::make_unexpected(provider.error());
+        return provider.error();
     }
 
     provider_ = std::move(*provider);
@@ -511,30 +510,30 @@ auto RuntimeBundle::latest_usage() const noexcept -> sessions::UsageSnapshot
     return active_session_->usage;
 }
 
-auto RuntimeBundle::resume_session(std::string_view id) -> Result<SessionCommandSummary>
+auto RuntimeBundle::resume_session(std::string_view id) -> absl::StatusOr<SessionCommandSummary>
 {
     const auto session_id = std::string{id.empty() ? std::string_view{"latest"} : id};
     auto loaded = sessions_.load_by_id(session_id);
-    if (!loaded)
+    if(!loaded.ok())
     {
-        return nonstd::make_unexpected(loaded.error());
+        return loaded.status();
     }
 
     if (!*loaded)
     {
-        return fail<SessionCommandSummary>(ErrorKind::NotFound, "session not found: " + session_id);
+        return absl::StatusOr<SessionCommandSummary>(absl::NotFoundError("session not found: " + session_id));
     }
 
     active_session_ = std::move(**loaded);
     return session_summary_from(*active_session_);
 }
 
-auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) -> Result<RunRequest>
+auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) -> absl::StatusOr<RunRequest>
 {
     auto project_context_files = load_project_context_files(cwd_);
     if (!project_context_files)
     {
-        return nonstd::make_unexpected(project_context_files.error());
+        return project_context_files.error();
     }
 
     PromptBuildRequest prompt_request;
@@ -548,14 +547,14 @@ auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) ->
     auto relevant_memories = load_relevant_memories_for_prompt(memory_store_, prompt);
     if (!relevant_memories)
     {
-        return nonstd::make_unexpected(relevant_memories.error());
+        return relevant_memories.error();
     }
     prompt_request.relevant_memories = std::move(*relevant_memories);
 
     auto system_prompt = build_system_prompt(prompt_request);
     if (!system_prompt)
     {
-        return nonstd::make_unexpected(system_prompt.error());
+        return system_prompt.error();
     }
 
     return RunRequest{
@@ -566,16 +565,16 @@ auto RuntimeBundle::build_run_request(std::string_view prompt, int max_turns) ->
     };
 }
 
-auto RuntimeBundle::run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> Result<RunResult>
+auto RuntimeBundle::run_prompt(std::string_view prompt, int max_turns, const EngineEventSink& sink) -> absl::StatusOr<RunResult>
 {
     return run_prompt(prompt, RunPromptOptions{.max_turns = max_turns}, sink);
 }
 
 auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& options, const EngineEventSink& sink)
-    -> Result<RunResult>
+    -> absl::StatusOr<RunResult>
 {
     // Handle plan mode toggle commands directly (no engine needed).
-    auto trimmed = trim(prompt);
+    auto trimmed = Trim(prompt);
     if (trimmed == "/plan" || trimmed == "/plan on" || trimmed == "/plan enter")
     {
         set_permission_mode(PermissionMode::Plan);
@@ -605,12 +604,12 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     auto request = build_run_request(prompt, options.max_turns);
     if (!request)
     {
-        return nonstd::make_unexpected(request.error());
+        return request.error();
     }
     if (options.permission_prompt)
     {
         request->permission_prompt = [this, permission_prompt = options.permission_prompt](
-                                         const PermissionPrompt& prompt) -> Result<PermissionResponse> {
+                                         const PermissionPrompt& prompt) -> absl::StatusOr<PermissionResponse> {
             auto response = permission_prompt(prompt);
             if (response && response->allowed && response->remember_session)
             {
@@ -625,13 +624,13 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     ScopedCurrentPath current_path{cwd_};
     if (current_path.error())
     {
-        return nonstd::make_unexpected(*current_path.error());
+        return *current_path.error();
     }
 
     auto result = engine_.run_streaming(*request, sink);
-    if (!result)
+    if(!result.ok())
     {
-        return nonstd::make_unexpected(result.error());
+        return result.status();
     }
 
     sessions::SessionSnapshot snapshot;
@@ -666,9 +665,9 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     }
 
     auto saved = sessions_.save(snapshot);
-    if (!saved)
+    if(!saved.ok())
     {
-        spdlog::warn("failed to save session: {}", saved.error().message);
+        spdlog::warn("failed to save session: {}", saved.status().message());
     }
 
     active_session_ = std::move(snapshot);
@@ -676,7 +675,7 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
 }
 
 auto create_memory_store(const std::filesystem::path& cwd, const std::filesystem::path& memory_root)
-    -> Result<memory::MemoryStore>
+    -> absl::StatusOr<memory::MemoryStore>
 {
     if (memory_root.empty())
     {
@@ -699,7 +698,7 @@ auto tool_descriptions_from(const ToolRegistry& tools) -> std::vector<std::pair<
     return descriptions;
 }
 
-auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) -> Result<std::unique_ptr<Provider>>
+auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) -> absl::StatusOr<std::unique_ptr<Provider>>
 {
     if (config.type == "echo" || config.type.empty())
     {
@@ -710,7 +709,7 @@ auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) ->
     {
         if (config.api_key.empty())
         {
-            return fail<std::unique_ptr<Provider>>(ErrorKind::Config, "openai provider requires an API key");
+            return fail<std::unique_ptr<Provider>>(absl::FailedPreconditionError , "openai provider requires an API key");
         }
         return std::make_unique<OpenAIProvider>(config, tool_descriptions_from(tools));
     }
@@ -719,15 +718,15 @@ auto create_provider(const ProviderConfig& config, const ToolRegistry& tools) ->
     {
         if (config.api_key.empty())
         {
-            return fail<std::unique_ptr<Provider>>(ErrorKind::Config, "anthropic provider requires an API key");
+            return fail<std::unique_ptr<Provider>>(absl::FailedPreconditionError , "anthropic provider requires an API key");
         }
         return std::make_unique<AnthropicProvider>(config, tool_descriptions_from(tools));
     }
 
-    return fail<std::unique_ptr<Provider>>(ErrorKind::InvalidArgument, "unknown provider type: " + config.type);
+    return fail<std::unique_ptr<Provider>>(absl::InvalidArgumentError , "unknown provider type: " + config.type);
 }
 
-auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_ptr<RuntimeBundle>>
+auto create_runtime_bundle(RuntimeBundleOptions options) -> absl::StatusOr<std::unique_ptr<RuntimeBundle>>
 {
     if (options.cwd.empty())
     {
@@ -740,19 +739,19 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
     auto loaded_skills = load_skill_registry_with_plugins(options.cwd, std::move(skill_options));
     if (!loaded_skills)
     {
-        return nonstd::make_unexpected(loaded_skills.error());
+        return loaded_skills.error();
     }
 
     auto memory_store = create_memory_store(options.cwd, options.memory_root);
     if (!memory_store)
     {
-        return nonstd::make_unexpected(memory_store.error());
+        return memory_store.error();
     }
 
     auto coordinator_runtime = coordinator::create_default_runtime(options.cwd);
     if (!coordinator_runtime)
     {
-        return nonstd::make_unexpected(coordinator_runtime.error());
+        return coordinator_runtime.error();
     }
 
     auto tools = create_tool_registry(loaded_skills->registry, **coordinator_runtime);
@@ -769,13 +768,13 @@ auto create_runtime_bundle(RuntimeBundleOptions options) -> Result<std::unique_p
     auto provider = create_provider(options.provider_config, tools);
     if (!provider)
     {
-        return nonstd::make_unexpected(provider.error());
+        return provider.error();
     }
 
     auto session_store = sessions::SessionStore::for_project(options.cwd);
     if (!session_store)
     {
-        return nonstd::make_unexpected(session_store.error());
+        return session_store.error();
     }
 
     return std::make_unique<RuntimeBundle>(std::move(options.cwd),

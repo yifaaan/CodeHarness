@@ -1,10 +1,10 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 namespace codeharness
 {
 
-auto run_cli(int argc, char** argv) -> Result<int>;
+auto run_cli(int argc, char** argv) -> absl::StatusOr<int>;
 
 } // namespace codeharness

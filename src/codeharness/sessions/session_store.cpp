@@ -34,13 +34,13 @@ namespace
 // ---------------------------------------------------------------------------
 // Resolve an absolute canonical path
 // ---------------------------------------------------------------------------
-auto resolve_directory(const std::filesystem::path& path) -> Result<std::filesystem::path>
+auto resolve_directory(const std::filesystem::path& path) -> absl::StatusOr<std::filesystem::path>
 {
     std::error_code error;
     auto resolved = std::filesystem::weakly_canonical(path, error);
     if (error)
     {
-        return fail<std::filesystem::path>(ErrorKind::Io,
+        return fail<std::filesystem::path>(absl::InternalError ,
                                            "failed to resolve path: " + error.message());
     }
     return resolved;
@@ -53,22 +53,21 @@ auto role_to_string(Role role) -> std::string_view
 {
     switch (role)
     {
-    case Role::System: return "system";
-    case Role::User: return "user";
-    case Role::Assistant: return "assistant";
-    case Role::Tool: return "tool";
+    case Role::kSystem: return "system";
+    case Role::kUser: return "user";
+    case Role::kAssistant: return "assistant";
+    case Role::kTool: return "tool";
     }
     return "unknown";
 }
 
-auto role_from_string(std::string_view text) -> Result<Role>
+auto role_from_string(std::string_view text) -> absl::StatusOr<Role>
 {
-    if (text == "system") return Role::System;
-    if (text == "user") return Role::User;
-    if (text == "assistant") return Role::Assistant;
-    if (text == "tool") return Role::Tool;
-    return fail<Role>(ErrorKind::InvalidArgument,
-                      "unknown role: " + std::string{text});
+    if (text == "system") return Role::kSystem;
+    if (text == "user") return Role::kUser;
+    if (text == "assistant") return Role::kAssistant;
+    if (text == "tool") return Role::kTool;
+    return absl::StatusOr<Role>(absl::InvalidArgumentError("unknown role: " + std::string{text}));
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +118,7 @@ auto content_block_to_json(const ContentBlock& block) -> nlohmann::json
 // ---------------------------------------------------------------------------
 // JSON -> ContentBlock
 // ---------------------------------------------------------------------------
-auto content_block_from_json(const nlohmann::json& j) -> Result<ContentBlock>
+auto content_block_from_json(const nlohmann::json& j) -> absl::StatusOr<ContentBlock>
 {
     auto type = j.value("type", std::string{});
     if (type == "text")
@@ -146,8 +145,7 @@ auto content_block_from_json(const nlohmann::json& j) -> Result<ContentBlock>
         return ContentBlock{std::move(block)};
     }
 
-    return fail<ContentBlock>(ErrorKind::InvalidArgument,
-                              "unknown content block type: " + type);
+    return absl::StatusOr<ContentBlock>(absl::InvalidArgumentError("unknown content block type: " + type));
 }
 
 // ---------------------------------------------------------------------------
@@ -157,9 +155,9 @@ auto extract_summary(const std::vector<Message>& messages, int max_chars = 80) -
 {
     for (const auto& msg : messages)
     {
-        if (msg.role == Role::User)
+        if (msg.role == Role::kUser)
         {
-            auto text = collect_text(msg);
+            auto text = CollectText(msg);
             if (!text.empty())
             {
                 if (static_cast<int>(text.size()) <= max_chars)
@@ -225,21 +223,21 @@ auto generate_session_id() -> std::string
 // project_session_dir
 // ---------------------------------------------------------------------------
 auto project_session_dir(const std::filesystem::path& cwd,
-                         const std::filesystem::path& sessions_root) -> Result<std::filesystem::path>
+                         const std::filesystem::path& sessions_root) -> absl::StatusOr<std::filesystem::path>
 {
     auto resolved = resolve_directory(cwd);
-    if (!resolved)
+    if(!resolved.ok())
     {
-        return nonstd::make_unexpected(resolved.error());
+        return resolved.status();
     }
 
-    auto hash = git_blob_hash_hex(resolved->string());
+    auto hash = GitBlobHashHex(resolved->string());
     if (!hash)
     {
-        return nonstd::make_unexpected(hash.error());
+        return hash.error();
     }
 
-    const auto project_name = slugify(resolved->filename().string());
+    const auto project_name = Slugify(resolved->filename().string());
     return sessions_root / fmt::format("{}-{}", project_name, hash->substr(0, 12));
 }
 
@@ -262,14 +260,14 @@ auto message_to_json(const Message& msg) -> nlohmann::json
     return j;
 }
 
-auto message_from_json(const nlohmann::json& data) -> Result<Message>
+auto message_from_json(const nlohmann::json& data) -> absl::StatusOr<Message>
 {
     Message msg;
 
     auto role_result = role_from_string(data.value("role", std::string{}));
     if (!role_result)
     {
-        return nonstd::make_unexpected(role_result.error());
+        return role_result.error();
     }
     msg.role = *role_result;
 
@@ -282,7 +280,7 @@ auto message_from_json(const nlohmann::json& data) -> Result<Message>
             {
                 // Skip unparseable blocks rather than failing the entire message.
                 spdlog::warn("skipping unparseable content block: {}",
-                             block.error().message);
+                             block.status().message());
                 continue;
             }
             msg.content.push_back(std::move(*block));
@@ -317,7 +315,7 @@ auto snapshot_to_json(const SessionSnapshot& snapshot) -> nlohmann::json
     return j;
 }
 
-auto snapshot_from_json(const nlohmann::json& data) -> Result<SessionSnapshot>
+auto snapshot_from_json(const nlohmann::json& data) -> absl::StatusOr<SessionSnapshot>
 {
     SessionSnapshot s;
     s.session_id = data.value("session_id", std::string{});
@@ -353,7 +351,7 @@ auto snapshot_from_json(const nlohmann::json& data) -> Result<SessionSnapshot>
             auto msg = message_from_json(msg_json);
             if (!msg)
             {
-                return nonstd::make_unexpected(msg.error());
+                return msg.error();
             }
             s.messages.push_back(std::move(*msg));
         }
@@ -382,18 +380,18 @@ SessionStore::SessionStore(std::filesystem::path root) : root_(std::move(root))
 {
 }
 
-auto SessionStore::for_project(const std::filesystem::path& cwd) -> Result<SessionStore>
+auto SessionStore::for_project(const std::filesystem::path& cwd) -> absl::StatusOr<SessionStore>
 {
     return for_project(cwd, config::sessions_dir());
 }
 
 auto SessionStore::for_project(const std::filesystem::path& cwd,
-                                const std::filesystem::path& sessions_root) -> Result<SessionStore>
+                                const std::filesystem::path& sessions_root) -> absl::StatusOr<SessionStore>
 {
     auto dir = project_session_dir(cwd, sessions_root);
     if (!dir)
     {
-        return nonstd::make_unexpected(dir.error());
+        return dir.error();
     }
 
     return SessionStore{std::move(*dir)};
@@ -404,12 +402,12 @@ auto SessionStore::root() const noexcept -> const std::filesystem::path&
     return root_;
 }
 
-auto SessionStore::save(const SessionSnapshot& snapshot) -> Result<std::filesystem::path>
+auto SessionStore::save(const SessionSnapshot& snapshot) -> absl::StatusOr<std::filesystem::path>
 {
-    auto ensured = ensure_directory(root_, "session directory");
+    auto ensured = EnsureDirectory(root_, "session directory");
     if (!ensured)
     {
-        return nonstd::make_unexpected(ensured.error());
+        return ensured.error();
     }
 
     auto payload = snapshot_to_json(snapshot);
@@ -417,18 +415,18 @@ auto SessionStore::save(const SessionSnapshot& snapshot) -> Result<std::filesyst
 
     // Write latest.json
     auto latest_path = root_ / "latest.json";
-    auto written = atomic_write_text_file(latest_path, json_text);
+    auto written = AtomicWriteTextFile(latest_path, json_text);
     if (!written)
     {
-        return nonstd::make_unexpected(written.error());
+        return written.error();
     }
 
     // Write session-<id>.json
     auto session_path = root_ / fmt::format("session-{}.json", snapshot.session_id);
-    written = atomic_write_text_file(session_path, json_text);
+    written = AtomicWriteTextFile(session_path, json_text);
     if (!written)
     {
-        return nonstd::make_unexpected(written.error());
+        return written.error();
     }
 
     spdlog::debug("saved session {} ({} messages) to {}",
@@ -436,7 +434,7 @@ auto SessionStore::save(const SessionSnapshot& snapshot) -> Result<std::filesyst
     return latest_path;
 }
 
-auto SessionStore::load_latest() -> Result<std::optional<SessionSnapshot>>
+auto SessionStore::load_latest() -> absl::StatusOr<std::optional<SessionSnapshot>>
 {
     auto path = root_ / "latest.json";
     std::ifstream file(path);
@@ -451,19 +449,19 @@ auto SessionStore::load_latest() -> Result<std::optional<SessionSnapshot>>
         auto snapshot = snapshot_from_json(data);
         if (!snapshot)
         {
-            return nonstd::make_unexpected(snapshot.error());
+            return snapshot.error();
         }
         return std::move(*snapshot);
     }
     catch (const nlohmann::json::exception& e)
     {
         return fail<std::optional<SessionSnapshot>>(
-            ErrorKind::Config,
+            absl::FailedPreconditionError ,
             "failed to parse " + path.string() + ": " + e.what());
     }
 }
 
-auto SessionStore::list(int limit) -> Result<std::vector<SessionSnapshot>>
+auto SessionStore::list(int limit) -> absl::StatusOr<std::vector<SessionSnapshot>>
 {
     std::vector<SessionSnapshot> results;
     std::map<std::string, bool> seen_ids;
@@ -597,7 +595,7 @@ auto SessionStore::list(int limit) -> Result<std::vector<SessionSnapshot>>
     return results;
 }
 
-auto SessionStore::load_by_id(const std::string& session_id) -> Result<std::optional<SessionSnapshot>>
+auto SessionStore::load_by_id(const std::string& session_id) -> absl::StatusOr<std::optional<SessionSnapshot>>
 {
     // Try named session file first.
     auto path = root_ / fmt::format("session-{}.json", session_id);
@@ -610,14 +608,14 @@ auto SessionStore::load_by_id(const std::string& session_id) -> Result<std::opti
             auto snapshot = snapshot_from_json(data);
             if (!snapshot)
             {
-                return nonstd::make_unexpected(snapshot.error());
+                return snapshot.error();
             }
             return std::move(*snapshot);
         }
         catch (const nlohmann::json::exception& e)
         {
             return fail<std::optional<SessionSnapshot>>(
-                ErrorKind::Config,
+                absl::FailedPreconditionError ,
                 "failed to parse " + path.string() + ": " + e.what());
         }
     }
@@ -641,7 +639,7 @@ auto SessionStore::load_by_id(const std::string& session_id) -> Result<std::opti
                 auto snapshot = snapshot_from_json(data);
                 if (!snapshot)
                 {
-                    return nonstd::make_unexpected(snapshot.error());
+                    return snapshot.error();
                 }
                 return std::move(*snapshot);
             }
@@ -655,12 +653,12 @@ auto SessionStore::load_by_id(const std::string& session_id) -> Result<std::opti
     return std::optional<SessionSnapshot>{};
 }
 
-auto SessionStore::export_markdown(const std::vector<Message>& messages) -> Result<std::filesystem::path>
+auto SessionStore::export_markdown(const std::vector<Message>& messages) -> absl::StatusOr<std::filesystem::path>
 {
-    auto ensured = ensure_directory(root_, "session directory");
+    auto ensured = EnsureDirectory(root_, "session directory");
     if (!ensured)
     {
-        return nonstd::make_unexpected(ensured.error());
+        return ensured.error();
     }
 
     std::string md = "# CodeHarness Session Transcript\n";
@@ -698,10 +696,10 @@ auto SessionStore::export_markdown(const std::vector<Message>& messages) -> Resu
     md += '\n';
 
     auto path = root_ / "transcript.md";
-    auto written = atomic_write_text_file(path, md);
+    auto written = AtomicWriteTextFile(path, md);
     if (!written)
     {
-        return nonstd::make_unexpected(written.error());
+        return written.error();
     }
 
     return path;
