@@ -53,7 +53,7 @@ public:
     //   2. 如果有 TaskManager，验证收件人存在
     //   3. 调用 Mailbox::send() 投递消息
     //   4. 返回包含完整消息信息的 ToolResponse
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     Mailbox& mailbox_;

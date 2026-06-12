@@ -18,8 +18,6 @@
 
 #include "codeharness/mailbox/message_consumer.h"
 
-#include <nonstd/expected.hpp>
-
 #include <string>
 #include <utility>
 
@@ -31,13 +29,13 @@ auto WorkerMailboxDrain::shutdown_requested() const noexcept -> bool
     return !shutdown_messages.empty();
 }
 
-auto drain_worker_mailbox(Mailbox& mailbox, std::string_view worker_id) -> Result<WorkerMailboxDrain>
+auto drain_worker_mailbox(Mailbox& mailbox, std::string_view worker_id) -> absl::StatusOr<WorkerMailboxDrain>
 {
     const auto id = std::string{worker_id};
     auto pending = mailbox.poll(id, true);
     if (!pending)
     {
-        return nonstd::make_unexpected(pending.error());
+        return pending.error();
     }
 
     WorkerMailboxDrain drain;
@@ -46,7 +44,7 @@ auto drain_worker_mailbox(Mailbox& mailbox, std::string_view worker_id) -> Resul
         auto marked = mailbox.mark_read(id, message.id);
         if (!marked)
         {
-            return nonstd::make_unexpected(marked.error());
+            return marked.error();
         }
 
         switch (message.type)

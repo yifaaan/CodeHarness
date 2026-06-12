@@ -37,7 +37,6 @@
 #include "codeharness/tools/text_file.h"
 
 #include <glob/glob.h>
-#include <nonstd/expected.hpp>
 #include <simdutf.h>
 #include <spdlog/spdlog.h>
 #include <yaml-cpp/yaml.h>
@@ -69,8 +68,8 @@ struct ParsedAgentMarkdown
 // 解析 Markdown frontmatter。
 auto parse_frontmatter(std::string_view content) -> ParsedAgentMarkdown
 {
-    auto [first_line, offset] = next_line(content, 0);
-    if (trim(first_line) != "---")
+    auto [first_line, offset] = NextLine(content, 0);
+    if (Trim(first_line) != "---")
     {
         return ParsedAgentMarkdown{.body = content};
     }
@@ -79,10 +78,10 @@ auto parse_frontmatter(std::string_view content) -> ParsedAgentMarkdown
     while (offset < content.size())
     {
         const auto line_start = offset;
-        auto [line, next_offset] = next_line(content, offset);
+        auto [line, next_offset] = NextLine(content, offset);
         offset = next_offset;
 
-        if (trim(line) != "---")
+        if (Trim(line) != "---")
         {
             continue;
         }
@@ -129,10 +128,10 @@ auto first_body_line(std::string_view body) -> std::optional<std::string>
     std::size_t offset = 0;
     while (offset < body.size())
     {
-        auto [line, next_offset] = next_line(body, offset);
+        auto [line, next_offset] = NextLine(body, offset);
         offset = next_offset;
 
-        const auto stripped = trim(line);
+        const auto stripped = Trim(line);
         if (!stripped.empty() && !stripped.starts_with('#'))
         {
             return std::string{utf8_safe_truncate(stripped, 200)};
@@ -147,16 +146,16 @@ auto heading_from_body(std::string_view body) -> std::optional<std::string>
     std::size_t offset = 0;
     while (offset < body.size())
     {
-        auto [line, next_offset] = next_line(body, offset);
+        auto [line, next_offset] = NextLine(body, offset);
         offset = next_offset;
 
-        const auto stripped = trim(line);
+        const auto stripped = Trim(line);
         if (!stripped.starts_with("# "))
         {
             continue;
         }
 
-        auto heading = std::string{trim(stripped.substr(2))};
+        auto heading = std::string{Trim(stripped.substr(2))};
         if (!heading.empty())
         {
             return heading;
@@ -251,7 +250,7 @@ auto find_git_root(const std::filesystem::path& start) -> std::optional<std::fil
 
 auto default_user_agent_dirs() -> std::vector<std::filesystem::path>
 {
-    const auto home = home_directory();
+    const auto home = HomeDirectory();
     if (!home)
     {
         return {};
@@ -321,7 +320,7 @@ auto parse_agent_definition_markdown(std::string_view default_name, std::string 
     return AgentDefinition{
         .name = std::move(name),
         .description = std::move(description),
-        .system_prompt = std::string{trim(parsed.body)},
+        .system_prompt = std::string{Trim(parsed.body)},
         .tools = yaml_get_string_list(parsed.frontmatter, "tools"),
         .disallowed_tools = yaml_get_string_list_alias(parsed.frontmatter, "disallowed_tools", "disallowedTools"),
         .model = yaml_get_string(parsed.frontmatter, "model"),
@@ -334,12 +333,12 @@ auto parse_agent_definition_markdown(std::string_view default_name, std::string 
     };
 }
 
-auto load_agent_definition_file(const std::filesystem::path& path, std::string source) -> Result<AgentDefinition>
+auto load_agent_definition_file(const std::filesystem::path& path, std::string source) -> absl::StatusOr<AgentDefinition>
 {
-    auto content = read_text_file(path);
+    auto content = ReadTextFile(path);
     if (!content)
     {
-        return nonstd::make_unexpected(content.error());
+        return content.error();
     }
 
     auto agent = parse_agent_definition_markdown(path.stem().string(), std::move(*content), std::move(source));
@@ -349,7 +348,7 @@ auto load_agent_definition_file(const std::filesystem::path& path, std::string s
 }
 
 auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> directories, std::string_view source)
-    -> Result<std::vector<AgentDefinition>>
+    -> absl::StatusOr<std::vector<AgentDefinition>>
 {
     std::vector<AgentDefinition> agents;
     std::set<std::filesystem::path> seen;
@@ -370,7 +369,7 @@ auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> dir
                 auto canonical = std::filesystem::weakly_canonical(candidate, error);
                 if (error)
                 {
-                    return fail<std::vector<AgentDefinition>>(ErrorKind::Io,
+                    return fail<std::vector<AgentDefinition>>(absl::InternalError ,
                         "failed to resolve agent definition path: " + error.message());
                 }
 
@@ -382,7 +381,7 @@ auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> dir
         }
         catch (const std::exception& e)
         {
-            return fail<std::vector<AgentDefinition>>(ErrorKind::Io,
+            return fail<std::vector<AgentDefinition>>(absl::InternalError ,
                 "failed to scan agent definitions: " + std::string{e.what()});
         }
 
@@ -392,9 +391,9 @@ auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> dir
         for (const auto& path : matches)
         {
             auto agent = load_agent_definition_file(path, source_str);
-            if (!agent)
+            if(!agent.ok())
             {
-                return nonstd::make_unexpected(agent.error());
+                return agent.status();
             }
             agents.push_back(std::move(*agent));
         }
@@ -405,13 +404,13 @@ auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> dir
 
 auto discover_project_agent_dirs(const std::filesystem::path& cwd,
                                  std::span<const std::filesystem::path> relative_dirs)
-    -> Result<std::vector<std::filesystem::path>>
+    -> absl::StatusOr<std::vector<std::filesystem::path>>
 {
     std::error_code error;
     auto current = std::filesystem::weakly_canonical(cwd, error);
     if (error)
     {
-        return fail<std::vector<std::filesystem::path>>(ErrorKind::Io,
+        return fail<std::vector<std::filesystem::path>>(absl::InternalError ,
             "failed to resolve cwd for agent discovery: " + error.message());
     }
 
@@ -422,9 +421,9 @@ auto discover_project_agent_dirs(const std::filesystem::path& cwd,
     {
         for (const auto& relative : relative_dirs)
         {
-            if (!is_safe_relative_path(relative))
+            if (!IsSafeRelativePath(relative))
             {
-                return fail<std::vector<std::filesystem::path>>(ErrorKind::InvalidArgument,
+                return fail<std::vector<std::filesystem::path>>(absl::InvalidArgumentError ,
                     "project agent dir must be a safe relative path: " + relative.string());
             }
 
@@ -455,15 +454,15 @@ auto discover_project_agent_dirs(const std::filesystem::path& cwd,
 }
 
 auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options)
-    -> Result<std::vector<AgentDefinition>>
+    -> absl::StatusOr<std::vector<AgentDefinition>>
 {
     std::vector<AgentDefinition> agents;
 
-    auto append_loaded = [&](std::span<const std::filesystem::path> dirs, std::string_view source) -> Result<void> {
+    auto append_loaded = [&](std::span<const std::filesystem::path> dirs, std::string_view source) -> absl::Status {
         auto loaded = load_agent_definitions_from_dirs(dirs, source);
-        if (!loaded)
+        if(!loaded.ok())
         {
-            return nonstd::make_unexpected(loaded.error());
+            return loaded.status();
         }
 
         agents.reserve(agents.size() + loaded->size());
@@ -476,18 +475,18 @@ auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoa
         auto defaults = default_user_agent_dirs();
         if (auto loaded = append_loaded(defaults, "user"); !loaded)
         {
-            return nonstd::make_unexpected(loaded.error());
+            return loaded.status();
         }
     }
 
     if (auto loaded = append_loaded(options.user_agent_dirs, "user"); !loaded)
     {
-        return nonstd::make_unexpected(loaded.error());
+        return loaded.status();
     }
 
     if (auto loaded = append_loaded(options.extra_agent_dirs, "extra"); !loaded)
     {
-        return nonstd::make_unexpected(loaded.error());
+        return loaded.status();
     }
 
     if (options.allow_project_agents)
@@ -495,12 +494,12 @@ auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoa
         auto project_dirs = discover_project_agent_dirs(cwd, options.project_agent_dirs);
         if (!project_dirs)
         {
-            return nonstd::make_unexpected(project_dirs.error());
+            return project_dirs.error();
         }
 
         if (auto loaded = append_loaded(*project_dirs, "project"); !loaded)
         {
-            return nonstd::make_unexpected(loaded.error());
+            return loaded.status();
         }
     }
 
@@ -508,12 +507,12 @@ auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoa
 }
 
 auto load_agent_definition_registry(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options)
-    -> Result<AgentDefinitionRegistry>
+    -> absl::StatusOr<AgentDefinitionRegistry>
 {
     auto definitions = load_agent_definitions(cwd, std::move(options));
     if (!definitions)
     {
-        return nonstd::make_unexpected(definitions.error());
+        return definitions.error();
     }
 
     AgentDefinitionRegistry registry;

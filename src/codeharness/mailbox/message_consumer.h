@@ -53,6 +53,6 @@ struct WorkerMailboxDrain
 
 // 读取 worker_id inbox 中的未读消息，逐条标记为已读，并按 MessageType 分类返回。
 // 如果 inbox 不存在，返回空 WorkerMailboxDrain。
-auto drain_worker_mailbox(Mailbox& mailbox, std::string_view worker_id) -> Result<WorkerMailboxDrain>;
+auto drain_worker_mailbox(Mailbox& mailbox, std::string_view worker_id) -> absl::StatusOr<WorkerMailboxDrain>;
 
 } // namespace codeharness::mailbox

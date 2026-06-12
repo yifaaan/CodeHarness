@@ -42,7 +42,7 @@ auto message_type_name(MessageType type) -> std::string_view
     [[unreachable]] return "unknown";
 }
 
-auto parse_message_type(std::string_view value) -> Result<MessageType>
+auto parse_message_type(std::string_view value) -> absl::StatusOr<MessageType>
 {
     if (value == "user_message")
     {
@@ -69,7 +69,7 @@ auto parse_message_type(std::string_view value) -> Result<MessageType>
         return MessageType::IdleNotification;
     }
 
-    return fail<MessageType>(ErrorKind::InvalidArgument, "unknown message type: " + std::string{value});
+    return absl::StatusOr<MessageType>(absl::InvalidArgumentError("unknown message type: " + std::string{value}));
 }
 
 auto to_json(nlohmann::json& output, const MailboxMessage& msg) -> void
@@ -193,7 +193,7 @@ auto next_sequence_file(const std::filesystem::path& inbox) -> std::string
 //   2. flush（确保数据从用户空间缓冲区写入内核缓冲区）
 //   3. 关闭文件
 //   4. rename .tmp → 最终路径
-auto atomic_write_file(const std::filesystem::path& target_path, std::string_view content) -> Result<void>
+auto atomic_write_file(const std::filesystem::path& target_path, std::string_view content) -> absl::Status
 {
     auto tmp_path = target_path;
     tmp_path += ".tmp";
@@ -202,7 +202,7 @@ auto atomic_write_file(const std::filesystem::path& target_path, std::string_vie
     std::ofstream file{tmp_path, std::ios::binary};
     if (!file)
     {
-        return fail<void>(ErrorKind::Io, "mailbox: failed to create temp file: " + tmp_path.string());
+        return absl::InternalError("mailbox: failed to create temp file: " + tmp_path.string());
     }
 
     file << content;
@@ -213,7 +213,7 @@ auto atomic_write_file(const std::filesystem::path& target_path, std::string_vie
         // 写入失败，清理临时文件
         std::error_code ignored;
         std::filesystem::remove(tmp_path, ignored);
-        return fail<void>(ErrorKind::Io, "mailbox: failed to write message content");
+        return absl::InternalError("mailbox: failed to write message content");
     }
 
     file.close();
@@ -224,7 +224,7 @@ auto atomic_write_file(const std::filesystem::path& target_path, std::string_vie
     {
         std::error_code ignored;
         std::filesystem::remove(tmp_path, ignored);
-        return fail<void>(ErrorKind::Io, "mailbox: failed to rename temp file: " + rename_error.message());
+        return absl::InternalError("mailbox: failed to rename temp file: " + rename_error.message());
     }
 
     return {};
@@ -296,17 +296,17 @@ auto Mailbox::root() const -> const std::filesystem::path&
 // 跨进程的并发安全由文件系统的 rename 原子性保证。
 // 如果两个独立进程同时向同一个 inbox 写入，可能产生序号冲突，
 // 但在实际使用中，每个 inbox 通常只有一个写入者（coordinator），
-auto Mailbox::send(const std::string& recipient_id, MailboxMessage message) -> Result<MailboxMessage>
+auto Mailbox::send(const std::string& recipient_id, MailboxMessage message) -> absl::StatusOr<MailboxMessage>
 {
     const std::scoped_lock lock{impl_->mutex};
 
     // 确定收件箱目录
     const auto inbox = inbox_path(impl_->root, recipient_id);
 
-    auto dir_result = ensure_directory(inbox, "mailbox inbox");
+    auto dir_result = EnsureDirectory(inbox, "mailbox inbox");
     if (!dir_result)
     {
-        return nonstd::make_unexpected(dir_result.error());
+        return dir_result.error();
     }
 
     // 获取下一个可用的序号文件名
@@ -315,7 +315,7 @@ auto Mailbox::send(const std::string& recipient_id, MailboxMessage message) -> R
     // 填充消息的系统字段
     message.id = generate_message_id();
     message.recipient_id = recipient_id;
-    message.timestamp = utc_timestamp_seconds();
+    message.timestamp = UtcTimestampSeconds();
 
     // 序列化为 JSON
     const nlohmann::json json = message;
@@ -326,13 +326,13 @@ auto Mailbox::send(const std::string& recipient_id, MailboxMessage message) -> R
     auto write_result = atomic_write_file(file_path, content);
     if (!write_result)
     {
-        return nonstd::make_unexpected(write_result.error());
+        return write_result.error();
     }
 
     return message;
 }
 
-auto Mailbox::poll(const std::string& task_id, bool unread_only) const -> Result<std::vector<MailboxMessage>>
+auto Mailbox::poll(const std::string& task_id, bool unread_only) const -> absl::StatusOr<std::vector<MailboxMessage>>
 {
     const auto inbox = inbox_path(impl_->root, task_id);
 
@@ -372,7 +372,7 @@ auto Mailbox::poll(const std::string& task_id, bool unread_only) const -> Result
     return std::vector<MailboxMessage>{view.begin(), view.end()};
 }
 
-auto Mailbox::mark_read(const std::string& task_id, const std::string& message_id) -> Result<void>
+auto Mailbox::mark_read(const std::string& task_id, const std::string& message_id) -> absl::Status
 {
     std::scoped_lock lock{impl_->mutex};
 
@@ -381,7 +381,7 @@ auto Mailbox::mark_read(const std::string& task_id, const std::string& message_i
     std::error_code error;
     if (!std::filesystem::exists(inbox, error))
     {
-        return fail<void>(ErrorKind::InvalidArgument, "mailbox: inbox not found for task: " + task_id);
+        return absl::InvalidArgumentError("mailbox: inbox not found for task: " + task_id);
     }
 
     // 遍历收件箱，查找目标消息
@@ -402,10 +402,10 @@ auto Mailbox::mark_read(const std::string& task_id, const std::string& message_i
         }
     }
 
-    return fail<void>(ErrorKind::InvalidArgument, "mailbox: message not found: " + message_id);
+    return absl::InvalidArgumentError("mailbox: message not found: " + message_id);
 }
 
-auto Mailbox::clear(const std::string& task_id) -> Result<void>
+auto Mailbox::clear(const std::string& task_id) -> absl::Status
 {
     std::scoped_lock lock{impl_->mutex};
 

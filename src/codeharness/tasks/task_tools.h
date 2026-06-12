@@ -71,7 +71,7 @@ auto from_json(const nlohmann::json& input, AgentSpawnRequest& request) -> void;
 auto to_json(nlohmann::json& output, const AgentSpawnResponse& response) -> void;
 auto from_json(const nlohmann::json& input, AgentSpawnResponse& response) -> void;
 
-using AgentSpawnHandler = std::function<Result<AgentSpawnResponse>(const AgentSpawnRequest&)>;
+using AgentSpawnHandler = std::function<absl::StatusOr<AgentSpawnResponse>(const AgentSpawnRequest&)>;
 
 class TaskCreateTool final : public Tool
 {
@@ -81,7 +81,7 @@ public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
     auto permission_target(const ToolRequest& request) const -> PermissionTarget override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     TaskManager& manager_;
@@ -95,7 +95,7 @@ public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
     auto is_read_only() const noexcept -> bool override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     TaskManager& manager_;
@@ -109,7 +109,7 @@ public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
     auto is_read_only() const noexcept -> bool override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     TaskManager& manager_;
@@ -123,7 +123,7 @@ public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
     auto is_read_only() const noexcept -> bool override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     TaskManager& manager_;
@@ -136,7 +136,7 @@ public:
 
     auto name() const -> std::string override;
     auto description() const -> std::string override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     TaskManager& manager_;
@@ -151,7 +151,7 @@ public:
     auto name() const -> std::string override;
     auto description() const -> std::string override;
     auto permission_target(const ToolRequest& request) const -> PermissionTarget override;
-    auto execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse> override;
+    auto execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> override;
 
 private:
     TaskManager& manager_;

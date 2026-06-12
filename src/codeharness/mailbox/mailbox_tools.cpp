@@ -6,8 +6,6 @@
 #include "codeharness/mailbox/mailbox_tools.h"
 
 #include <nlohmann/json.hpp>
-#include <nonstd/expected.hpp>
-
 #include <memory>
 #include <string>
 #include <utility>
@@ -31,49 +29,49 @@ namespace
 // 输入 JSON 示例：
 //   {"recipient_id": "task-123", "content": "hello", "sender_id": "task-456", "type": "user_message"}
 //
-// 使用 read_json_field 系列函数（来自 core/json_parse.h）来解析。
+// 使用 ReadJsonField 系列函数（来自 core/json_parse.h）来解析。
 // 这些函数提供了统一的错误信息格式和类型检查。
-auto parse_send_input(const nlohmann::json& input) -> Result<std::pair<std::string, MailboxMessage>>
+auto parse_send_input(const nlohmann::json& input) -> absl::StatusOr<std::pair<std::string, MailboxMessage>>
 {
     // recipient_id 是必填字段
-    auto recipient_id = read_json_field<std::string>(input, "recipient_id", "send_message");
+    auto recipient_id = ReadJsonField<std::string>(input, "recipient_id", "send_message");
     if (!recipient_id)
     {
-        return nonstd::make_unexpected(recipient_id.error());
+        return recipient_id.error();
     }
 
     // content 是必填字段
-    auto content = read_json_field<std::string>(input, "content", "send_message");
+    auto content = ReadJsonField<std::string>(input, "content", "send_message");
     if (!content)
     {
-        return nonstd::make_unexpected(content.error());
+        return content.error();
     }
 
     // sender_id 是可选字段——调用方可能不知道自己的 task ID
-    auto sender_id = read_nullable_optional_json_field<std::string>(input, "sender_id", "send_message");
+    auto sender_id = ReadNullableOptionalJsonField<std::string>(input, "sender_id", "send_message");
     if (!sender_id)
     {
-        return nonstd::make_unexpected(sender_id.error());
+        return sender_id.error();
     }
 
     // type 是可选字段，默认为 "user_message"
-    auto type_str = read_json_field<std::string, JsonFieldMode::optional_with_default>(
+    auto type_str = ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(
         input, "type", "send_message", std::string{"user_message"});
     if (!type_str)
     {
-        return nonstd::make_unexpected(type_str.error());
+        return type_str.error();
     }
 
     // 将字符串类型转为枚举——如果类型名无效，返回错误
     auto type = parse_message_type(*type_str);
     if (!type)
     {
-        return nonstd::make_unexpected(type.error());
+        return type.error();
     }
 
     // 构造消息对象
     MailboxMessage msg;
-    // sender_id 是 Result<optional<string>>，需要先解引用 Result（*sender_id 得到 optional<string>），
+    // sender_id 是 absl::StatusOr<optional<string>>，需要先解引用 Result（*sender_id 得到 optional<string>），
     // 再对 optional 调用 value_or（如果 optional 有值则取值，否则用 ""）。
     msg.sender_id = (*sender_id).value_or("");
     msg.content = std::move(*content);
@@ -140,13 +138,13 @@ auto SendMessageTool::permission_target(const ToolRequest& request) const -> Per
 }
 
 auto SendMessageTool::execute(const ToolRequest& request, const ToolContext& context) const
-    -> Result<ToolResponse>
+    -> absl::StatusOr<ToolResponse>
 {
     // 第一步：解析输入
     auto input = parse_send_input(request.parsed_input);
     if (!input)
     {
-        return nonstd::make_unexpected(input.error());
+        return input.error();
     }
 
     auto& [recipient_id, msg] = *input;
@@ -168,10 +166,10 @@ auto SendMessageTool::execute(const ToolRequest& request, const ToolContext& con
     if (task_manager_ != nullptr)
     {
         auto task = task_manager_->get_task(recipient_id);
-        if (!task)
+        if(!task.ok())
         {
             // get_task 本身失败（IO 错误等）
-            return nonstd::make_unexpected(task.error());
+            return task.status();
         }
         if (!task->has_value())
         {
@@ -188,7 +186,7 @@ auto SendMessageTool::execute(const ToolRequest& request, const ToolContext& con
     auto sent = mailbox_.send(recipient_id, std::move(msg));
     if (!sent)
     {
-        return nonstd::make_unexpected(sent.error());
+        return sent.error();
     }
 
     // 第四步：返回成功响应，包含完整的消息信息

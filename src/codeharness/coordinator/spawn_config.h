@@ -23,7 +23,7 @@
 
 #include "codeharness/coordinator/agent_definition.h"
 #include "codeharness/coordinator/subprocess_backend.h"
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <string>
 #include <string_view>
@@ -43,6 +43,6 @@ auto apply_agent_definition(TeammateSpawnConfig config, const AgentDefinition& d
 auto resolve_spawn_config(TeammateSpawnConfig config,
                           const AgentDefinitionRegistry& registry,
                           std::string_view agent_type)
-    -> Result<TeammateSpawnConfig>;
+    -> absl::StatusOr<TeammateSpawnConfig>;
 
 } // namespace codeharness::coordinator

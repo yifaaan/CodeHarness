@@ -35,7 +35,7 @@
 
 #include "codeharness/coordinator/agent_definition.h"
 #include "codeharness/coordinator/subprocess_backend.h"
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/mailbox/mailbox.h"
 #include "codeharness/mailbox/message_consumer.h"
 #include "codeharness/mailbox/team_lifecycle.h"
@@ -70,18 +70,18 @@ public:
     [[nodiscard]] auto mailbox() const noexcept -> const mailbox::Mailbox&;
     [[nodiscard]] auto agent_definitions() const noexcept -> const AgentDefinitionRegistry&;
 
-    auto spawn_agent(const tasks::AgentSpawnRequest& request) -> Result<tasks::AgentSpawnResponse>;
+    auto spawn_agent(const tasks::AgentSpawnRequest& request) -> absl::StatusOr<tasks::AgentSpawnResponse>;
     auto spawn_handler() -> tasks::AgentSpawnHandler;
 
-    auto drain_coordinator_mailbox(std::string_view coordinator_id) -> Result<mailbox::WorkerMailboxDrain>;
+    auto drain_coordinator_mailbox(std::string_view coordinator_id) -> absl::StatusOr<mailbox::WorkerMailboxDrain>;
     auto publish_task_result(std::string_view sender_id,
                              std::string_view recipient_id,
                              std::string_view task_id,
                              std::string result,
-                             std::string summary = {}) -> Result<mailbox::MailboxMessage>;
+                             std::string summary = {}) -> absl::StatusOr<mailbox::MailboxMessage>;
 
 private:
-    auto ensure_team_exists(std::string_view team_name) -> Result<void>;
+    auto ensure_team_exists(std::string_view team_name) -> absl::Status;
 
     tasks::TaskManager task_manager_;
     mailbox::TeamLifecycleManager team_manager_;
@@ -92,6 +92,6 @@ private:
 
 auto create_default_runtime(const std::filesystem::path& cwd,
                             AgentDefinitionLoadOptions options = {})
-    -> Result<std::unique_ptr<CoordinatorRuntime>>;
+    -> absl::StatusOr<std::unique_ptr<CoordinatorRuntime>>;
 
 } // namespace codeharness::coordinator

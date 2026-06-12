@@ -1,8 +1,6 @@
 #include "codeharness/tasks/task_tools.h"
 
 #include <nlohmann/json.hpp>
-#include <nonstd/expected.hpp>
-
 #include <map>
 #include <memory>
 #include <optional>
@@ -42,9 +40,9 @@ struct AgentInput
     std::map<std::string, std::string> env;
 };
 
-auto parse_task_id(const nlohmann::json& input, std::string_view tool_name) -> Result<std::string>
+auto parse_task_id(const nlohmann::json& input, std::string_view tool_name) -> absl::StatusOr<std::string>
 {
-    return read_json_field<std::string>(input, "task_id", tool_name);
+    return ReadJsonField<std::string>(input, "task_id", tool_name);
 }
 
 auto task_response_json(const TaskRecord& record) -> nlohmann::json
@@ -72,7 +70,7 @@ auto argv_permission_target(const nlohmann::json& input) -> PermissionTarget
 {
     PermissionTarget target;
 
-    auto argv = read_json_field<std::vector<std::string>, JsonFieldMode::optional_if_valid>(input, "argv");
+    auto argv = ReadJsonField<std::vector<std::string>, JsonFieldMode::kOptionalIfValid>(input, "argv");
     if (!argv || !*argv || (*argv)->empty())
     {
         return target;
@@ -91,13 +89,13 @@ auto local_agent_default_permission_target() -> PermissionTarget
 
 auto input_type(const nlohmann::json& input, std::string_view default_type) -> std::string
 {
-    auto type = read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, "type");
+    auto type = ReadJsonField<std::string, JsonFieldMode::kOptionalIfValid>(input, "type");
     if (type && *type)
     {
         return **type;
     }
 
-    auto mode = read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, "mode");
+    auto mode = ReadJsonField<std::string, JsonFieldMode::kOptionalIfValid>(input, "mode");
     if (mode && *mode)
     {
         return **mode;
@@ -108,7 +106,7 @@ auto input_type(const nlohmann::json& input, std::string_view default_type) -> s
 
 auto command_or_argv_permission_target(const nlohmann::json& input) -> PermissionTarget
 {
-    auto target = command_permission_target(input, "command");
+    auto target = CommandPermissionTarget(input, "command");
     if (target.command)
     {
         return target;
@@ -185,48 +183,48 @@ auto missing_task_response(const ToolRequest& request, std::string_view id) -> T
     };
 }
 
-auto parse_create_input(const nlohmann::json& input) -> Result<TaskCreateInput>
+auto parse_create_input(const nlohmann::json& input) -> absl::StatusOr<TaskCreateInput>
 {
-    auto type = read_json_field<std::string, JsonFieldMode::optional_with_default>(input, "type", "task_create", std::string{"local_bash"});
+    auto type = ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(input, "type", "task_create", std::string{"local_bash"});
     if (!type)
     {
-        return nonstd::make_unexpected(type.error());
+        return type.error();
     }
 
-    auto description = read_json_field<std::string>(input, "description", "task_create");
+    auto description = ReadJsonField<std::string>(input, "description", "task_create");
     if (!description)
     {
-        return nonstd::make_unexpected(description.error());
+        return description.error();
     }
 
-    auto command = read_nullable_optional_json_field<std::string>(input, "command", "task_create");
-    if (!command)
+    auto command = ReadNullableOptionalJsonField<std::string>(input, "command", "task_create");
+    if(!command.ok())
     {
-        return nonstd::make_unexpected(command.error());
+        return command.status();
     }
 
-    auto prompt = read_nullable_optional_json_field<std::string>(input, "prompt", "task_create");
+    auto prompt = ReadNullableOptionalJsonField<std::string>(input, "prompt", "task_create");
     if (!prompt)
     {
-        return nonstd::make_unexpected(prompt.error());
+        return prompt.error();
     }
 
-    auto model = read_nullable_optional_json_field<std::string>(input, "model", "task_create");
+    auto model = ReadNullableOptionalJsonField<std::string>(input, "model", "task_create");
     if (!model)
     {
-        return nonstd::make_unexpected(model.error());
+        return model.error();
     }
 
-    auto argv = read_nullable_json_field<std::vector<std::string>>(input, "argv", "task_create");
+    auto argv = ReadNullableJsonField<std::vector<std::string>>(input, "argv", "task_create");
     if (!argv)
     {
-        return nonstd::make_unexpected(argv.error());
+        return argv.error();
     }
 
-    auto env = read_nullable_json_field<std::map<std::string, std::string>>(input, "env", "task_create");
+    auto env = ReadNullableJsonField<std::map<std::string, std::string>>(input, "env", "task_create");
     if (!env)
     {
-        return nonstd::make_unexpected(env.error());
+        return env.error();
     }
 
     return TaskCreateInput{
@@ -240,60 +238,60 @@ auto parse_create_input(const nlohmann::json& input) -> Result<TaskCreateInput>
     };
 }
 
-auto parse_agent_input(const nlohmann::json& input) -> Result<AgentInput>
+auto parse_agent_input(const nlohmann::json& input) -> absl::StatusOr<AgentInput>
 {
-    auto description = read_json_field<std::string>(input, "description", "agent");
+    auto description = ReadJsonField<std::string>(input, "description", "agent");
     if (!description)
     {
-        return nonstd::make_unexpected(description.error());
+        return description.error();
     }
 
-    auto prompt = read_json_field<std::string>(input, "prompt", "agent");
+    auto prompt = ReadJsonField<std::string>(input, "prompt", "agent");
     if (!prompt)
     {
-        return nonstd::make_unexpected(prompt.error());
+        return prompt.error();
     }
 
-    auto mode = read_json_field<std::string, JsonFieldMode::optional_with_default>(input, "mode", "agent", std::string{"local_agent"});
+    auto mode = ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(input, "mode", "agent", std::string{"local_agent"});
     if (!mode)
     {
-        return nonstd::make_unexpected(mode.error());
+        return mode.error();
     }
 
-    auto subagent_type = read_nullable_optional_json_field<std::string>(input, "subagent_type", "agent");
+    auto subagent_type = ReadNullableOptionalJsonField<std::string>(input, "subagent_type", "agent");
     if (!subagent_type)
     {
-        return nonstd::make_unexpected(subagent_type.error());
+        return subagent_type.error();
     }
 
-    auto model = read_nullable_optional_json_field<std::string>(input, "model", "agent");
+    auto model = ReadNullableOptionalJsonField<std::string>(input, "model", "agent");
     if (!model)
     {
-        return nonstd::make_unexpected(model.error());
+        return model.error();
     }
 
-    auto command = read_nullable_optional_json_field<std::string>(input, "command", "agent");
-    if (!command)
+    auto command = ReadNullableOptionalJsonField<std::string>(input, "command", "agent");
+    if(!command.ok())
     {
-        return nonstd::make_unexpected(command.error());
+        return command.status();
     }
 
-    auto team = read_nullable_optional_json_field<std::string>(input, "team", "agent");
-    if (!team)
+    auto team = ReadNullableOptionalJsonField<std::string>(input, "team", "agent");
+    if(!team.ok())
     {
-        return nonstd::make_unexpected(team.error());
+        return team.status();
     }
 
-    auto argv = read_nullable_json_field<std::vector<std::string>>(input, "argv", "agent");
+    auto argv = ReadNullableJsonField<std::vector<std::string>>(input, "argv", "agent");
     if (!argv)
     {
-        return nonstd::make_unexpected(argv.error());
+        return argv.error();
     }
 
-    auto env = read_nullable_json_field<std::map<std::string, std::string>>(input, "env", "agent");
+    auto env = ReadNullableJsonField<std::map<std::string, std::string>>(input, "env", "agent");
     if (!env)
     {
-        return nonstd::make_unexpected(env.error());
+        return env.error();
     }
 
     return AgentInput{
@@ -360,10 +358,10 @@ auto to_json(nlohmann::json& output, const AgentSpawnRequest& request) -> void
         {"description", request.description},
         {"prompt", request.prompt},
         {"mode", request.mode},
-        {"subagent_type", optional_to_json(request.subagent_type)},
-        {"model", optional_to_json(request.model)},
-        {"command", optional_to_json(request.command)},
-        {"team", optional_to_json(request.team)},
+        {"subagent_type", OptionalToJson(request.subagent_type)},
+        {"model", OptionalToJson(request.model)},
+        {"command", OptionalToJson(request.command)},
+        {"team", OptionalToJson(request.team)},
         {"argv", request.argv},
         {"env", request.env},
         {"cwd", request.cwd.string()},
@@ -373,23 +371,23 @@ auto to_json(nlohmann::json& output, const AgentSpawnRequest& request) -> void
 auto from_json(const nlohmann::json& input, AgentSpawnRequest& request) -> void
 {
     request = AgentSpawnRequest{
-        .description = expect_json_field(read_json_field<std::string>(input, "description", "agent spawn request")),
-        .prompt = expect_json_field(read_json_field<std::string>(input, "prompt", "agent spawn request")),
-        .mode = expect_json_field(read_json_field<std::string, JsonFieldMode::optional_with_default>(
+        .description = ExpectJsonField(ReadJsonField<std::string>(input, "description", "agent spawn request")),
+        .prompt = ExpectJsonField(ReadJsonField<std::string>(input, "prompt", "agent spawn request")),
+        .mode = ExpectJsonField(ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(
             input, "mode", "agent spawn request", std::string{"local_agent"})),
-        .subagent_type = expect_json_field(read_nullable_optional_json_field<std::string>(
+        .subagent_type = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(
             input, "subagent_type", "agent spawn request")),
-        .model = expect_json_field(read_nullable_optional_json_field<std::string>(
+        .model = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(
             input, "model", "agent spawn request")),
-        .command = expect_json_field(read_nullable_optional_json_field<std::string>(
+        .command = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(
             input, "command", "agent spawn request")),
-        .team = expect_json_field(read_nullable_optional_json_field<std::string>(
+        .team = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(
             input, "team", "agent spawn request")),
-        .argv = expect_json_field(read_nullable_json_field<std::vector<std::string>>(
+        .argv = ExpectJsonField(ReadNullableJsonField<std::vector<std::string>>(
             input, "argv", "agent spawn request")),
-        .env = expect_json_field(read_nullable_json_field<std::map<std::string, std::string>>(
+        .env = ExpectJsonField(ReadNullableJsonField<std::map<std::string, std::string>>(
             input, "env", "agent spawn request")),
-        .cwd = std::filesystem::path{expect_json_field(read_json_field<std::string>(
+        .cwd = std::filesystem::path{ExpectJsonField(ReadJsonField<std::string>(
             input, "cwd", "agent spawn request"))},
     };
 }
@@ -408,11 +406,11 @@ auto to_json(nlohmann::json& output, const AgentSpawnResponse& response) -> void
 auto from_json(const nlohmann::json& input, AgentSpawnResponse& response) -> void
 {
     response = AgentSpawnResponse{
-        .agent_id = expect_json_field(read_json_field<std::string>(input, "agent_id", "agent spawn response")),
-        .task_id = expect_json_field(read_json_field<std::string>(input, "task_id", "agent spawn response")),
-        .backend_type = expect_json_field(read_json_field<std::string, JsonFieldMode::optional_with_default>(
+        .agent_id = ExpectJsonField(ReadJsonField<std::string>(input, "agent_id", "agent spawn response")),
+        .task_id = ExpectJsonField(ReadJsonField<std::string>(input, "task_id", "agent spawn response")),
+        .backend_type = ExpectJsonField(ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(
             input, "backend_type", "agent spawn response", std::string{"subprocess"})),
-        .description = expect_json_field(read_json_field<std::string>(input, "description", "agent spawn response")),
+        .description = ExpectJsonField(ReadJsonField<std::string>(input, "description", "agent spawn response")),
         .task = input.at("task").get<TaskRecord>(),
     };
 }
@@ -436,15 +434,15 @@ auto TaskCreateTool::permission_target(const ToolRequest& request) const -> Perm
     return create_permission_target(request.parsed_input);
 }
 
-auto TaskCreateTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
+auto TaskCreateTool::execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse>
 {
     auto input = parse_create_input(request.parsed_input);
     if (!input)
     {
-        return nonstd::make_unexpected(input.error());
+        return input.error();
     }
 
-    Result<TaskRecord> record = fail<TaskRecord>(ErrorKind::InvalidArgument, "unsupported task type: " + input->type);
+    absl::StatusOr<TaskRecord> record = absl::StatusOr<TaskRecord>(absl::InvalidArgumentError("unsupported task type: " + input->type));
     if (input->type == "local_bash")
     {
         record = manager_.create_shell_task(ShellTaskSpec{
@@ -459,7 +457,7 @@ auto TaskCreateTool::execute(const ToolRequest& request, const ToolContext& cont
     {
         if (!input->prompt)
         {
-            return fail<ToolResponse>(ErrorKind::InvalidArgument, "prompt is required for local_agent tasks");
+            return absl::StatusOr<ToolResponse>(absl::InvalidArgumentError("prompt is required for local_agent tasks"));
         }
         record = manager_.create_agent_task(AgentTaskSpec{
             .description = input->description,
@@ -474,7 +472,7 @@ auto TaskCreateTool::execute(const ToolRequest& request, const ToolContext& cont
 
     if (!record)
     {
-        return nonstd::make_unexpected(record.error());
+        return record.error();
     }
 
     return task_response(request, *record);
@@ -499,20 +497,20 @@ auto TaskListTool::is_read_only() const noexcept -> bool
     return true;
 }
 
-auto TaskListTool::execute(const ToolRequest& request, const ToolContext&) const -> Result<ToolResponse>
+auto TaskListTool::execute(const ToolRequest& request, const ToolContext&) const -> absl::StatusOr<ToolResponse>
 {
     std::optional<TaskStatus> filter;
-    auto status = read_nullable_optional_json_field<std::string>(request.parsed_input, "status", "task_list");
+    auto status = ReadNullableOptionalJsonField<std::string>(request.parsed_input, "status", "task_list");
     if (!status)
     {
-        return nonstd::make_unexpected(status.error());
+        return status.error();
     }
     if (*status)
     {
         auto parsed = parse_task_status(**status);
-        if (!parsed)
+        if(!parsed.ok())
         {
-            return nonstd::make_unexpected(parsed.error());
+            return parsed.status();
         }
         filter = *parsed;
     }
@@ -520,7 +518,7 @@ auto TaskListTool::execute(const ToolRequest& request, const ToolContext&) const
     auto tasks = manager_.list_tasks(filter);
     if (!tasks)
     {
-        return nonstd::make_unexpected(tasks.error());
+        return tasks.error();
     }
 
     nlohmann::json output = nlohmann::json::array();
@@ -554,18 +552,18 @@ auto TaskGetTool::is_read_only() const noexcept -> bool
     return true;
 }
 
-auto TaskGetTool::execute(const ToolRequest& request, const ToolContext&) const -> Result<ToolResponse>
+auto TaskGetTool::execute(const ToolRequest& request, const ToolContext&) const -> absl::StatusOr<ToolResponse>
 {
     auto id = parse_task_id(request.parsed_input, "task_get");
     if (!id)
     {
-        return nonstd::make_unexpected(id.error());
+        return id.error();
     }
 
     auto record = manager_.get_task(*id);
     if (!record)
     {
-        return nonstd::make_unexpected(record.error());
+        return record.error();
     }
     if (!*record)
     {
@@ -594,28 +592,28 @@ auto TaskOutputTool::is_read_only() const noexcept -> bool
     return true;
 }
 
-auto TaskOutputTool::execute(const ToolRequest& request, const ToolContext&) const -> Result<ToolResponse>
+auto TaskOutputTool::execute(const ToolRequest& request, const ToolContext&) const -> absl::StatusOr<ToolResponse>
 {
     auto id = parse_task_id(request.parsed_input, "task_output");
     if (!id)
     {
-        return nonstd::make_unexpected(id.error());
+        return id.error();
     }
 
-    auto max_bytes = read_json_field<int, JsonFieldMode::optional_with_default>(request.parsed_input, "max_bytes", "task_output", 12000);
+    auto max_bytes = ReadJsonField<int, JsonFieldMode::kOptionalWithDefault>(request.parsed_input, "max_bytes", "task_output", 12000);
     if (!max_bytes)
     {
-        return nonstd::make_unexpected(max_bytes.error());
+        return max_bytes.error();
     }
     if (*max_bytes < 1 || *max_bytes > 100000)
     {
-        return fail<ToolResponse>(ErrorKind::InvalidArgument, "task_output max_bytes out of range");
+        return absl::StatusOr<ToolResponse>(absl::InvalidArgumentError("task_output max_bytes out of range"));
     }
 
     auto output = manager_.read_output_tail(*id, static_cast<std::size_t>(*max_bytes));
-    if (!output)
+    if(!output.ok())
     {
-        return nonstd::make_unexpected(output.error());
+        return output.status();
     }
 
     return ToolResponse{
@@ -638,18 +636,18 @@ auto TaskStopTool::description() const -> std::string
     return "Stop a background task.";
 }
 
-auto TaskStopTool::execute(const ToolRequest& request, const ToolContext&) const -> Result<ToolResponse>
+auto TaskStopTool::execute(const ToolRequest& request, const ToolContext&) const -> absl::StatusOr<ToolResponse>
 {
     auto id = parse_task_id(request.parsed_input, "task_stop");
     if (!id)
     {
-        return nonstd::make_unexpected(id.error());
+        return id.error();
     }
 
     auto record = manager_.stop_task(*id);
     if (!record)
     {
-        return nonstd::make_unexpected(record.error());
+        return record.error();
     }
 
     return task_response(request, *record);
@@ -697,12 +695,12 @@ auto AgentTool::permission_target(const ToolRequest& request) const -> Permissio
     return agent_permission_target(request.parsed_input);
 }
 
-auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
+auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse>
 {
     auto input = parse_agent_input(request.parsed_input);
     if (!input)
     {
-        return nonstd::make_unexpected(input.error());
+        return input.error();
     }
 
     if (input->mode != "local_agent")
@@ -719,7 +717,7 @@ auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) 
         auto spawned = spawn_handler_(agent_spawn_request_from(*input, context));
         if (!spawned)
         {
-            return nonstd::make_unexpected(spawned.error());
+            return spawned.error();
         }
 
         const nlohmann::json output = *spawned;
@@ -732,7 +730,7 @@ auto AgentTool::execute(const ToolRequest& request, const ToolContext& context) 
     auto record = manager_.create_agent_task(agent_spec_from(*input, context));
     if (!record)
     {
-        return nonstd::make_unexpected(record.error());
+        return record.error();
     }
 
     const auto agent_id = agent_id_for(*input);

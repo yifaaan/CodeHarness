@@ -42,7 +42,6 @@
 #include <fmt/format.h>
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
-#include <nonstd/expected.hpp>
 #include <reproc++/reproc.hpp>
 
 #include "codeharness/config/paths.h"
@@ -121,29 +120,29 @@ auto generate_task_id(TaskType type) -> std::string
     return output.str();
 }
 
-auto canonical_directory(const std::filesystem::path& path) -> Result<std::filesystem::path>
+auto canonical_directory(const std::filesystem::path& path) -> absl::StatusOr<std::filesystem::path>
 {
     std::error_code error;
     auto resolved = std::filesystem::weakly_canonical(path, error);
     if (error)
     {
-        return fail<std::filesystem::path>(ErrorKind::Io, "failed to resolve task cwd: " + error.message());
+        return fail<std::filesystem::path>(absl::InternalError , "failed to resolve task cwd: " + error.message());
     }
 
     if (!std::filesystem::is_directory(resolved, error))
     {
-        return fail<std::filesystem::path>(ErrorKind::InvalidArgument, "task cwd is not a directory: " + path.string());
+        return fail<std::filesystem::path>(absl::InvalidArgumentError , "task cwd is not a directory: " + path.string());
     }
 
     return resolved;
 }
 
-auto read_record_file(const std::filesystem::path& path) -> Result<TaskRecord>
+auto read_record_file(const std::filesystem::path& path) -> absl::StatusOr<TaskRecord>
 {
-    auto content = read_text_file(path);
+    auto content = ReadTextFile(path);
     if (!content)
     {
-        return nonstd::make_unexpected(content.error());
+        return content.error();
     }
 
     try
@@ -152,11 +151,11 @@ auto read_record_file(const std::filesystem::path& path) -> Result<TaskRecord>
     }
     catch (const nlohmann::json::parse_error& error)
     {
-        return fail<TaskRecord>(ErrorKind::InvalidArgument, fmt::format("failed to parse task record: {}", error.what()));
+        return absl::StatusOr<TaskRecord>(absl::InvalidArgumentError(fmt::format("failed to parse task record: {}", error.what())));
     }
     catch (const nlohmann::json::exception& error)
     {
-        return fail<TaskRecord>(ErrorKind::InvalidArgument, fmt::format("failed to parse task record: {}", error.what()));
+        return absl::StatusOr<TaskRecord>(absl::InvalidArgumentError(fmt::format("failed to parse task record: {}", error.what())));
     }
 }
 
@@ -165,34 +164,34 @@ auto terminal_status(TaskStatus status) -> bool
     return status == TaskStatus::Completed || status == TaskStatus::Failed || status == TaskStatus::Killed;
 }
 
-auto argv_for_spec(const ShellTaskSpec& spec) -> Result<std::vector<std::string>>
+auto argv_for_spec(const ShellTaskSpec& spec) -> absl::StatusOr<std::vector<std::string>>
 {
     if (spec.command && !spec.argv.empty())
     {
-        return fail<std::vector<std::string>>(ErrorKind::InvalidArgument, "create_shell_task accepts only one of command or argv");
+        return fail<std::vector<std::string>>(absl::InvalidArgumentError , "create_shell_task accepts only one of command or argv");
     }
 
     if (!spec.command && spec.argv.empty())
     {
-        return fail<std::vector<std::string>>(ErrorKind::InvalidArgument, "create_shell_task requires either command or argv");
+        return fail<std::vector<std::string>>(absl::InvalidArgumentError , "create_shell_task requires either command or argv");
     }
 
     if (spec.command)
     {
-        const auto command = std::string{trim(*spec.command)};
+        const auto command = std::string{Trim(*spec.command)};
         if (command.empty())
         {
-            return fail<std::vector<std::string>>(ErrorKind::InvalidArgument, "task command is required");
+            return fail<std::vector<std::string>>(absl::InvalidArgumentError , "task command is required");
         }
 
-        return default_shell_command_argv(command);
+        return DefaultShellCommandArgv(command);
     }
 
     for (const auto& argument : spec.argv)
     {
         if (argument.empty())
         {
-            return fail<std::vector<std::string>>(ErrorKind::InvalidArgument, "task argv entries must not be empty");
+            return fail<std::vector<std::string>>(absl::InvalidArgumentError , "task argv entries must not be empty");
         }
     }
 
@@ -266,7 +265,7 @@ auto task_status_name(TaskStatus status) -> std::string_view
     return "unknown";
 }
 
-auto parse_task_type(std::string_view value) -> Result<TaskType>
+auto parse_task_type(std::string_view value) -> absl::StatusOr<TaskType>
 {
     if (value == "local_bash")
     {
@@ -277,10 +276,10 @@ auto parse_task_type(std::string_view value) -> Result<TaskType>
         return TaskType::LocalAgent;
     }
 
-    return fail<TaskType>(ErrorKind::InvalidArgument, "unknown task type: " + std::string{value});
+    return absl::StatusOr<TaskType>(absl::InvalidArgumentError("unknown task type: " + std::string{value}));
 }
 
-auto parse_task_status(std::string_view value) -> Result<TaskStatus>
+auto parse_task_status(std::string_view value) -> absl::StatusOr<TaskStatus>
 {
     if (value == "pending")
     {
@@ -303,7 +302,7 @@ auto parse_task_status(std::string_view value) -> Result<TaskStatus>
         return TaskStatus::Killed;
     }
 
-    return fail<TaskStatus>(ErrorKind::InvalidArgument, "unknown task status: " + std::string{value});
+    return absl::StatusOr<TaskStatus>(absl::InvalidArgumentError("unknown task status: " + std::string{value}));
 }
 
 auto to_json(nlohmann::json& output, const TaskRecord& record) -> void
@@ -315,12 +314,12 @@ auto to_json(nlohmann::json& output, const TaskRecord& record) -> void
         {"description", record.description},
         {"cwd", record.cwd.string()},
         {"output_file", record.output_file.string()},
-        {"command", optional_to_json(record.command)},
-        {"prompt", optional_to_json(record.prompt)},
+        {"command", OptionalToJson(record.command)},
+        {"prompt", OptionalToJson(record.prompt)},
         {"created_at", record.created_at},
-        {"started_at", optional_to_json(record.started_at)},
-        {"ended_at", optional_to_json(record.ended_at)},
-        {"return_code", optional_to_json(record.return_code)},
+        {"started_at", OptionalToJson(record.started_at)},
+        {"ended_at", OptionalToJson(record.ended_at)},
+        {"return_code", OptionalToJson(record.return_code)},
         {"metadata", record.metadata},
         {"argv", record.argv},
         {"env", record.env},
@@ -329,29 +328,29 @@ auto to_json(nlohmann::json& output, const TaskRecord& record) -> void
 
 auto from_json(const nlohmann::json& input, TaskRecord& record) -> void
 {
-    auto type = parse_task_type(expect_json_field(read_json_field<std::string>(input, "type", "task record")));
-    auto status = parse_task_status(expect_json_field(read_json_field<std::string>(input, "status", "task record")));
+    auto type = parse_task_type(ExpectJsonField(ReadJsonField<std::string>(input, "type", "task record")));
+    auto status = parse_task_status(ExpectJsonField(ReadJsonField<std::string>(input, "status", "task record")));
 
     record = TaskRecord{
-        .id = expect_json_field(read_json_field<std::string>(input, "id", "task record")),
-        .type = expect_json_field(std::move(type)),
-        .status = expect_json_field(std::move(status)),
-        .description = expect_json_field(read_json_field<std::string>(input, "description", "task record")),
-        .cwd = std::filesystem::path{expect_json_field(read_json_field<std::string>(input, "cwd", "task record"))},
-        .output_file = std::filesystem::path{expect_json_field(read_json_field<std::string>(input, "output_file", "task record"))},
-        .command = expect_json_field(read_nullable_optional_json_field<std::string>(input, "command", "task record")),
-        .prompt = expect_json_field(read_nullable_optional_json_field<std::string>(input, "prompt", "task record")),
-        .created_at = expect_json_field(read_json_field<std::string>(input, "created_at", "task record")),
-        .started_at = expect_json_field(read_nullable_optional_json_field<std::string>(input, "started_at", "task record")),
-        .ended_at = expect_json_field(read_nullable_optional_json_field<std::string>(input, "ended_at", "task record")),
-        .return_code = expect_json_field(read_nullable_optional_json_field<int>(input, "return_code", "task record")),
-        .metadata = expect_json_field(read_nullable_json_field<std::map<std::string, std::string>>(input, "metadata", "task record")),
-        .argv = expect_json_field(read_nullable_json_field<std::vector<std::string>>(input, "argv", "task record")),
-        .env = expect_json_field(read_nullable_json_field<std::map<std::string, std::string>>(input, "env", "task record")),
+        .id = ExpectJsonField(ReadJsonField<std::string>(input, "id", "task record")),
+        .type = ExpectJsonField(std::move(type)),
+        .status = ExpectJsonField(std::move(status)),
+        .description = ExpectJsonField(ReadJsonField<std::string>(input, "description", "task record")),
+        .cwd = std::filesystem::path{ExpectJsonField(ReadJsonField<std::string>(input, "cwd", "task record"))},
+        .output_file = std::filesystem::path{ExpectJsonField(ReadJsonField<std::string>(input, "output_file", "task record"))},
+        .command = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(input, "command", "task record")),
+        .prompt = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(input, "prompt", "task record")),
+        .created_at = ExpectJsonField(ReadJsonField<std::string>(input, "created_at", "task record")),
+        .started_at = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(input, "started_at", "task record")),
+        .ended_at = ExpectJsonField(ReadNullableOptionalJsonField<std::string>(input, "ended_at", "task record")),
+        .return_code = ExpectJsonField(ReadNullableOptionalJsonField<int>(input, "return_code", "task record")),
+        .metadata = ExpectJsonField(ReadNullableJsonField<std::map<std::string, std::string>>(input, "metadata", "task record")),
+        .argv = ExpectJsonField(ReadNullableJsonField<std::vector<std::string>>(input, "argv", "task record")),
+        .env = ExpectJsonField(ReadNullableJsonField<std::map<std::string, std::string>>(input, "env", "task record")),
     };
 }
 
-auto default_task_root() -> Result<std::filesystem::path>
+auto default_task_root() -> absl::StatusOr<std::filesystem::path>
 {
     return codeharness::config::data_dir() / "tasks";
 }
@@ -384,15 +383,15 @@ struct TaskManager::Impl
     // persist —— 将 TaskRecord 持久化到磁盘 JSON 文件
     //
     // 路径：{root}/{task_id}.json
-    // 用 atomic_write_text_file（先写临时文件再 rename）保证写入原子性，
+    // 用 AtomicWriteTextFile（先写临时文件再 rename）保证写入原子性，
     // 避免进程崩溃时产生半写文件。
-    auto persist(const TaskRecord& record) const -> Result<void>
+    auto persist(const TaskRecord& record) const -> absl::Status
     {
         const nlohmann::json record_json = record;
-        auto write_result = atomic_write_text_file(record_path_for(root, record.id), record_json.dump(2));
+        auto write_result = AtomicWriteTextFile(record_path_for(root, record.id), record_json.dump(2));
         if (!write_result)
         {
-            return nonstd::make_unexpected(write_result.error());
+            return write_result.error();
         }
 
         return {};
@@ -406,7 +405,7 @@ struct TaskManager::Impl
     //   2. 在锁内执行 update(record) 修改内存状态
     //   3. 取出快照后释放锁
     //   4. 在锁外执行文件持久化（避免 I/O 延迟阻塞其他 task 操作）
-    auto update_record(std::string_view id, const auto& update) -> Result<TaskRecord>
+    auto update_record(std::string_view id, const auto& update) -> absl::StatusOr<TaskRecord>
     {
         TaskRecord snapshot;
         {
@@ -415,7 +414,7 @@ struct TaskManager::Impl
             auto iterator = tasks.find(std::string{id});
             if (iterator == tasks.end())
             {
-                return fail<TaskRecord>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+                return absl::StatusOr<TaskRecord>(absl::InvalidArgumentError("No task found with ID: " + std::string{id}));
             }
 
             update(iterator->second.record);
@@ -426,13 +425,13 @@ struct TaskManager::Impl
         auto persisted = persist(snapshot);
         if (!persisted)
         {
-            return nonstd::make_unexpected(persisted.error());
+            return persisted.error();
         }
 
         return snapshot;
     }
 
-    auto load_task(std::string_view id) const -> Result<std::optional<TaskRecord>>
+    auto load_task(std::string_view id) const -> absl::StatusOr<std::optional<TaskRecord>>
     {
         const auto path = record_path_for(root, id);
         if (!std::filesystem::exists(path))
@@ -443,7 +442,7 @@ struct TaskManager::Impl
         auto record = read_record_file(path);
         if (!record)
         {
-            return nonstd::make_unexpected(record.error());
+            return record.error();
         }
 
         return std::optional<TaskRecord>{std::move(*record)};
@@ -453,7 +452,7 @@ struct TaskManager::Impl
     //
     // 注意：锁内只移动 worker thread，解锁后在实际调用线程上 join。
     // 这样不会在持锁时阻塞（join 可能等很久）。
-    auto join_task(std::string_view id) -> Result<void>
+    auto join_task(std::string_view id) -> absl::Status
     {
         std::thread worker;
         {
@@ -461,7 +460,7 @@ struct TaskManager::Impl
             auto iterator = tasks.find(std::string{id});
             if (iterator == tasks.end())
             {
-                return fail<void>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+                return absl::InvalidArgumentError("No task found with ID: " + std::string{id});
             }
 
             worker = std::move(iterator->second.worker);
@@ -495,19 +494,19 @@ struct TaskManager::Impl
                 if (!terminal_status(record.status))
                 {
                     record.status = TaskStatus::Killed;
-                    record.ended_at = utc_timestamp_seconds();
+                    record.ended_at = UtcTimestampSeconds();
                 }
             });
             if (!marked)
             {
-                spdlog::warn("failed to mark task as killed during manager close: {}", marked.error().message);
+                spdlog::warn("failed to mark task as killed during manager close: {}", marked.status().message());
             }
 
             // 请求 worker 自行终止进程，而不是直接调用 process->kill()
             auto ignored = request_stop(id);
             if (!ignored)
             {
-                spdlog::warn("failed to request task stop during manager close: {}", ignored.error().message);
+                spdlog::warn("failed to request task stop during manager close: {}", ignored.status().message());
             }
         }
 
@@ -534,13 +533,13 @@ struct TaskManager::Impl
     // 不再直接调用 process->kill()。
     // 而是设置 stop_requested = true，worker 线程在 poll 循环中检查到后，
     // 由 worker 自己调用 process->kill() 和 process->wait()。
-    auto request_stop(std::string_view id) -> Result<void>
+    auto request_stop(std::string_view id) -> absl::Status
     {
         std::scoped_lock lock{mutex};
         auto iterator = tasks.find(std::string{id});
         if (iterator == tasks.end())
         {
-            return fail<void>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+            return absl::InvalidArgumentError("No task found with ID: " + std::string{id});
         }
 
         if (iterator->second.stop_requested.load(std::memory_order_relaxed))
@@ -604,23 +603,23 @@ auto TaskManager::root() const -> const std::filesystem::path&
 //   因为我们需要同时监听 process exit 和管道可读两种事件。
 // reproc::poll 支持 select-like 的多事件等待（out | exit），
 // 而阻塞 read 无法区分"进程结束"和"管道暂时无数据"。
-auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRecord>
+auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> absl::StatusOr<TaskRecord>
 {
-    if (auto mkdir = ensure_directory(impl_->root, "task directory"); !mkdir)
+    if (auto mkdir = EnsureDirectory(impl_->root, "task directory"); !mkdir)
     {
-        return nonstd::make_unexpected(mkdir.error());
+        return mkdir.error();
     }
 
     auto cwd = canonical_directory(spec.cwd);
     if (!cwd)
     {
-        return nonstd::make_unexpected(cwd.error());
+        return cwd.error();
     }
 
     auto argv = argv_for_spec(spec);
     if (!argv)
     {
-        return nonstd::make_unexpected(argv.error());
+        return argv.error();
     }
 
     auto task_id = generate_task_id(spec.type);
@@ -633,7 +632,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
     auto output_stream = std::ofstream{output_file, std::ios::binary | std::ios::trunc};
     if (!output_stream)
     {
-        return fail<TaskRecord>(ErrorKind::Io, "failed to create task output file: " + output_file.string());
+        return absl::StatusOr<TaskRecord>(absl::InternalError("failed to create task output file: " + output_file.string()));
     }
     output_stream.close();
 
@@ -641,13 +640,13 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
         .id = task_id,
         .type = spec.type,
         .status = TaskStatus::Running,
-        .description = std::string{trim(spec.description)},
+        .description = std::string{Trim(spec.description)},
         .cwd = *cwd,
         .output_file = output_file,
         .command = spec.command,
         .prompt = spec.prompt,
-        .created_at = utc_timestamp_seconds(),
-        .started_at = utc_timestamp_seconds(),
+        .created_at = UtcTimestampSeconds(),
+        .started_at = UtcTimestampSeconds(),
         .metadata = spec.metadata,
         .argv = spec.argv,
         .env = spec.env,
@@ -680,7 +679,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
 
     if (auto error = process->start(*argv, options))
     {
-        return fail<TaskRecord>(ErrorKind::Io, "failed to start task process: " + error.message());
+        return absl::StatusOr<TaskRecord>(absl::InternalError("failed to start task process: " + error.message()));
     }
 
     auto persisted = impl_->persist(record);
@@ -688,7 +687,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
     {
         process->kill();
         process->wait(reproc::milliseconds{5000});
-        return nonstd::make_unexpected(persisted.error());
+        return persisted.error();
     }
 
     const auto record_snapshot = record;
@@ -698,8 +697,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
         {
             process->kill();
             process->wait(reproc::milliseconds{5000});
-            return fail<TaskRecord>(ErrorKind::Internal,
-                "task id collision: " + record.id);
+            return absl::StatusOr<TaskRecord>(absl::InternalError("task id collision: " + record.id));
         }
 
         auto& state = impl_->tasks[record.id];
@@ -729,7 +727,7 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
             //   - process->kill() 等操作只在 worker 线程调用。调用方线程只设
             //     stop_requested atomic，绝不碰 process 指针。
             auto output = std::ofstream{output_path_for(worker_root, worker_id), std::ios::binary | std::ios::app};
-            if (!output)
+            if(!output.ok())
             {
                 spdlog::warn("failed to open task output log for {}", worker_id);
             }
@@ -823,11 +821,11 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
                     current.status = exit_status == 0 ? TaskStatus::Completed : TaskStatus::Failed;
                 }
 
-                current.ended_at = utc_timestamp_seconds();
+                current.ended_at = UtcTimestampSeconds();
             });
-            if (!updated)
+            if(!updated.ok())
             {
-                spdlog::warn("failed to persist completed task {}: {}", worker_id, updated.error().message);
+                spdlog::warn("failed to persist completed task {}: {}", worker_id, updated.status().message());
             }
 
             // worker 线程独占清理——没有其他线程在此时访问 process
@@ -857,18 +855,18 @@ auto TaskManager::create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRec
 //   这是"进程级隔离"的方式。每个 agent 运行在独立子进程中，拥有自己的
 //   内存空间。如果有子 agent 崩溃，不会影响主 agent。代价是启动成本
 //   稍高（约 50-100ms），但对于 coding agent 的长时间运行场景可接受。
-auto TaskManager::create_agent_task(const AgentTaskSpec& spec) -> Result<TaskRecord>
+auto TaskManager::create_agent_task(const AgentTaskSpec& spec) -> absl::StatusOr<TaskRecord>
 {
-    const auto prompt = std::string{trim(spec.prompt)};
+    const auto prompt = std::string{Trim(spec.prompt)};
     if (prompt.empty())
     {
-        return fail<TaskRecord>(ErrorKind::InvalidArgument, "create_agent_task requires prompt");
+        return absl::StatusOr<TaskRecord>(absl::InvalidArgumentError("create_agent_task requires prompt"));
     }
 
     auto cwd = canonical_directory(spec.cwd);
     if (!cwd)
     {
-        return nonstd::make_unexpected(cwd.error());
+        return cwd.error();
     }
 
     auto command = spec.command;
@@ -897,12 +895,12 @@ auto TaskManager::create_agent_task(const AgentTaskSpec& spec) -> Result<TaskRec
         });
 }
 
-auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> Result<std::vector<TaskRecord>>
+auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> absl::StatusOr<std::vector<TaskRecord>>
 {
-    auto mkdir = ensure_directory(impl_->root, "task directory");
+    auto mkdir = EnsureDirectory(impl_->root, "task directory");
     if (!mkdir)
     {
-        return nonstd::make_unexpected(mkdir.error());
+        return mkdir.error();
     }
 
     std::map<std::string, TaskRecord> records;
@@ -918,7 +916,7 @@ auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> Result<s
     auto dir_iter = std::filesystem::directory_iterator{impl_->root, error};
     if (error)
     {
-        return fail<std::vector<TaskRecord>>(ErrorKind::Io, "failed to scan task directory: " + error.message());
+        return fail<std::vector<TaskRecord>>(absl::InternalError , "failed to scan task directory: " + error.message());
     }
 
     for (const auto& entry : dir_iter)
@@ -932,7 +930,7 @@ auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> Result<s
         auto record = read_record_file(path);
         if (!record)
         {
-            return nonstd::make_unexpected(record.error());
+            return record.error();
         }
 
         records.insert_or_assign(record->id, std::move(*record));
@@ -959,7 +957,7 @@ auto TaskManager::list_tasks(std::optional<TaskStatus> status) const -> Result<s
     return result;
 }
 
-auto TaskManager::get_task(std::string_view id) const -> Result<std::optional<TaskRecord>>
+auto TaskManager::get_task(std::string_view id) const -> absl::StatusOr<std::optional<TaskRecord>>
 {
     {
         std::scoped_lock lock{impl_->mutex};
@@ -973,16 +971,16 @@ auto TaskManager::get_task(std::string_view id) const -> Result<std::optional<Ta
     return impl_->load_task(id);
 }
 
-auto TaskManager::stop_task(std::string_view id) -> Result<TaskRecord>
+auto TaskManager::stop_task(std::string_view id) -> absl::StatusOr<TaskRecord>
 {
     auto current = get_task(id);
-    if (!current)
+    if(!current.ok())
     {
-        return nonstd::make_unexpected(current.error());
+        return current.status();
     }
     if (!*current)
     {
-        return fail<TaskRecord>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+        return absl::StatusOr<TaskRecord>(absl::InvalidArgumentError("No task found with ID: " + std::string{id}));
     }
 
     if (terminal_status((*current)->status))
@@ -997,68 +995,68 @@ auto TaskManager::stop_task(std::string_view id) -> Result<TaskRecord>
         if (!terminal_status(record.status))
         {
             record.status = TaskStatus::Killed;
-            record.ended_at = utc_timestamp_seconds();
+            record.ended_at = UtcTimestampSeconds();
         }
     });
-    if (!updated)
+    if(!updated.ok())
     {
-        return nonstd::make_unexpected(updated.error());
+        return updated.status();
     }
 
     // 请求 worker 自行终止进程（而非直接 kill）
     auto stopped = impl_->request_stop(id);
     if (!stopped)
     {
-        return nonstd::make_unexpected(stopped.error());
+        return stopped.error();
     }
 
     auto joined = impl_->join_task(id);
     if (!joined)
     {
-        return nonstd::make_unexpected(joined.error());
+        return joined.error();
     }
 
     auto final_record = get_task(id);
     if (!final_record)
     {
-        return nonstd::make_unexpected(final_record.error());
+        return final_record.error();
     }
     if (!*final_record)
     {
-        return fail<TaskRecord>(ErrorKind::Internal, "task disappeared after stop: " + std::string{id});
+        return absl::StatusOr<TaskRecord>(absl::InternalError("task disappeared after stop: " + std::string{id}));
     }
 
     return **final_record;
 }
 
-auto TaskManager::read_output_tail(std::string_view id, std::size_t max_bytes) const -> Result<std::string>
+auto TaskManager::read_output_tail(std::string_view id, std::size_t max_bytes) const -> absl::StatusOr<std::string>
 {
     auto task = get_task(id);
-    if (!task)
+    if(!task.ok())
     {
-        return nonstd::make_unexpected(task.error());
+        return task.status();
     }
     if (!*task)
     {
-        return fail<std::string>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+        return fail<std::string>(absl::InvalidArgumentError , "No task found with ID: " + std::string{id});
     }
 
     std::ifstream file{(*task)->output_file, std::ios::binary};
     if (!file)
     {
-        return fail<std::string>(ErrorKind::Io, "failed to open task output: " + (*task)->output_file.string());
+        return fail<std::string>(absl::InternalError , "failed to open task output: " + (*task)->output_file.string());
     }
 
     file.seekg(0, std::ios::end);
     if (!file)
     {
-        return fail<std::string>(ErrorKind::Io, "failed to seek output file: " + (*task)->output_file.string());
+        return fail<std::string>(absl::InternalError , "failed to seek output file: " + (*task)->output_file.string());
     }
 
     const auto end_position = file.tellg();
     if (end_position == static_cast<std::streampos>(-1))
     {
-        return fail<std::string>(ErrorKind::Io, "failed to read output file size: " + (*task)->output_file.string());
+        return fail<std::string>(absl::InternalError , "failed to read output file size: " + (*task)->output_file.string());
     }
 
     const auto size = static_cast<std::streamoff>(end_position);
@@ -1076,28 +1074,28 @@ auto TaskManager::read_output_tail(std::string_view id, std::size_t max_bytes) c
 
     if (!file.good() && !file.eof())
     {
-        return fail<std::string>(ErrorKind::Io, "failed to read task output: " + (*task)->output_file.string());
+        return fail<std::string>(absl::InternalError , "failed to read task output: " + (*task)->output_file.string());
     }
 
     return result;
 }
 
-auto TaskManager::wait_for_task(std::string_view id) -> Result<TaskRecord>
+auto TaskManager::wait_for_task(std::string_view id) -> absl::StatusOr<TaskRecord>
 {
     auto joined = impl_->join_task(id);
     if (!joined)
     {
-        return nonstd::make_unexpected(joined.error());
+        return joined.error();
     }
 
     auto task = get_task(id);
-    if (!task)
+    if(!task.ok())
     {
-        return nonstd::make_unexpected(task.error());
+        return task.status();
     }
     if (!*task)
     {
-        return fail<TaskRecord>(ErrorKind::InvalidArgument, "No task found with ID: " + std::string{id});
+        return absl::StatusOr<TaskRecord>(absl::InvalidArgumentError("No task found with ID: " + std::string{id}));
     }
 
     return **task;

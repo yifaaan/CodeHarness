@@ -32,8 +32,6 @@
 #include "codeharness/coordinator/task_notification.h"
 #include "codeharness/core/strings.h"
 
-#include <nonstd/expected.hpp>
-
 #include <memory>
 #include <optional>
 #include <string>
@@ -47,12 +45,12 @@ namespace
 
 auto agent_type_for_lookup(const std::optional<std::string>& value) -> std::string_view
 {
-    if (!value)
+    if(!value.ok())
     {
         return {};
     }
 
-    return trim(*value);
+    return Trim(*value);
 }
 
 } // namespace
@@ -105,12 +103,12 @@ auto CoordinatorRuntime::agent_definitions() const noexcept -> const AgentDefini
 }
 
 auto CoordinatorRuntime::spawn_agent(const tasks::AgentSpawnRequest& request)
-    -> Result<tasks::AgentSpawnResponse>
+    -> absl::StatusOr<tasks::AgentSpawnResponse>
 {
     if (request.mode != "local_agent")
     {
         return fail<tasks::AgentSpawnResponse>(
-            ErrorKind::InvalidArgument,
+            absl::InvalidArgumentError ,
             "Invalid mode. Use local_agent.");
     }
 
@@ -127,32 +125,32 @@ auto CoordinatorRuntime::spawn_agent(const tasks::AgentSpawnRequest& request)
     };
 
     auto resolved = resolve_spawn_config(std::move(config), agent_definitions_, agent_type_for_lookup(request.subagent_type));
-    if (!resolved)
+    if(!resolved.ok())
     {
-        return nonstd::make_unexpected(resolved.error());
+        return resolved.status();
     }
 
     auto ensured = ensure_team_exists(resolved->team);
     if (!ensured)
     {
-        return nonstd::make_unexpected(ensured.error());
+        return ensured.error();
     }
 
     auto spawned = subprocess_backend_.spawn(*resolved);
     if (!spawned)
     {
-        return nonstd::make_unexpected(spawned.error());
+        return spawned.error();
     }
 
     auto task = task_manager_.get_task(spawned->task_id);
-    if (!task)
+    if(!task.ok())
     {
-        return nonstd::make_unexpected(task.error());
+        return task.status();
     }
     if (!task->has_value())
     {
         return fail<tasks::AgentSpawnResponse>(
-            ErrorKind::Internal,
+            absl::InternalError ,
             "spawned task not found: " + spawned->task_id);
     }
 
@@ -173,7 +171,7 @@ auto CoordinatorRuntime::spawn_handler() -> tasks::AgentSpawnHandler
 }
 
 auto CoordinatorRuntime::drain_coordinator_mailbox(std::string_view coordinator_id)
-    -> Result<mailbox::WorkerMailboxDrain>
+    -> absl::StatusOr<mailbox::WorkerMailboxDrain>
 {
     return mailbox::drain_worker_mailbox(mailbox_, coordinator_id);
 }
@@ -182,17 +180,17 @@ auto CoordinatorRuntime::publish_task_result(std::string_view sender_id,
                                              std::string_view recipient_id,
                                              std::string_view task_id,
                                              std::string result,
-                                             std::string summary) -> Result<mailbox::MailboxMessage>
+                                             std::string summary) -> absl::StatusOr<mailbox::MailboxMessage>
 {
     auto task = task_manager_.get_task(task_id);
-    if (!task)
+    if(!task.ok())
     {
-        return nonstd::make_unexpected(task.error());
+        return task.status();
     }
     if (!task->has_value())
     {
         return fail<mailbox::MailboxMessage>(
-            ErrorKind::InvalidArgument,
+            absl::InvalidArgumentError ,
             "No task found with ID: " + std::string{task_id});
     }
 
@@ -201,18 +199,18 @@ auto CoordinatorRuntime::publish_task_result(std::string_view sender_id,
     auto sent = mailbox_.send(std::string{recipient_id}, std::move(message));
     if (!sent)
     {
-        return nonstd::make_unexpected(sent.error());
+        return sent.error();
     }
 
     return sent;
 }
 
-auto CoordinatorRuntime::ensure_team_exists(std::string_view team_name) -> Result<void>
+auto CoordinatorRuntime::ensure_team_exists(std::string_view team_name) -> absl::Status
 {
     auto existing = team_manager_.get_team(team_name);
     if (!existing)
     {
-        return nonstd::make_unexpected(existing.error());
+        return existing.error();
     }
     if (existing->has_value())
     {
@@ -220,13 +218,13 @@ auto CoordinatorRuntime::ensure_team_exists(std::string_view team_name) -> Resul
     }
 
     auto created = team_manager_.create_team(team_name);
-    if (!created)
+    if(!created.ok())
     {
-        if (created.error().kind == ErrorKind::AlreadyExists)
+        if (created.status().kind == absl::AlreadyExistsError )
         {
             return {};
         }
-        return nonstd::make_unexpected(created.error());
+        return created.status();
     }
 
     return {};
@@ -234,12 +232,12 @@ auto CoordinatorRuntime::ensure_team_exists(std::string_view team_name) -> Resul
 
 auto create_default_runtime(const std::filesystem::path& cwd,
                             AgentDefinitionLoadOptions options)
-    -> Result<std::unique_ptr<CoordinatorRuntime>>
+    -> absl::StatusOr<std::unique_ptr<CoordinatorRuntime>>
 {
     auto task_root = tasks::default_task_root();
     if (!task_root)
     {
-        return nonstd::make_unexpected(task_root.error());
+        return task_root.error();
     }
 
     auto team_root = mailbox::default_teams_root();
@@ -248,7 +246,7 @@ auto create_default_runtime(const std::filesystem::path& cwd,
     auto definitions = load_agent_definition_registry(cwd, std::move(options));
     if (!definitions)
     {
-        return nonstd::make_unexpected(definitions.error());
+        return definitions.error();
     }
 
     return std::make_unique<CoordinatorRuntime>(

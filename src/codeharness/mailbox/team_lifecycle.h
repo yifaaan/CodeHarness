@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <nlohmann/json.hpp>
 
@@ -95,16 +95,16 @@ public:
     //   1. 检查 root / name / team.json 是否已存在（防止重复创建）
     //   2. 创建 root / name / 目录
     //   3. 原子写入 team.json
-    auto create_team(std::string_view name, std::string_view description = {}) -> Result<TeamFile>;
+    auto create_team(std::string_view name, std::string_view description = {}) -> absl::StatusOr<TeamFile>;
 
     // 删除一个团队及其整个目录。
-    auto delete_team(std::string_view name) -> Result<void>;
+    auto delete_team(std::string_view name) -> absl::Status;
 
     // 读取团队元数据。
-    auto get_team(std::string_view name) const -> Result<std::optional<TeamFile>>;
+    auto get_team(std::string_view name) const -> absl::StatusOr<std::optional<TeamFile>>;
 
     // 列出所有团队，按名称排序。
-    auto list_teams() const -> Result<std::vector<TeamFile>>;
+    auto list_teams() const -> absl::StatusOr<std::vector<TeamFile>>;
 
 
     // 向团队添加一个成员。
@@ -112,12 +112,12 @@ public:
     //   1. 从磁盘读取 team.json
     //   2. 将 member 插入 members map（如果 agent_id 已存在则替换）
     //   3. 原子写回 team.json
-    auto add_member(std::string_view team_name, TeamMember member) -> Result<TeamFile>;
-    auto remove_member(std::string_view team_name, std::string_view agent_id) -> Result<TeamFile>;
+    auto add_member(std::string_view team_name, TeamMember member) -> absl::StatusOr<TeamFile>;
+    auto remove_member(std::string_view team_name, std::string_view agent_id) -> absl::StatusOr<TeamFile>;
 
 
     // 设置 leader（Coordinator Agent）。
-    auto set_lead_agent(std::string_view team_name, std::string_view agent_id) -> Result<TeamFile>;
+    auto set_lead_agent(std::string_view team_name, std::string_view agent_id) -> absl::StatusOr<TeamFile>;
 
 
     // 返回根目录路径。
@@ -128,10 +128,10 @@ public:
 
 private:
     // 从磁盘读取 team.json，如果不存在则返回错误。
-    auto require_team(std::string_view team_name) const -> Result<TeamFile>;
+    auto require_team(std::string_view team_name) const -> absl::StatusOr<TeamFile>;
 
     // 原子写入 team.json 到团队目录。
-    auto save_team(const TeamFile& team) const -> Result<void>;
+    auto save_team(const TeamFile& team) const -> absl::Status;
 
     std::filesystem::path root_;
 };

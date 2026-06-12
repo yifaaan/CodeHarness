@@ -52,10 +52,10 @@ auto make_task_notification(const tasks::TaskRecord& record,
                             std::string summary) -> TaskNotification
 {
     auto status = std::string{tasks::task_status_name(record.status)};
-    auto notification_summary = std::string{trim(summary)};
+    auto notification_summary = std::string{Trim(summary)};
     if (notification_summary.empty())
     {
-        notification_summary = std::string{trim(record.description)};
+        notification_summary = std::string{Trim(record.description)};
     }
     if (notification_summary.empty())
     {

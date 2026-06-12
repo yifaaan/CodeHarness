@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <nlohmann/json.hpp>
 
@@ -66,7 +66,7 @@ enum class MessageType
 // 枚举 ↔ 字符串转换函数（在 mailbox.cpp 中实现）
 // 用于 JSON 序列化/反序列化的边界层。
 auto message_type_name(MessageType type) -> std::string_view;
-auto parse_message_type(std::string_view value) -> Result<MessageType>;
+auto parse_message_type(std::string_view value) -> absl::StatusOr<MessageType>;
 
 // MailboxMessage —— 一条消息的完整数据
 struct MailboxMessage
@@ -113,7 +113,7 @@ public:
 
     // 向 recipient_id 的收件箱投递一条消息。
     //
-    // 写入过程（原子写，与 tools/text_file.cpp 中的 atomic_write_text_file 相同）：
+    // 写入过程（原子写，与 tools/text_file.cpp 中的 AtomicWriteTextFile 相同）：
     //   1. 确保 inbox 目录存在
     //   2. 扫描 inbox，找到最大的序号
     //   3. 生成消息 ID 和时间戳，填入 message
@@ -122,22 +122,22 @@ public:
     //   6. rename .tmp → 最终文件名（操作系统保证 rename 的原子性）
     //
     // 返回值：填充了 id、recipient_id、timestamp 的消息副本。
-    auto send(const std::string& recipient_id, MailboxMessage message) -> Result<MailboxMessage>;
+    auto send(const std::string& recipient_id, MailboxMessage message) -> absl::StatusOr<MailboxMessage>;
 
 
     // 读取 task_id 收件箱中的消息。
     // - unread_only = true 时，只返回 read 字段为 false 的消息。
     // - 返回的消息按文件名排序（即按发送时间排序）。
     // - 如果 inbox 目录不存在，返回空 vector（不是错误）。
-    auto poll(const std::string& task_id, bool unread_only = true) const -> Result<std::vector<MailboxMessage>>;
+    auto poll(const std::string& task_id, bool unread_only = true) const -> absl::StatusOr<std::vector<MailboxMessage>>;
 
     // 将指定消息标记为已读。
     // 原地更新 JSON 文件（同样是原子写：写 .tmp → rename）。
-    auto mark_read(const std::string& task_id, const std::string& message_id) -> Result<void>;
+    auto mark_read(const std::string& task_id, const std::string& message_id) -> absl::Status;
 
     // 清空 task_id 的收件箱：删除所有 .json 消息文件。
     // 忽略单个文件删除失败（例如文件已被其他进程删除）。
-    auto clear(const std::string& task_id) -> Result<void>;
+    auto clear(const std::string& task_id) -> absl::Status;
 
 private:
     struct Impl;

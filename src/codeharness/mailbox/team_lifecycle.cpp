@@ -111,7 +111,7 @@ auto team_file_path(const std::filesystem::path& root, std::string_view team_nam
     return root / team_name / TEAM_FILE_NAME;
 }
 
-auto read_team_file_from_disk(const std::filesystem::path& path) -> Result<std::optional<TeamFile>>
+auto read_team_file_from_disk(const std::filesystem::path& path) -> absl::StatusOr<std::optional<TeamFile>>
 {
     std::error_code error;
     if (!std::filesystem::exists(path, error))
@@ -122,7 +122,7 @@ auto read_team_file_from_disk(const std::filesystem::path& path) -> Result<std::
     std::ifstream file{path, std::ios::binary};
     if (!file)
     {
-        return fail<std::optional<TeamFile>>(ErrorKind::Io, "team: failed to open file: " + path.string());
+        return fail<std::optional<TeamFile>>(absl::InternalError , "team: failed to open file: " + path.string());
     }
 
     try
@@ -133,7 +133,7 @@ auto read_team_file_from_disk(const std::filesystem::path& path) -> Result<std::
     }
     catch (const std::exception& e)
     {
-        return fail<std::optional<TeamFile>>(ErrorKind::Io, std::string{"team: corrupted team.json: "} + e.what());
+        return fail<std::optional<TeamFile>>(absl::InternalError , std::string{"team: corrupted team.json: "} + e.what());
     }
 }
 
@@ -153,40 +153,40 @@ auto TeamLifecycleManager::team_dir(std::string_view team_name) const -> std::fi
     return root_ / team_name;
 }
 
-auto TeamLifecycleManager::create_team(std::string_view name, std::string_view description) -> Result<TeamFile>
+auto TeamLifecycleManager::create_team(std::string_view name, std::string_view description) -> absl::StatusOr<TeamFile>
 {
     if (!is_valid_team_name(name))
     {
-        return fail<TeamFile>(ErrorKind::InvalidArgument, "team: invalid team name: " + std::string{name});
+        return absl::StatusOr<TeamFile>(absl::InvalidArgumentError("team: invalid team name: " + std::string{name}));
     }
 
     const auto path = team_file_path(root_, name);
     std::error_code error;
     if (std::filesystem::exists(path, error))
     {
-        return fail<TeamFile>(ErrorKind::AlreadyExists, "team: team already exists: " + std::string{name});
+        return absl::StatusOr<TeamFile>(absl::AlreadyExistsError("team: team already exists: " + std::string{name}));
     }
 
     TeamFile team;
     team.name = name;
     team.description = description;
-    team.created_at = utc_timestamp_seconds();
+    team.created_at = UtcTimestampSeconds();
 
-    if (auto dir_result = ensure_directory(root_ / name, "team directory"); !dir_result)
+    if (auto dir_result = EnsureDirectory(root_ / name, "team directory"); !dir_result)
     {
-        return nonstd::make_unexpected(dir_result.error());
+        return dir_result.error();
     }
 
     const auto json = nlohmann::json(team).dump(2);
-    if (auto write_result = atomic_write_text_file(path, json); !write_result)
+    if (auto write_result = AtomicWriteTextFile(path, json); !write_result)
     {
-        return nonstd::make_unexpected(write_result.error());
+        return write_result.error();
     }
 
     return team;
 }
 
-auto TeamLifecycleManager::delete_team(std::string_view name) -> Result<void>
+auto TeamLifecycleManager::delete_team(std::string_view name) -> absl::Status
 {
     const auto dir = root_ / name;
     const auto path = dir / TEAM_FILE_NAME;
@@ -194,25 +194,25 @@ auto TeamLifecycleManager::delete_team(std::string_view name) -> Result<void>
     std::error_code error;
     if (!std::filesystem::exists(path, error))
     {
-        return fail<void>(ErrorKind::NotFound, "team: team not found: " + std::string{name});
+        return absl::NotFoundError("team: team not found: " + std::string{name});
     }
 
     std::error_code remove_error;
     std::filesystem::remove_all(dir, remove_error);
     if (remove_error)
     {
-        return fail<void>(ErrorKind::Io, "team: failed to delete team directory: " + remove_error.message());
+        return absl::InternalError("team: failed to delete team directory: " + remove_error.message());
     }
 
     return {};
 }
 
-auto TeamLifecycleManager::get_team(std::string_view name) const -> Result<std::optional<TeamFile>>
+auto TeamLifecycleManager::get_team(std::string_view name) const -> absl::StatusOr<std::optional<TeamFile>>
 {
     return read_team_file_from_disk(team_file_path(root_, name));
 }
 
-auto TeamLifecycleManager::list_teams() const -> Result<std::vector<TeamFile>>
+auto TeamLifecycleManager::list_teams() const -> absl::StatusOr<std::vector<TeamFile>>
 {
     std::error_code error;
     if (!std::filesystem::exists(root_, error))
@@ -241,89 +241,88 @@ auto TeamLifecycleManager::list_teams() const -> Result<std::vector<TeamFile>>
     return teams;
 }
 
-auto TeamLifecycleManager::add_member(std::string_view team_name, TeamMember member) -> Result<TeamFile>
+auto TeamLifecycleManager::add_member(std::string_view team_name, TeamMember member) -> absl::StatusOr<TeamFile>
 {
     auto team = require_team(team_name);
-    if (!team)
+    if(!team.ok())
     {
-        return nonstd::make_unexpected(team.error());
+        return team.status();
     }
 
     if (member.joined_at.empty())
     {
-        member.joined_at = utc_timestamp_seconds();
+        member.joined_at = UtcTimestampSeconds();
     }
 
     team->members.insert_or_assign(member.agent_id, std::move(member));
 
     if (auto save_result = save_team(*team); !save_result)
     {
-        return nonstd::make_unexpected(save_result.error());
+        return save_result.error();
     }
 
     return team;
 }
 
-auto TeamLifecycleManager::remove_member(std::string_view team_name, std::string_view agent_id) -> Result<TeamFile>
+auto TeamLifecycleManager::remove_member(std::string_view team_name, std::string_view agent_id) -> absl::StatusOr<TeamFile>
 {
     auto team = require_team(team_name);
-    if (!team)
+    if(!team.ok())
     {
-        return nonstd::make_unexpected(team.error());
+        return team.status();
     }
 
     if (team->members.erase(std::string{agent_id}) == 0)
     {
-        return fail<TeamFile>(ErrorKind::NotFound,
-            "team: agent '" + std::string{agent_id} + "' is not a member of team '" + std::string{team_name} + "'");
+        return absl::StatusOr<TeamFile>(absl::NotFoundError("team: agent '" + std::string{agent_id} + "' is not a member of team '" + std::string{team_name} + "'"));
     }
 
     if (auto save_result = save_team(*team); !save_result)
     {
-        return nonstd::make_unexpected(save_result.error());
+        return save_result.error();
     }
 
     return team;
 }
 
-auto TeamLifecycleManager::set_lead_agent(std::string_view team_name, std::string_view agent_id) -> Result<TeamFile>
+auto TeamLifecycleManager::set_lead_agent(std::string_view team_name, std::string_view agent_id) -> absl::StatusOr<TeamFile>
 {
     auto team = require_team(team_name);
-    if (!team)
+    if(!team.ok())
     {
-        return nonstd::make_unexpected(team.error());
+        return team.status();
     }
 
     team->lead_agent_id = agent_id;
 
     if (auto save_result = save_team(*team); !save_result)
     {
-        return nonstd::make_unexpected(save_result.error());
+        return save_result.error();
     }
 
     return team;
 }
 
-auto TeamLifecycleManager::require_team(std::string_view team_name) const -> Result<TeamFile>
+auto TeamLifecycleManager::require_team(std::string_view team_name) const -> absl::StatusOr<TeamFile>
 {
     auto result = read_team_file_from_disk(team_file_path(root_, team_name));
-    if (!result)
+    if(!result.ok())
     {
-        return nonstd::make_unexpected(result.error());
+        return result.status();
     }
 
     if (!result->has_value())
     {
-        return fail<TeamFile>(ErrorKind::NotFound, "team: team not found: " + std::string{team_name});
+        return absl::StatusOr<TeamFile>(absl::NotFoundError("team: team not found: " + std::string{team_name}));
     }
 
     return std::move(**result);
 }
 
-auto TeamLifecycleManager::save_team(const TeamFile& team) const -> Result<void>
+auto TeamLifecycleManager::save_team(const TeamFile& team) const -> absl::Status
 {
     const auto json = nlohmann::json(team).dump(2);
-    return atomic_write_text_file(team_file_path(root_, team.name), json);
+    return AtomicWriteTextFile(team_file_path(root_, team.name), json);
 }
 
 } // namespace codeharness::mailbox

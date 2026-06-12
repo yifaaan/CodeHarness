@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <nlohmann/json.hpp>
 
@@ -76,9 +76,9 @@ struct AgentTaskSpec
 
 auto task_type_name(TaskType type) -> std::string_view;
 auto task_status_name(TaskStatus status) -> std::string_view;
-auto parse_task_type(std::string_view value) -> Result<TaskType>;
-auto parse_task_status(std::string_view value) -> Result<TaskStatus>;
-auto default_task_root() -> Result<std::filesystem::path>;
+auto parse_task_type(std::string_view value) -> absl::StatusOr<TaskType>;
+auto parse_task_status(std::string_view value) -> absl::StatusOr<TaskStatus>;
+auto default_task_root() -> absl::StatusOr<std::filesystem::path>;
 
 auto to_json(nlohmann::json& output, const TaskRecord& record) -> void;
 auto from_json(const nlohmann::json& input, TaskRecord& record) -> void;
@@ -97,13 +97,13 @@ public:
 
     [[nodiscard]] auto root() const -> const std::filesystem::path&;
 
-    auto create_shell_task(const ShellTaskSpec& spec) -> Result<TaskRecord>;
-    auto create_agent_task(const AgentTaskSpec& spec) -> Result<TaskRecord>;
-    auto list_tasks(std::optional<TaskStatus> status = std::nullopt) const -> Result<std::vector<TaskRecord>>;
-    auto get_task(std::string_view id) const -> Result<std::optional<TaskRecord>>;
-    auto stop_task(std::string_view id) -> Result<TaskRecord>;
-    auto read_output_tail(std::string_view id, std::size_t max_bytes = 12000) const -> Result<std::string>;
-    auto wait_for_task(std::string_view id) -> Result<TaskRecord>;
+    auto create_shell_task(const ShellTaskSpec& spec) -> absl::StatusOr<TaskRecord>;
+    auto create_agent_task(const AgentTaskSpec& spec) -> absl::StatusOr<TaskRecord>;
+    auto list_tasks(std::optional<TaskStatus> status = std::nullopt) const -> absl::StatusOr<std::vector<TaskRecord>>;
+    auto get_task(std::string_view id) const -> absl::StatusOr<std::optional<TaskRecord>>;
+    auto stop_task(std::string_view id) -> absl::StatusOr<TaskRecord>;
+    auto read_output_tail(std::string_view id, std::size_t max_bytes = 12000) const -> absl::StatusOr<std::string>;
+    auto wait_for_task(std::string_view id) -> absl::StatusOr<TaskRecord>;
 
 private:
     struct Impl;

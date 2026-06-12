@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/mailbox/team_lifecycle.h"
 #include "codeharness/tasks/task_manager.h"
 
@@ -80,7 +80,7 @@ class SubprocessBackend
 public:
     SubprocessBackend(tasks::TaskManager& task_manager, mailbox::TeamLifecycleManager& team_manager);
 
-    auto spawn(const TeammateSpawnConfig& config) -> Result<SpawnResult>;
+    auto spawn(const TeammateSpawnConfig& config) -> absl::StatusOr<SpawnResult>;
 
 private:
     tasks::TaskManager& task_manager_;

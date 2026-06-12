@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 
 #include <filesystem>
 #include <memory>
@@ -112,23 +112,23 @@ auto parse_agent_definition_markdown(std::string_view default_name, std::string 
     -> AgentDefinition;
 
 // 加载单个 .md agent 定义文件。
-auto load_agent_definition_file(const std::filesystem::path& path, std::string source) -> Result<AgentDefinition>;
+auto load_agent_definition_file(const std::filesystem::path& path, std::string source) -> absl::StatusOr<AgentDefinition>;
 
 // 从多个目录直接扫描 *.md agent 定义文件，按路径排序并去重。
 auto load_agent_definitions_from_dirs(std::span<const std::filesystem::path> directories, std::string_view source)
-    -> Result<std::vector<AgentDefinition>>;
+    -> absl::StatusOr<std::vector<AgentDefinition>>;
 
 // 从 cwd 开始向上查找 project agent 目录，最多到 git 根。返回顺序是父目录 → 子目录，
 auto discover_project_agent_dirs(const std::filesystem::path& cwd,
                                  std::span<const std::filesystem::path> relative_dirs)
-    -> Result<std::vector<std::filesystem::path>>;
+    -> absl::StatusOr<std::vector<std::filesystem::path>>;
 
 // 组合加载：user → extra → project。
 auto load_agent_definitions(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options = {})
-    -> Result<std::vector<AgentDefinition>>;
+    -> absl::StatusOr<std::vector<AgentDefinition>>;
 
 // 组合加载并注册到 registry；后加载来源覆盖先加载来源。
 auto load_agent_definition_registry(const std::filesystem::path& cwd, AgentDefinitionLoadOptions options = {})
-    -> Result<AgentDefinitionRegistry>;
+    -> absl::StatusOr<AgentDefinitionRegistry>;
 
 } // namespace codeharness::coordinator

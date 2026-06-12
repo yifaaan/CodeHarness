@@ -26,8 +26,6 @@
 #include "codeharness/core/strings.h"
 
 #include <fmt/ranges.h>
-#include <nonstd/expected.hpp>
-
 #include <map>
 #include <span>
 #include <string>
@@ -55,19 +53,19 @@ auto insert_csv_if(std::map<std::string, std::string>& m, std::string key, const
     if (!values.empty()) { m[std::move(key)] = join_csv(values); }
 }
 
-auto validate_spawn_config(const TeammateSpawnConfig& config) -> Result<void>
+auto validate_spawn_config(const TeammateSpawnConfig& config) -> absl::Status
 {
-    if (trim(config.name).empty())
+    if (Trim(config.name).empty())
     {
-        return fail<void>(ErrorKind::InvalidArgument, "subprocess spawn requires non-empty agent name");
+        return absl::InvalidArgumentError("subprocess spawn requires non-empty agent name");
     }
-    if (trim(config.team).empty())
+    if (Trim(config.team).empty())
     {
-        return fail<void>(ErrorKind::InvalidArgument, "subprocess spawn requires non-empty team name");
+        return absl::InvalidArgumentError("subprocess spawn requires non-empty team name");
     }
-    if (trim(config.prompt).empty())
+    if (Trim(config.prompt).empty())
     {
-        return fail<void>(ErrorKind::InvalidArgument, "subprocess spawn requires non-empty prompt");
+        return absl::InvalidArgumentError("subprocess spawn requires non-empty prompt");
     }
 
     return {};
@@ -79,26 +77,26 @@ SubprocessBackend::SubprocessBackend(tasks::TaskManager& task_manager, mailbox::
 {
 }
 
-auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<SpawnResult>
+auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> absl::StatusOr<SpawnResult>
 {
     if (auto valid = validate_spawn_config(config); !valid)
     {
-        return nonstd::make_unexpected(valid.error());
+        return valid.error();
     }
 
     const auto name = normalized_agent_name(config.name);
     const auto team_name = normalized_team_name(config.team);
-    const auto prompt = std::string{trim(config.prompt)};
+    const auto prompt = std::string{Trim(config.prompt)};
     const auto agent_id = make_agent_id(name, team_name);
 
     auto team = team_manager_.get_team(team_name);
-    if (!team)
+    if(!team.ok())
     {
-        return nonstd::make_unexpected(team.error());
+        return team.status();
     }
     if (!team->has_value())
     {
-        return fail<SpawnResult>(ErrorKind::InvalidArgument, "subprocess spawn team does not exist: " + team_name);
+        return absl::StatusOr<SpawnResult>(absl::InvalidArgumentError("subprocess spawn team does not exist: " + team_name));
     }
 
     auto metadata = std::map<std::string, std::string>{
@@ -132,7 +130,7 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
 
     auto task = task_manager_.create_agent_task(
         tasks::AgentTaskSpec{
-            .description = trim(config.description).empty() ? "Agent " + agent_id : std::string{trim(config.description)},
+            .description = Trim(config.description).empty() ? "Agent " + agent_id : std::string{Trim(config.description)},
             .cwd = config.cwd,
             .prompt = prompt,
             .command = config.command,
@@ -141,9 +139,9 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
             .model = config.model,
             .metadata = std::move(metadata),
         });
-    if (!task)
+    if(!task.ok())
     {
-        return nonstd::make_unexpected(task.error());
+        return task.status();
     }
 
     auto updated_team = team_manager_.add_member(
@@ -155,7 +153,7 @@ auto SubprocessBackend::spawn(const TeammateSpawnConfig& config) -> Result<Spawn
         });
     if (!updated_team)
     {
-        return nonstd::make_unexpected(updated_team.error());
+        return updated_team.error();
     }
 
     return SpawnResult{

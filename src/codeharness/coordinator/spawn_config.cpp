@@ -53,7 +53,7 @@ auto append_unique(std::vector<std::string>& target, const std::vector<std::stri
 
 auto normalized_agent_name(std::string_view name) -> std::string
 {
-    const auto trimmed = trim(name);
+    const auto trimmed = Trim(name);
     if (trimmed.empty())
     {
         return std::string{default_agent_name};
@@ -64,7 +64,7 @@ auto normalized_agent_name(std::string_view name) -> std::string
 
 auto normalized_team_name(std::string_view team) -> std::string
 {
-    const auto trimmed = trim(team);
+    const auto trimmed = Trim(team);
     if (trimmed.empty())
     {
         return std::string{default_team_name};
@@ -81,7 +81,7 @@ auto make_agent_id(std::string_view name, std::string_view team) -> std::string
 auto apply_agent_definition(TeammateSpawnConfig config, const AgentDefinition& definition)
     -> TeammateSpawnConfig
 {
-    if (trim(config.name).empty())
+    if (Trim(config.name).empty())
     {
         config.name = definition.name;
     }
@@ -91,7 +91,7 @@ auto apply_agent_definition(TeammateSpawnConfig config, const AgentDefinition& d
         config.model = definition.model;
     }
 
-    if (!config.system_prompt && !trim(definition.system_prompt).empty())
+    if (!config.system_prompt && !Trim(definition.system_prompt).empty())
     {
         config.system_prompt = definition.system_prompt;
     }
@@ -144,9 +144,9 @@ auto apply_agent_definition(TeammateSpawnConfig config, const AgentDefinition& d
 auto resolve_spawn_config(TeammateSpawnConfig config,
                           const AgentDefinitionRegistry& registry,
                           std::string_view agent_type)
-    -> Result<TeammateSpawnConfig>
+    -> absl::StatusOr<TeammateSpawnConfig>
 {
-    const auto type = trim(agent_type);
+    const auto type = Trim(agent_type);
     if (type.empty())
     {
         return config;
@@ -155,9 +155,7 @@ auto resolve_spawn_config(TeammateSpawnConfig config,
     const auto* definition = registry.get(type);
     if (definition == nullptr)
     {
-        return fail<TeammateSpawnConfig>(
-            ErrorKind::InvalidArgument,
-            "agent definition not found: " + std::string{type});
+        return absl::StatusOr<TeammateSpawnConfig>(absl::InvalidArgumentError("agent definition not found: " + std::string{type}));
     }
 
     return apply_agent_definition(std::move(config), *definition);
