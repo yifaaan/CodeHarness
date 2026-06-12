@@ -1,11 +1,10 @@
 #pragma once
 
-#include "codeharness/core/result.h"
-
 #include <filesystem>
 
-namespace codeharness
-{
+#include "codeharness/core/error.h"
+
+namespace codeharness {
 
 // 判断 target 是否位于 base 目录内部。
 //
@@ -35,6 +34,6 @@ auto is_under_directory(const std::filesystem::path& base, const std::filesystem
 //   - glob
 //   - grep
 auto resolve_workspace_path(const std::filesystem::path& cwd, const std::filesystem::path& requested)
-    -> Result<std::filesystem::path>;
+    -> absl::StatusOr<std::filesystem::path>;
 
-} // namespace codeharness
+}  // namespace codeharness

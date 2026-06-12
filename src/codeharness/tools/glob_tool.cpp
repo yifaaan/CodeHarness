@@ -1,131 +1,107 @@
 #include "codeharness/tools/glob_tool.h"
 
 #include <glob/glob.h>
-#include <nonstd/expected.hpp>
-#include <nlohmann/json.hpp>
 
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <set>
 
 #include "codeharness/core/assign.h"
+#include "codeharness/core/error.h"
 #include "codeharness/core/json_parse.h"
 #include "codeharness/tools/workspace_path.h"
 
-namespace codeharness
-{
+namespace codeharness {
 
-namespace
-{
+namespace {
 
-struct GlobInput
-{
-    std::string pattern;
-    std::optional<std::string> path;
+struct GlobInput {
+  std::string pattern;
+  std::optional<std::string> path;
 };
 
-auto parse_glob_input(const nlohmann::json& input) -> Result<GlobInput>
-{
-    GlobInput parsed;
+auto parse_glob_input(const nlohmann::json& input) -> absl::StatusOr<GlobInput> {
+  GlobInput parsed;
 
-    if (auto r = assign(parsed.pattern, read_json_field<std::string>(input, "pattern", "glob")); !r)
-    {
-        return nonstd::make_unexpected(r.error());
-    }
-    if (auto r = assign(parsed.path,
-                        read_json_field<std::string, JsonFieldMode::optional_if_valid>(input, "path"));
-        !r)
-    {
-        return nonstd::make_unexpected(r.error());
-    }
+  if (auto r = Assign(parsed.pattern, ReadJsonField<std::string>(input, "pattern", "glob")); !r.ok()) {
+    return r.status();
+  }
+  if (auto r = Assign(parsed.path, ReadJsonField<std::string, JsonFieldMode::kOptionalIfValid>(input, "path"));
+      !r.ok()) {
+    return r.status();
+  }
 
-    return parsed;
+  return parsed;
 }
 
 constexpr int MAX_RESULTS = 200;
 
-} // namespace
+}  // namespace
 
-auto GlobTool::name() const -> std::string
-{
-    return "glob";
+auto GlobTool::name() const -> std::string { return "glob"; }
+
+auto GlobTool::description() const -> std::string {
+  return "Search for files matching a glob pattern under the current workspace directory.";
 }
 
-auto GlobTool::description() const -> std::string
-{
-    return "Search for files matching a glob pattern under the current workspace directory.";
+auto GlobTool::is_read_only() const noexcept -> bool { return true; }
+
+auto GlobTool::permission_target(const ToolRequest& request) const -> PermissionTarget {
+  return path_permission_target(request.parsed_input, "path");
 }
 
-auto GlobTool::is_read_only() const noexcept -> bool
-{
-    return true;
-}
+auto GlobTool::execute(const ToolRequest& request, const ToolContext& context) const -> absl::StatusOr<ToolResponse> {
+  auto parsed_input = parse_glob_input(request.parsed_input);
+  if (!parsed_input.ok()) {
+    return parsed_input.status();
+  }
 
-auto GlobTool::permission_target(const ToolRequest& request) const -> PermissionTarget
-{
-    return path_permission_target(request.parsed_input, "path");
-}
+  auto search_root = context.cwd;
 
-auto GlobTool::execute(const ToolRequest& request, const ToolContext& context) const -> Result<ToolResponse>
-{
-    auto parsed_input = parse_glob_input(request.parsed_input);
-    if (!parsed_input)
-    {
-        return fail<ToolResponse>(parsed_input.error().kind, parsed_input.error().message);
+  if (parsed_input->path) {
+    auto resolved = resolve_workspace_path(context.cwd, *parsed_input->path);
+    if (!resolved.ok()) {
+      return resolved.status();
     }
 
-    auto search_root = context.cwd;
-
-    if (parsed_input->path)
-    {
-        auto resolved = resolve_workspace_path(context.cwd, *parsed_input->path);
-        if (!resolved)
-        {
-            return fail<ToolResponse>(resolved.error().kind, resolved.error().message);
-        }
-
-        if (!std::filesystem::is_directory(*resolved))
-        {
-            return fail<ToolResponse>(ErrorKind::Io, "path is not a directory: " + resolved->string());
-        }
-
-        search_root = *resolved;
+    if (!std::filesystem::is_directory(*resolved)) {
+      return absl::InternalError("path is not a directory: " + resolved->string());
     }
 
-    nlohmann::json result_json = nlohmann::json::array();
-    std::set<std::string> emitted;
+    search_root = *resolved;
+  }
 
-    auto append_matches = [&](const auto& matches) {
-        for (size_t i = 0; i < matches.size() && result_json.size() < MAX_RESULTS; ++i)
-        {
-            std::error_code error;
-            auto relative = std::filesystem::relative(matches[i], search_root, error);
-            if (error)
-            {
-                continue;
-            }
+  nlohmann::json result_json = nlohmann::json::array();
+  std::set<std::string> emitted;
 
-            auto result = relative.generic_string();
-            if (!emitted.insert(result).second)
-            {
-                continue;
-            }
+  auto append_matches = [&](const auto& matches) {
+    for (size_t i = 0; i < matches.size() && result_json.size() < MAX_RESULTS; ++i) {
+      std::error_code error;
+      auto relative = std::filesystem::relative(matches[i], search_root, error);
+      if (error) {
+        continue;
+      }
 
-            result_json.push_back(std::move(result));
-        }
-    };
+      auto result = relative.generic_string();
+      if (!emitted.insert(result).second) {
+        continue;
+      }
 
-    if (parsed_input->pattern.starts_with("**/"))
-    {
-        append_matches(glob::glob(search_root.string() + '/' + parsed_input->pattern.substr(3)));
+      result_json.push_back(std::move(result));
     }
+  };
 
-    append_matches(glob::rglob(search_root.string() + '/' + parsed_input->pattern));
+  if (parsed_input->pattern.starts_with("**/")) {
+    append_matches(glob::glob(search_root.string() + '/' + parsed_input->pattern.substr(3)));
+  }
 
-    return ToolResponse{
-        .tool_use_id = request.id,
-        .content = result_json.dump(2),
-        .is_error = false,
-    };
+  append_matches(glob::rglob(search_root.string() + '/' + parsed_input->pattern));
+
+  return ToolResponse{
+      .tool_use_id = request.id,
+      .content = result_json.dump(2),
+      .is_error = false,
+  };
 }
 
-} // namespace codeharness
+}  // namespace codeharness
