@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/hooks/hook.h"
 #include "codeharness/mcp/types.h"
 #include "codeharness/skills/skill.h"
@@ -65,9 +65,9 @@ struct PluginLoadOptions
 
 auto default_user_plugin_roots() -> std::vector<std::filesystem::path>;
 
-auto load_plugin_manifest(const std::filesystem::path& manifest_path) -> Result<PluginManifest>;
+auto load_plugin_manifest(const std::filesystem::path& manifest_path) -> absl::StatusOr<PluginManifest>;
 
 auto load_plugins(const std::filesystem::path& cwd, PluginLoadOptions options = {})
-    -> Result<std::vector<LoadedPlugin>>;
+    -> absl::StatusOr<std::vector<LoadedPlugin>>;
 
 } // namespace codeharness

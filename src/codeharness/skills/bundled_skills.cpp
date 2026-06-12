@@ -1,8 +1,6 @@
 #include "codeharness/skills/bundled_skills.h"
 
 #include <fmt/format.h>
-#include <nonstd/expected.hpp>
-
 #include <algorithm>
 #include <cstdlib>
 #include <optional>
@@ -112,13 +110,13 @@ auto default_bundled_skill_dir() -> std::filesystem::path
     return find_bundled_skill_dir_from_cwd(source_dir);
 }
 
-auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> Result<std::vector<SkillDefinition>>
+auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> absl::StatusOr<std::vector<SkillDefinition>>
 {
     std::error_code error;
     if (!std::filesystem::is_directory(content_dir, error))
     {
         return fail<std::vector<SkillDefinition>>(
-            ErrorKind::Io, fmt::format("bundled skill directory does not exist: {}", content_dir.string()));
+            absl::InternalError , fmt::format("bundled skill directory does not exist: {}", content_dir.string()));
     }
 
     std::vector<std::filesystem::path> files;
@@ -136,7 +134,7 @@ auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> R
     if (error)
     {
         return fail<std::vector<SkillDefinition>>(
-            ErrorKind::Io,
+            absl::InternalError ,
             fmt::format("failed to scan bundled skill directory {}: {}", content_dir.string(), error.message()));
     }
 
@@ -147,10 +145,10 @@ auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> R
 
     for (const auto& path : files)
     {
-        auto content = read_text_file(path);
+        auto content = ReadTextFile(path);
         if (!content)
         {
-            return nonstd::make_unexpected(content.error());
+            return content.error();
         }
 
         skills.push_back(make_bundled_skill(path, std::move(*content)));
@@ -159,7 +157,7 @@ auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> R
     return skills;
 }
 
-auto default_bundled_skills() -> Result<std::vector<SkillDefinition>>
+auto default_bundled_skills() -> absl::StatusOr<std::vector<SkillDefinition>>
 {
     return load_bundled_skills_from_dir(default_bundled_skill_dir());
 }

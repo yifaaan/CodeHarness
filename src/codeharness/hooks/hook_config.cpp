@@ -2,8 +2,6 @@
 
 #include "codeharness/core/json_parse.h"
 
-#include <nonstd/expected.hpp>
-
 #include <string>
 #include <utility>
 
@@ -14,42 +12,40 @@ namespace
 {
 
 auto read_optional_string(const nlohmann::json& json, std::string_view field, std::string_view context)
-    -> Result<std::optional<std::string>>
+    -> absl::StatusOr<std::optional<std::string>>
 {
-    return read_optional_json_field<std::string>(json, field, context);
+    return ReadOptionalJsonField<std::string>(json, field, context);
 }
 
 auto read_optional_bool(const nlohmann::json& json, std::string_view field, std::string_view context)
-    -> Result<std::optional<bool>>
+    -> absl::StatusOr<std::optional<bool>>
 {
-    return read_optional_json_field<bool>(json, field, context);
+    return ReadOptionalJsonField<bool>(json, field, context);
 }
 
 auto read_optional_int(const nlohmann::json& json, std::string_view field, std::string_view context)
-    -> Result<std::optional<int>>
+    -> absl::StatusOr<std::optional<int>>
 {
-    return read_optional_json_field<int>(json, field, context);
+    return ReadOptionalJsonField<int>(json, field, context);
 }
 
-auto validate_command_config(const nlohmann::json& config, std::string_view context) -> Result<void>
+auto validate_command_config(const nlohmann::json& config, std::string_view context) -> absl::Status
 {
     if (!config.is_object())
     {
-        return fail<void>(ErrorKind::InvalidArgument, std::string{context} + " config must be an object");
+        return absl::InvalidArgumentError(std::string{context} + " config must be an object");
     }
 
     const auto has_command = config.contains("command");
     const auto has_argv = config.contains("argv");
     if (!has_command && !has_argv)
     {
-        return fail<void>(
-            ErrorKind::InvalidArgument,
-            std::string{context} + " command hook requires config.command or config.argv");
+        return absl::InvalidArgumentError(std::string{context} + " command hook requires config.command or config.argv");
     }
 
     if (has_command && !config.at("command").is_string())
     {
-        return fail<void>(ErrorKind::InvalidArgument, std::string{context} + " config.command must be a string");
+        return absl::InvalidArgumentError(std::string{context} + " config.command must be a string");
     }
 
     if (has_argv)
@@ -57,18 +53,14 @@ auto validate_command_config(const nlohmann::json& config, std::string_view cont
         const auto& argv = config.at("argv");
         if (!argv.is_array() || argv.empty())
         {
-            return fail<void>(
-                ErrorKind::InvalidArgument,
-                std::string{context} + " config.argv must be a non-empty string array");
+            return absl::InvalidArgumentError(std::string{context} + " config.argv must be a non-empty string array");
         }
 
         for (const auto& item : argv)
         {
             if (!item.is_string())
             {
-                return fail<void>(
-                    ErrorKind::InvalidArgument,
-                    std::string{context} + " config.argv must be a non-empty string array");
+                return absl::InvalidArgumentError(std::string{context} + " config.argv must be a non-empty string array");
             }
         }
     }
@@ -130,49 +122,43 @@ auto hook_type_to_string(HookType type) -> std::string_view
     return "command";
 }
 
-auto hook_definition_from_json(const nlohmann::json& json, std::string_view context) -> Result<HookDefinition>
+auto hook_definition_from_json(const nlohmann::json& json, std::string_view context) -> absl::StatusOr<HookDefinition>
 {
     if (!json.is_object())
     {
-        return fail<HookDefinition>(ErrorKind::InvalidArgument, std::string{context} + " must be an object");
+        return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " must be an object"));
     }
 
-    auto event_text = read_json_field<std::string>(json, "event", context);
+    auto event_text = ReadJsonField<std::string>(json, "event", context);
     if (!event_text)
     {
-        return nonstd::make_unexpected(event_text.error());
+        return event_text.error();
     }
 
     auto event = hook_event_from_string(*event_text);
     if (!event)
     {
-        return fail<HookDefinition>(
-            ErrorKind::InvalidArgument,
-            std::string{context} + " has unsupported event: " + *event_text);
+        return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " has unsupported event: " + *event_text));
     }
 
-    auto type_text = read_json_field<std::string, JsonFieldMode::optional_with_default>(
+    auto type_text = ReadJsonField<std::string, JsonFieldMode::kOptionalWithDefault>(
         json,
         "type",
         context,
         std::string{"command"});
     if (!type_text)
     {
-        return nonstd::make_unexpected(type_text.error());
+        return type_text.error();
     }
 
     auto type = hook_type_from_string(*type_text);
     if (!type)
     {
-        return fail<HookDefinition>(
-            ErrorKind::InvalidArgument,
-            std::string{context} + " has unsupported type: " + *type_text);
+        return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " has unsupported type: " + *type_text));
     }
     if (*type != HookType::Command)
     {
-        return fail<HookDefinition>(
-            ErrorKind::InvalidArgument,
-            std::string{context} + " only supports command hooks in configuration");
+        return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " only supports command hooks in configuration"));
     }
 
     HookDefinition hook;
@@ -181,7 +167,7 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
 
     if (auto priority = read_optional_int(json, "priority", context); !priority)
     {
-        return nonstd::make_unexpected(priority.error());
+        return priority.error();
     }
     else if (*priority)
     {
@@ -190,7 +176,7 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
 
     if (auto matcher = read_optional_string(json, "matcher", context); !matcher)
     {
-        return nonstd::make_unexpected(matcher.error());
+        return matcher.error();
     }
     else
     {
@@ -199,7 +185,7 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
 
     if (auto block = read_optional_bool(json, "block_on_failure", context); !block)
     {
-        return nonstd::make_unexpected(block.error());
+        return block.error();
     }
     else if (*block)
     {
@@ -208,15 +194,13 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
 
     if (auto timeout = read_optional_int(json, "timeout_seconds", context); !timeout)
     {
-        return nonstd::make_unexpected(timeout.error());
+        return timeout.error();
     }
     else if (*timeout)
     {
         if (**timeout < 1)
         {
-            return fail<HookDefinition>(
-                ErrorKind::InvalidArgument,
-                std::string{context} + " timeout_seconds must be greater than zero");
+            return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " timeout_seconds must be greater than zero"));
         }
         hook.timeout_seconds = **timeout;
     }
@@ -224,11 +208,11 @@ auto hook_definition_from_json(const nlohmann::json& json, std::string_view cont
     const auto config = json.find("config");
     if (config == json.end())
     {
-        return fail<HookDefinition>(ErrorKind::InvalidArgument, std::string{context} + " requires object field: config");
+        return absl::StatusOr<HookDefinition>(absl::InvalidArgumentError(std::string{context} + " requires object field: config"));
     }
     if (auto validated = validate_command_config(*config, context); !validated)
     {
-        return nonstd::make_unexpected(validated.error());
+        return validated.error();
     }
     hook.config = *config;
 

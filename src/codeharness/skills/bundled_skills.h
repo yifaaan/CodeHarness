@@ -1,6 +1,6 @@
 #pragma once
 
-#include "codeharness/core/result.h"
+#include "codeharness/core/error.h"
 #include "codeharness/skills/skill.h"
 
 #include <filesystem>
@@ -15,7 +15,7 @@ namespace codeharness
 // 是刻意的: bundled 内容现在是资源文件,读取或解析失败属于启动时配置/I/O
 // 问题,应该沿项目的 Result 通道上抛,而不是静默丢失默认能力。
 auto default_bundled_skill_dir() -> std::filesystem::path;
-auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> Result<std::vector<SkillDefinition>>;
-auto default_bundled_skills() -> Result<std::vector<SkillDefinition>>;
+auto load_bundled_skills_from_dir(const std::filesystem::path& content_dir) -> absl::StatusOr<std::vector<SkillDefinition>>;
+auto default_bundled_skills() -> absl::StatusOr<std::vector<SkillDefinition>>;
 
 } // namespace codeharness

@@ -108,7 +108,7 @@ auto build_command_argv(const HookDefinition& hook) -> std::optional<std::vector
         return std::nullopt;
     }
 
-    return default_shell_command_argv(*command);
+    return DefaultShellCommandArgv(*command);
 }
 
 struct HookTempFile

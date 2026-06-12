@@ -1,7 +1,6 @@
 #include "codeharness/skills/skill_loader.h"
 
 #include <glob/glob.h>
-#include <nonstd/expected.hpp>
 #include <yaml-cpp/yaml.h>
 
 #include <fmt/format.h>
@@ -44,8 +43,8 @@ struct ParsedSkillMarkdown
 auto parse_frontmatter(std::string_view content) -> ParsedSkillMarkdown
 {
     // 第一行必须是 "---",否则视为无 frontmatter
-    auto [first_line, offset] = next_line(content, 0);
-    if (trim(first_line) != "---")
+    auto [first_line, offset] = NextLine(content, 0);
+    if (Trim(first_line) != "---")
     {
         return ParsedSkillMarkdown{.body = content};
     }
@@ -57,10 +56,10 @@ auto parse_frontmatter(std::string_view content) -> ParsedSkillMarkdown
     while (offset < content.size())
     {
         const auto line_start = offset;
-        auto [line, next_offset] = next_line(content, offset);
+        auto [line, next_offset] = NextLine(content, offset);
         offset = next_offset;
 
-        if (trim(line) == "---")
+        if (Trim(line) == "---")
         {
             // 切片得到 yaml 原文
             const auto raw_yaml = content.substr(frontmatter_start, line_start - frontmatter_start);
@@ -96,16 +95,16 @@ auto description_from_body(std::string_view body, std::string& name, std::string
 
     while (offset < body.size())
     {
-        auto [line, next_offset] = next_line(body, offset);
+        auto [line, next_offset] = NextLine(body, offset);
         offset = next_offset;
-        const auto stripped = trim(line);
+        const auto stripped = Trim(line);
 
         // "# ..." 形式的标题,提取其内容作为 name
         if (stripped.starts_with("# "))
         {
             if (name == default_name)
             {
-                const auto heading = trim(stripped.substr(2));
+                const auto heading = Trim(stripped.substr(2));
                 if (!heading.empty())
                 {
                     name = heading;
@@ -159,7 +158,7 @@ auto find_git_root(const std::filesystem::path& start) -> std::optional<std::fil
 // 没有 home 时返回空 vector,后续 load_skills_from_dirs 会自然跳过。
 auto default_user_skill_dirs() -> std::vector<std::filesystem::path>
 {
-    const auto home = home_directory();
+    const auto home = HomeDirectory();
     if (!home)
     {
         return {};
@@ -211,12 +210,12 @@ auto parse_skill_markdown(std::string_view default_name, std::string content, st
 //   - base_dir:    skill 所在目录(供后续加载资源/子文件用)
 //   - command_name: 默认斜杠命令名,等于目录名
 //   - display_name: 当前置显示用的"漂亮"名,仅在 frontmatter name 与目录名不同时填入
-auto load_skill_file(const std::filesystem::path& path, std::string source) -> Result<SkillDefinition>
+auto load_skill_file(const std::filesystem::path& path, std::string source) -> absl::StatusOr<SkillDefinition>
 {
-    auto content = read_text_file(path);
+    auto content = ReadTextFile(path);
     if (!content)
     {
-        return nonstd::make_unexpected(content.error());
+        return content.error();
     }
 
     // skill 目录名作为 default name
@@ -244,7 +243,7 @@ auto load_skill_file(const std::filesystem::path& path, std::string source) -> R
 //     表现可重现
 //   - 失败冒泡:glob 抛异常或 canonical 失败 -> 直接返回 Io 错误,不要静默吞掉
 auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, std::string_view source)
-    -> Result<std::vector<SkillDefinition>>
+    -> absl::StatusOr<std::vector<SkillDefinition>>
 {
     std::vector<SkillDefinition> skills;
     std::set<std::filesystem::path> seen;  // 已加载过的 canonical 路径,用于去重
@@ -266,7 +265,7 @@ auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, s
         catch (const std::exception& e)
         {
             return fail<std::vector<SkillDefinition>>(
-                ErrorKind::Io,
+                absl::InternalError ,
                 fmt::format("failed to scan skill directory {}: {}", root.string(), e.what()));
         }
 
@@ -278,7 +277,7 @@ auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, s
             if (error)
             {
                 return fail<std::vector<SkillDefinition>>(
-                    ErrorKind::Io,
+                    absl::InternalError ,
                     fmt::format("failed to resolve skill path {}: {}", candidate.string(), error.message()));
             }
 
@@ -291,7 +290,7 @@ auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, s
             auto skill = load_skill_file(canonical, std::string{source});
             if (!skill)
             {
-                return nonstd::make_unexpected(skill.error());
+                return skill.error();
             }
 
             skills.push_back(std::move(*skill));
@@ -310,23 +309,23 @@ auto load_skills_from_dirs(std::span<const std::filesystem::path> directories, s
 // 后续 register_skill 用 unordered_map::operator= 直接覆盖,
 // 后注册者胜出 —— 即 cwd 的同名 skill 会覆盖 git_root 的同名 skill,
 // 表现为"内层覆盖外层",与 Claude 的搜索行为一致。
-// 安全性:相对目录必须通过 is_safe_relative_path 校验,避免恶意配置越界。
+// 安全性:相对目录必须通过 IsSafeRelativePath 校验,避免恶意配置越界。
 // 范围限制:在 git_root 处停下,不递归到文件系统根,避免无意义的全盘扫描。
 auto discover_project_skill_dirs(const std::filesystem::path& cwd,
                                  std::span<const std::filesystem::path> relative_dirs)
-    -> Result<std::vector<std::filesystem::path>>
+    -> absl::StatusOr<std::vector<std::filesystem::path>>
 {
     std::error_code error;
     auto start = std::filesystem::weakly_canonical(cwd, error);
     if (error)
     {
         return fail<std::vector<std::filesystem::path>>(
-            ErrorKind::Io, fmt::format("failed to resolve cwd: {}", error.message()));
+            absl::InternalError , fmt::format("failed to resolve cwd: {}", error.message()));
     }
 
     if (!std::filesystem::is_directory(start, error))
     {
-        return fail<std::vector<std::filesystem::path>>(ErrorKind::InvalidArgument, "cwd is not a directory");
+        return fail<std::vector<std::filesystem::path>>(absl::InvalidArgumentError , "cwd is not a directory");
     }
 
     // 1) 从 cwd 走到 git_root(若存在),把每层目录都记录下来
@@ -359,7 +358,7 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
     {
         for (const auto& relative_dir : relative_dirs)
         {
-            if (!is_safe_relative_path(relative_dir))
+            if (!IsSafeRelativePath(relative_dir))
             {
                 continue;  // 非法路径配置,跳过
             }
@@ -374,7 +373,7 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
             if (error)
             {
                 return fail<std::vector<std::filesystem::path>>(
-                    ErrorKind::Io,
+                    absl::InternalError ,
                     fmt::format("failed to resolve skill directory {}: {}", candidate.string(), error.message()));
             }
 
@@ -400,15 +399,15 @@ auto discover_project_skill_dirs(const std::filesystem::path& cwd,
 //   - allow_project_skills:  是否扫描 cwd 到 git_root 的 project skill 目录
 // 来源标签会被写进 SkillDefinition.source,用于 UI 区分 skill 的来源。
 auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoadOptions options)
-    -> Result<SkillRegistryLoadResult>
+    -> absl::StatusOr<SkillRegistryLoadResult>
 {
     SkillRegistry registry;
 
-    auto load_and_register = [&](std::span<const std::filesystem::path> dirs, std::string_view source) -> Result<void> {
+    auto load_and_register = [&](std::span<const std::filesystem::path> dirs, std::string_view source) -> absl::Status {
         auto skills = load_skills_from_dirs(dirs, source);
         if (!skills)
         {
-            return nonstd::make_unexpected(skills.error());
+            return skills.error();
         }
         for (auto& skill : *skills)
         {
@@ -427,7 +426,7 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
         auto bundled_skills = default_bundled_skills();
         if (!bundled_skills)
         {
-            return nonstd::make_unexpected(bundled_skills.error());
+            return bundled_skills.error();
         }
 
         for (auto& skill : *bundled_skills)
@@ -451,20 +450,20 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
 
     if (auto loaded = load_and_register(user_skill_dirs, "user"); !loaded)
     {
-        return nonstd::make_unexpected(loaded.error());
+        return loaded.status();
     }
 
     // 3) extra skill 目录(CLI/配置追加,语义上仍属 user 范围)
     if (auto loaded = load_and_register(options.extra_skill_dirs, "user"); !loaded)
     {
-        return nonstd::make_unexpected(loaded.error());
+        return loaded.status();
     }
 
     // 4) plugin skills:默认由调用方显式开启,避免测试或受限运行时意外加载本机全局插件
     auto plugins = load_plugins(cwd, std::move(options.plugin_options));
     if (!plugins)
     {
-        return nonstd::make_unexpected(plugins.error());
+        return plugins.error();
     }
 
     for (const auto& plugin : *plugins)
@@ -486,12 +485,12 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
         auto project_dirs = discover_project_skill_dirs(cwd, options.project_skill_dirs);
         if (!project_dirs)
         {
-            return nonstd::make_unexpected(project_dirs.error());
+            return project_dirs.error();
         }
 
         if (auto loaded = load_and_register(*project_dirs, "project"); !loaded)
         {
-            return nonstd::make_unexpected(loaded.error());
+            return loaded.status();
         }
     }
 
@@ -501,12 +500,12 @@ auto load_skill_registry_with_plugins(const std::filesystem::path& cwd, SkillLoa
     };
 }
 
-auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions options) -> Result<SkillRegistry>
+auto load_skill_registry(const std::filesystem::path& cwd, SkillLoadOptions options) -> absl::StatusOr<SkillRegistry>
 {
     auto loaded = load_skill_registry_with_plugins(cwd, std::move(options));
-    if (!loaded)
+    if(!loaded.ok())
     {
-        return nonstd::make_unexpected(loaded.error());
+        return loaded.status();
     }
 
     return std::move(loaded->registry);
