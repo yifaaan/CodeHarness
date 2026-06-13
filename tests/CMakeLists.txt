@@ -9,6 +9,10 @@ add_executable(codeharness_tests
   host/host_path_test.cpp
   host/environment_test.cpp
   host/process_lifecycle_test.cpp
+  llm/sse_parser_test.cpp
+  llm/message_json_test.cpp
+  llm/openai_provider_test.cpp
+  llm/capability_test.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE
