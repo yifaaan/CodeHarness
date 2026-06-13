@@ -32,7 +32,7 @@ docs/plan/re-build/
 │   └── completed/         # Finished plans
 └── references/            # Module reference documentation
     ├── kaos-interface.md      # Filesystem/process abstraction
-    ├── kosong-interface.md    # LLM provider abstraction
+    ├── llm-interface.md    # LLM provider abstraction
     ├── config-schema.md       # Configuration system
     ├── agent-lifecycle.md     # Agent/session/RPC lifecycle
     ├── loop-engine.md         # Turn execution loop
@@ -61,7 +61,7 @@ docs/plan/re-build/
 | Subsystem | Purpose | Key File |
 |-----------|---------|----------|
 | **Kaos** | Filesystem/process abstraction | `references/kaos-interface.md` |
-| **Kosong** | LLM provider unification | `references/kosong-interface.md` |
+| **llm** | LLM provider unification | `references/llm-interface.md` |
 | **Agent** | Core orchestrator | `references/agent-lifecycle.md` |
 | **Loop** | Turn execution engine | `references/loop-engine.md` |
 | **Tools** | Action primitives | `references/tool-system.md` |

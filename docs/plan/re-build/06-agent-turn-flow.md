@@ -252,7 +252,7 @@ TurnFlow tracks:
 
 2. **Steer buffer flush timing**: Buffered inputs are flushed at the `beforeStep` hook, which fires before each LLM call. This means the model doesn't see steered input until the next step — it won't interrupt mid-response.
 
-3. **AbortController pattern**: Each active turn creates a new `AbortController`. The controller's signal is passed through the entire call chain (loop → kosong generate → provider HTTP client). When `cancel()` is called, all in-flight HTTP requests are aborted.
+3. **AbortController pattern**: Each active turn creates a new `AbortController`. The controller's signal is passed through the entire call chain (loop → llm generate → provider HTTP client). When `cancel()` is called, all in-flight HTTP requests are aborted.
 
 4. **UserPromptSubmit hook can block**: Before any turn starts, the hook can inspect the user input and block it (e.g., for content moderation). The `markLastUserPromptBlocked()` method records this in the context.
 

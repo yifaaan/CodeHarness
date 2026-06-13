@@ -73,7 +73,7 @@ Implement the context memory system to manage conversation history, token counti
 
 ## Dependencies
 
-- **Kosong**: Required for LLM-based summarization
+- **llm**: Required for LLM-based summarization
 - **Agent**: Required for agent context
 
 ## Success Criteria

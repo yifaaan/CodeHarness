@@ -50,7 +50,7 @@
 ### 模块参考
 - [references/index.md](references/index.md) — 模块参考索引
 - [references/kaos-interface.md](references/kaos-interface.md) — 执行环境抽象
-- [references/kosong-interface.md](references/kosong-interface.md) — LLM 提供商抽象
+- [references/llm-interface.md](references/llm-interface.md) — LLM 提供商抽象
 - [references/agent-lifecycle.md](references/agent-lifecycle.md) — Agent 生命周期
 
 ### 详细文档
@@ -68,7 +68,7 @@
 
 | 阶段 | 模块 | 优先级 |
 |------|------|--------|
-| **Phase 1: Foundation** | Kaos → Config → Kosong | #1-#3 |
+| **Phase 1: Foundation** | Kaos → Config → llm | #1-#3 |
 | **Phase 2: Agent Core** | Loop → Agent → Context → Turn | #4-#7 |
 | **Phase 3: Services** | Records → Session → Tools → Permission/Hooks | #8-#12 |
 | **Phase 4: Extensions** | Skills → MCP | #13-#14 |

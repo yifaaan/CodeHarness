@@ -7,7 +7,7 @@ Module reference documentation for Kimi Code CLI.
 | Module | Description | Doc |
 |--------|-------------|-----|
 | **Kaos** | Filesystem and process execution abstraction | [kaos-interface.md](kaos-interface.md) |
-| **Kosong** | LLM provider abstraction | [kosong-interface.md](kosong-interface.md) |
+| **llm** | LLM provider abstraction | [llm-interface.md](llm-interface.md) |
 | **Config** | Configuration schema and provider management | [config-schema.md](config-schema.md) |
 
 ## Agent Core
@@ -38,7 +38,7 @@ Module reference documentation for Kimi Code CLI.
 ## Dependency Graph
 
 ```
-CLI/TUI ──> SDK ──> Session ──> Agent ──> Loop ──> Kosong
+CLI/TUI ──> SDK ──> Session ──> Agent ──> Loop ──> llm
                      │            │         │         │
                      │            │         │         ▼
                      │            │         │      HTTP APIs
@@ -67,7 +67,7 @@ CLI/TUI ──> SDK ──> Session ──> Agent ──> Loop ──> Kosong
 | Interface | Location | Purpose |
 |-----------|----------|---------|
 | `Kaos` | [kaos-interface.md](kaos-interface.md) | Filesystem/process abstraction |
-| `ChatProvider` | [kosong-interface.md](kosong-interface.md) | LLM provider interface |
+| `ChatProvider` | [llm-interface.md](llm-interface.md) | LLM provider interface |
 | `ExecutableTool` | [tool-system.md](tool-system.md) | Tool interface |
 | `AgentAPI` | [agent-lifecycle.md](agent-lifecycle.md) | Agent RPC methods |
 | `Session` | [agent-lifecycle.md](agent-lifecycle.md) | Session management |

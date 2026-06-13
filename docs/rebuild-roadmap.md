@@ -20,12 +20,12 @@
 |------|--------|------|------|------|
 | **Kaos** | #1 | 无 | 文件系统/进程抽象层 | 计划中 |
 | **Config** | #2 | 无 | 配置系统和提供商管理 | 计划中 |
-| **Kosong** | #3 | Config | LLM 提供商抽象层 | 计划中 |
+| **Llm** | #3 | Config | LLM 提供商抽象层 | 计划中 |
 
 **关键交付物**：
 - Kaos 接口定义和 LocalKaos 实现
 - Config 系统和 ProviderManager
-- Kosong ChatProvider 接口和基础实现
+- Llm ChatProvider 接口和基础实现
 
 ### Phase 2: Agent 核心引擎 (Agent Core) - 6 周
 
@@ -33,7 +33,7 @@
 
 | 模块 | 优先级 | 依赖 | 说明 | 状态 |
 |------|--------|------|------|------|
-| **Loop** | #4 | Kosong | 无状态代理循环 | 计划中 |
+| **Loop** | #4 | Llm | 无状态代理循环 | 计划中 |
 | **Agent** | #5 | Loop, Kaos | 核心协调器 | 计划中 |
 | **Context** | #6 | Agent | 对话历史管理 | 计划中 |
 | **Turn** | #7 | Agent | Turn 生命周期管理 | 计划中 |
@@ -94,7 +94,7 @@
 
 ```
 Phase 1: Foundation
-    Kaos → Config → Kosong
+    Kaos → Config → Llm
 
 Phase 2: Agent Core
     Loop → Agent → Context → Turn
@@ -130,7 +130,7 @@ Phase 5: Application
 - [ ] Kaos 接口定义
 - [ ] LocalKaos 实现
 - [ ] Config 系统
-- [ ] Kosong ChatProvider
+- [ ] Llm ChatProvider
 
 ### M2: Agent 核心引擎完成 (Week 10)
 - [ ] runTurn 无状态循环

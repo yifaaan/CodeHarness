@@ -1,24 +1,24 @@
-# Kosong — LLM Provider Abstraction Layer
+# llm — LLM Provider Abstraction Layer
 
-**Source**: `packages/kosong/src/`
+**Source**: `packages/llm/src/`
 
 ## Purpose
 
-Kosong provides a **unified interface for interacting with LLM providers** (Anthropic, OpenAI, Google GenAI, Kimi/Moonshot). It abstracts away the differences between provider APIs — streaming formats, tool call protocols, thinking blocks, image/video content, authentication — behind a single `ChatProvider` interface.
+llm provides a **unified interface for interacting with LLM providers** (Anthropic, OpenAI, Google GenAI, Kimi/Moonshot). It abstracts away the differences between provider APIs — streaming formats, tool call protocols, thinking blocks, image/video content, authentication — behind a single `ChatProvider` interface.
 
-The agent never calls provider SDKs directly. It only talks to kosong's `generate()` function, which routes to the appropriate provider implementation.
+The agent never calls provider SDKs directly. It only talks to llm's `generate()` function, which routes to the appropriate provider implementation.
 
 ## Architecture Overview
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                       agent-core                             │
-│  KosongLLM wraps ChatProvider + generate() → used by Loop    │
+│  LlmLLM wraps ChatProvider + generate() → used by Loop    │
 └─────────────────────���────┬───────────────────────────────────┘
                            │ calls
                            ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  kosong package                                              │
+│  llm package                                              │
 │                                                               │
 │  generate(systemPrompt, tools, history, options?)            │
 │     │                                                         │
@@ -45,7 +45,7 @@ The agent never calls provider SDKs directly. It only talks to kosong's `generat
 
 ### ChatProvider
 
-**Source**: `packages/kosong/src/provider.ts`
+**Source**: `packages/llm/src/provider.ts`
 
 ```typescript
 interface ChatProvider {
@@ -121,7 +121,7 @@ interface StreamedMessage {
 
 ### Message and Content Types
 
-**Source**: `packages/kosong/src/message.ts`
+**Source**: `packages/llm/src/message.ts`
 
 ```typescript
 // --- Message roles ---
@@ -194,7 +194,7 @@ Input: a stream of parts arrives one by one
 
 ### Tool Definitions
 
-**Source**: `packages/kosong/src/tool.ts`
+**Source**: `packages/llm/src/tool.ts`
 
 ```typescript
 interface Tool {
@@ -207,7 +207,7 @@ interface Tool {
 
 ## Capability System
 
-**Source**: `packages/kosong/src/capability.ts`
+**Source**: `packages/llm/src/capability.ts`
 
 ```typescript
 interface ModelCapability {
@@ -232,7 +232,7 @@ type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 Each provider maps this to its own API:
 
-| Kosong Effort | Anthropic | OpenAI | Google GenAI | Kimi |
+| llm Effort | Anthropic | OpenAI | Google GenAI | Kimi |
 |--------------|-----------|--------|-------------|------|
 | `off` | disabled | no reasoning | disabled | `thinking: {type: "disabled"}` |
 | `low` | `low` | `reasoning_effort: "low"` | `thinking_level: "LOW"` | `thinking: {type: "enabled", budget_tokens: 1024}` |
@@ -249,7 +249,7 @@ type FinishReason = 'completed' | 'tool_calls' | 'truncated' | 'filtered' | 'pau
 
 Each provider maps its stop reasons:
 
-| Kosong | Anthropic | OpenAI (chat) | OpenAI (responses) | Google GenAI |
+| llm | Anthropic | OpenAI (chat) | OpenAI (responses) | Google GenAI |
 |--------|-----------|--------------|-------------------|-------------|
 | `completed` | `end_turn` | `stop` | `"completed"` | `STOP` |
 | `tool_calls` | `tool_use` | `tool_calls` | `"incomplete"` (with tool calls) | `TOOL_USE` |
@@ -270,7 +270,7 @@ interface TokenUsage {
 
 ## Error Hierarchy
 
-**Source**: `packages/kosong/src/errors.ts`
+**Source**: `packages/llm/src/errors.ts`
 
 ```
 ChatProviderError (base — includes provider, model, statusCode)
@@ -286,7 +286,7 @@ ChatProviderError (base — includes provider, model, statusCode)
 
 ### Anthropic Provider
 
-**Source**: `packages/kosong/src/providers/anthropic.ts`
+**Source**: `packages/llm/src/providers/anthropic.ts`
 
 **Authentication**: `ANTHROPIC_API_KEY` via SDK or headers.
 
@@ -306,7 +306,7 @@ ChatProviderError (base — includes provider, model, statusCode)
 
 4. **Parallel Tool Calls**: Merges consecutive tool-result-only user messages into one (Anthropic requires tool results from the same turn to be in a single message).
 
-5. **Streaming Conversion**: Maps Anthropic `MessageStreamEvent` types to kosong parts:
+5. **Streaming Conversion**: Maps Anthropic `MessageStreamEvent` types to llm parts:
    - `content_block_start` → first TextPart or ThinkPart
    - `content_block_delta.text_delta` → concat to TextPart
    - `content_block_delta.thinking_delta` → concat to ThinkPart
@@ -321,7 +321,7 @@ claude-3-5-sonnet, claude-3.5.sonnet, 3-5-sonnet
 
 ### OpenAI Legacy Provider (Chat Completions)
 
-**Source**: `packages/kosong/src/providers/openai-legacy.ts`
+**Source**: `packages/llm/src/providers/openai-legacy.ts`
 
 **Authentication**: `OPENAI_API_KEY` via SDK or headers.
 
@@ -338,7 +338,7 @@ claude-3-5-sonnet, claude-3.5.sonnet, 3-5-sonnet
 
 ### OpenAI Responses Provider
 
-**Source**: `packages/kosong/src/providers/openai-responses.ts`
+**Source**: `packages/llm/src/providers/openai-responses.ts`
 
 **Authentication**: `OPENAI_API_KEY` via SDK or headers.
 
@@ -353,7 +353,7 @@ Uses the newer OpenAI Responses API (`/v1/responses` endpoint).
 
 ### Google GenAI Provider
 
-**Source**: `packages/kosong/src/providers/google-genai.ts`
+**Source**: `packages/llm/src/providers/google-genai.ts`
 
 **Authentication**: `GOOGLE_API_KEY` via SDK. For Vertex AI, uses `vertexai: true` + `googleCloudProject` + `googleCloudLocation`.
 
@@ -368,7 +368,7 @@ Uses the newer OpenAI Responses API (`/v1/responses` endpoint).
 
 ### Kimi Provider
 
-**Source**: `packages/kosong/src/providers/kimi.ts`
+**Source**: `packages/llm/src/providers/kimi.ts`
 
 **Authentication**: `KIMI_API_KEY` via SDK or headers. Default base URL: `https://api.moonshot.ai/v1`.
 
@@ -382,7 +382,7 @@ Uses the newer OpenAI Responses API (`/v1/responses` endpoint).
 
 ## Provider Factory
 
-**Source**: `packages/kosong/src/providers/index.ts`
+**Source**: `packages/llm/src/providers/index.ts`
 
 ```typescript
 type ProviderConfig =
@@ -416,7 +416,7 @@ Maps known model name patterns to capabilities:
 
 ## Request Auth
 
-**Source**: `packages/kosong/src/providers/request-auth.ts`
+**Source**: `packages/llm/src/providers/request-auth.ts`
 
 Authorization resolution order:
 1. `clientFactory` from options (receives per-request auth) → creates SDK client with auth
@@ -435,13 +435,13 @@ interface ProviderRequestAuthResolver {
 
 1. **Provider interface is the key abstraction**: Implement `ChatProvider` once per LLM backend. Each provider is an independent HTTP client — they share no state.
 
-2. **Streaming is the hardest part**: Each provider has a different streaming format. The kosong abstraction normalizes them to async iterables. Your streaming implementation must:
+2. **Streaming is the hardest part**: Each provider has a different streaming format. The llm abstraction normalizes them to async iterables. Your streaming implementation must:
    - Handle progressive content merging (text + thinking + tool calls arriving in any order)
    - Support parallel tool call detection (tool A and tool B being called simultaneously)
    - Preserve thinking content through streaming
    - Report finish reason and usage after streaming completes
 
-3. **Error normalization**: Map each provider's HTTP errors to the kosong hierarchy. Context overflow detection is particularly important — it triggers compaction in the agent.
+3. **Error normalization**: Map each provider's HTTP errors to the llm hierarchy. Context overflow detection is particularly important — it triggers compaction in the agent.
 
 4. **Thinking/reasoning is provider-specific but concept is universal**: The `thinking` content type represents model reasoning. Anthropic calls it "thinking blocks", OpenAI calls it "reasoning content", Google calls it "thinking". Normalize to `{ type: 'think', think: string }`.
 

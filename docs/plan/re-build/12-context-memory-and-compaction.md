@@ -130,12 +130,12 @@ appendLoopEvent(event):
 
 ### Message Building for LLM
 
-The `messages` getter projects internal format to kosong `Message[]`:
+The `messages` getter projects internal format to llm `Message[]`:
 
 ```
 1. Start with system message (from config)
 2. Filter out open steps (pending tool results)
-3. Convert ContextMessage[] → kosong Message[]
+3. Convert ContextMessage[] → llm Message[]
 4. Apply message limits (max tokens)
 5. Return Message[]
 ```
@@ -297,7 +297,7 @@ beforeStep():
      → Build compaction prompt:
        "Summarize the following conversation, preserving key decisions, 
         code changes, file paths, and user requirements..."
-     → Call LLM (kosong) to generate summary
+     → Call LLM (llm) to generate summary
        (tools disabled — pure text generation)
      → Receive summary text
      → Determine which messages to compact:

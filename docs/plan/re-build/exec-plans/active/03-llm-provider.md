@@ -1,4 +1,4 @@
-# Plan: Implement Kosong LLM Provider Layer
+# Plan: Implement llm LLM Provider Layer
 
 ## Status
 - **Phase**: Foundation
@@ -8,7 +8,7 @@
 
 ## Objective
 
-Implement the Kosong abstraction layer to provide a unified interface for LLM providers, enabling seamless switching between different AI models and streaming responses.
+Implement the llm abstraction layer to provide a unified interface for LLM providers, enabling seamless switching between different AI models and streaming responses.
 
 ## Scope
 
@@ -29,19 +29,19 @@ Implement the Kosong abstraction layer to provide a unified interface for LLM pr
 ### Week 1: Interface Design and Core Types
 
 1. **Define ChatProvider Interface**
-   - Create `src/codeharness/kosong/chat_provider.h`
+   - Create `src/codeharness/llm/chat_provider.h`
    - Define `ChatProvider` abstract class
    - Define `Message`, `ContentPart`, `ToolCall`, `ToolResult` types
    - Define `StreamResponse` async iterator
 
 2. **Implement Message Normalization**
-   - Create `src/codeharness/kosong/message.h` and `message.cpp`
+   - Create `src/codeharness/llm/message.h` and `message.cpp`
    - Implement message conversion from provider-specific formats
    - Implement content part normalization
    - Implement tool call/result normalization
 
 3. **Create Unit Tests**
-   - Create `tests/kosong/message_tests.cpp`
+   - Create `tests/llm/message_tests.cpp`
    - Test message creation and manipulation
    - Test content part types
    - Test tool call/result types
@@ -49,13 +49,13 @@ Implement the Kosong abstraction layer to provide a unified interface for LLM pr
 ### Week 2: Provider Implementations
 
 4. **Implement OpenAI Provider**
-   - Create `src/codeharness/kosong/openai_provider.h` and `openai_provider.cpp`
+   - Create `src/codeharness/llm/openai_provider.h` and `openai_provider.cpp`
    - Implement streaming response handling
    - Implement error handling and retry logic
    - Implement token usage tracking
 
 5. **Implement Anthropic Provider**
-   - Create `src/codeharness/kosong/anthropic_provider.h` and `anthropic_provider.cpp`
+   - Create `src/codeharness/llm/anthropic_provider.h` and `anthropic_provider.cpp`
    - Implement streaming response handling
    - Implement thinking/extended thinking support
    - Implement error handling
@@ -67,7 +67,7 @@ Implement the Kosong abstraction layer to provide a unified interface for LLM pr
    - Test provider switching
 
 7. **Documentation**
-   - Update architecture docs to include Kosong
+   - Update architecture docs to include llm
    - Add API reference for ChatProvider
    - Add provider configuration guide
 
@@ -113,6 +113,6 @@ This plan enforces the following invariants:
 
 ## References
 
-- [Kimi Code Kosong Interface](../../kimi-code-analysis/core-components.md#13-provider-system)
+- [Kimi Code llm Interface](../../kimi-code-analysis/core-components.md#13-provider-system)
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [Anthropic API Documentation](https://docs.anthropic.com/)

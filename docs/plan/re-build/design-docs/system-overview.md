@@ -46,7 +46,7 @@ An AI coding agent that runs in the terminal. It reads and edits code, executes 
 ┌────────────────────────────────────────────────────────────────────┐
 │  Infrastructure Layer                                               │
 │  - Kaos: Filesystem/process abstraction                           │
-│  - Kosong: LLM provider abstraction                                 │
+│  - llm: LLM provider abstraction                                 │
 │  - MCP: Model Context Protocol client                               │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -63,7 +63,7 @@ An AI coding agent that runs in the terminal. It reads and edits code, executes 
 | **Context** | Manages conversation history | `ContextMemory` |
 | **Records** | Persists events to `wire.jsonl` | `AgentRecords` |
 | **Kaos** | Abstracts filesystem/process I/O | `Kaos` interface |
-| **Kosong** | Abstracts LLM providers | `ChatProvider` interface |
+| **llm** | Abstracts LLM providers | `ChatProvider` interface |
 
 ## Technology Stack
 
@@ -84,7 +84,7 @@ kimi-code/
 │   └── vis/                # Debug visualization web app
 ├── packages/
 │   ├── kaos/               # Execution environment abstraction
-│   ├── kosong/             # LLM provider abstraction
+│   ├── llm/             # LLM provider abstraction
 │   ├── agent-core/         # Core agent engine
 │   ├── kimi-telemetry/     # Telemetry infrastructure
 │   ├── kimi-code-oauth/    # OAuth authentication
@@ -101,7 +101,7 @@ kimi-code/
 | Proxy | RPC layer | Bidirectional method exchange |
 | Observer | `AgentEvent` system | Real-time UI updates |
 | Dependency Injection | Session → Agent → subsystems | Testability |
-| Adapter | Kosong providers | Uniform interface |
+| Adapter | llm providers | Uniform interface |
 | Two-Phase Execution | `resolveExecution()` + `.execute()` | Permission before I/O |
 
 ## See Also

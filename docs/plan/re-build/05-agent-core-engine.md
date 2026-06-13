@@ -273,7 +273,7 @@ runTurn() (see 08-loop)
     ├── Step loop:
     │   ├── 1. beforeStep hook → InjectionManager.inject() → FullCompaction.beforeStep()
     │   ├── 2. executeLoopStep:
-    │   │       ├── LLM.chat(systemPrompt, tools, history) → kosong provider
+    │   │       ├── LLM.chat(systemPrompt, tools, history) → llm provider
     │   │       ├── Text/thinking streaming → events → TUI
     │   │       ├── Tool calls → PermissionManager.beforeToolCall() → execute → context.append
     │   │       └── Record each event to wire.jsonl

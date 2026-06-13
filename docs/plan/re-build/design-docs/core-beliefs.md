@@ -115,7 +115,7 @@ references/ ──> Module reference (150 lines each)
 
 **Examples**:
 - **Kaos**: Unified filesystem/process interface (local or SSH)
-- **Kosong**: Unified LLM provider interface (Anthropic, OpenAI, etc.)
+- **llm**: Unified LLM provider interface (Anthropic, OpenAI, etc.)
 - **ChatProvider**: All providers implement same interface
 
 ## 7. Fail Open for Hooks

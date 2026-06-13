@@ -1,10 +1,10 @@
-# Kosong Interface
+# llm Interface
 
 LLM provider abstraction layer.
 
 ## One-Liner
 
-Kosong provides a unified interface for interacting with LLM providers (Anthropic, OpenAI, Google GenAI, Kimi/Moonshot), abstracting away API differences.
+llm provides a unified interface for interacting with LLM providers (Anthropic, OpenAI, Google GenAI, Kimi/Moonshot), abstracting away API differences.
 
 ## Core Interface
 
@@ -71,7 +71,7 @@ Capability registry maps model name patterns to capabilities. `UNKNOWN_CAPABILIT
 
 ## Thinking Effort Mapping
 
-| Kosong | Anthropic | OpenAI | Google |
+| llm | Anthropic | OpenAI | Google |
 |--------|-----------|--------|--------|
 | `off` | disabled | no reasoning | disabled |
 | `low` | `low` | `reasoning_effort: "low"` | `LOW` |
@@ -92,4 +92,4 @@ ChatProviderError
 ## See Also
 
 - [config-schema.md](config-schema.md) — Provider configuration
-- [loop-engine.md](loop-engine.md) — Uses Kosong for LLM calls
+- [loop-engine.md](loop-engine.md) — Uses llm for LLM calls

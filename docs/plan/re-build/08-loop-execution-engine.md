@@ -61,7 +61,7 @@ async function runTurn(input: {
 |-----------|------|---------|
 | `turnId` | `string` | Unique turn identifier |
 | `signal` | `AbortSignal` | Cancellation signal (from TurnFlow) |
-| `llm` | `LLM` | LLM interface wrapping a kosong ChatProvider |
+| `llm` | `LLM` | LLM interface wrapping a llm ChatProvider |
 | `buildMessages` | `() => Message[]` | Lazily builds message list from context |
 | `dispatchEvent` | `LoopEventDispatcher` | Emits events (recorded + live) |
 | `tools` | `ExecutableTool[]` | Tools available to the LLM this turn |
@@ -223,12 +223,12 @@ interface LLMChatResponse {
 }
 ```
 
-### KosongLLM
+### LlmLLM
 
-The concrete implementation wraps kosong's `ChatProvider` and `generate`:
+The concrete implementation wraps llm's `ChatProvider` and `generate`:
 
 ```typescript
-class KosongLLM implements LLM {
+class LlmLLM implements LLM {
   constructor(
     private provider: ChatProvider,
     private systemPrompt: string,

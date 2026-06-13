@@ -71,5 +71,5 @@ class ProviderManager {
 
 ## See Also
 
-- [kosong-interface.md](kosong-interface.md) — Provider interface
+- [llm-interface.md](llm-interface.md) — Provider interface
 - [permission-hooks.md](permission-hooks.md) — Permission rules

@@ -50,7 +50,7 @@ Kimi Code CLI is an AI coding agent that runs in the terminal. This document des
 │        │                │        ▼                               │
 │        │                │  ┌────────────────┐                   │
 │        │                │  │ kaos (I/O)     │──> filesystem     │
-│        │                │  │ kosong (LLM)   │──> HTTP APIs       │
+│        │                │  │ llm (LLM)   │──> HTTP APIs       │
 │        │                │  │ MCP Manager    │──> ext. servers    │
 │        │                │  └────────────────┘                   │
 │        │                │                                        │
@@ -63,7 +63,7 @@ Kimi Code CLI is an AI coding agent that runs in the terminal. This document des
 ┌────────────────────────────────────────────────────────────────────┐
 │  Infrastructure Layer                                               │
 │  - Kaos: Filesystem/process abstraction                           │
-│  - Kosong: LLM provider abstraction (Anthropic, OpenAI, etc.)     │
+│  - llm: LLM provider abstraction (Anthropic, OpenAI, etc.)     │
 │  - MCP: Model Context Protocol client                             │
 └────────────────────────────────────────────────────────────────────┘
 ```
@@ -125,7 +125,7 @@ TurnEndResult → Events → TUI
          │          │          │          │
          ▼          ▼          ▼          ▼
     ┌───────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐
-    │ kaos  │ │ kosong  │ │ oauth   │ │ telemetry    │
+    │ kaos  │ │ llm  │ │ oauth   │ │ telemetry    │
     │ (I/O) │ │ (LLM)   │ │ (auth)  │ │ (observ.)    │
     └───────┘ └─────────┘ └─────────┘ └──────────────┘
 ```
@@ -223,7 +223,7 @@ Agent ──emit──> AgentEvent ──> RPC ──> SDK ──> TUI.render()
 
 | Phase | Modules | Dependencies |
 |-------|---------|--------------|
-| **1: Foundation** | Kaos → Config → Kosong | None → Config → HTTP |
+| **1: Foundation** | Kaos → Config → llm | None → Config → HTTP |
 | **2: Agent Core** | Loop → Agent → Context → Turn | Phase 1 |
 | **3: Services** | Records → Session → Tools → Permission/Hooks | Phase 2 |
 | **4: Extensions** | Skills → MCP | Phase 3 |

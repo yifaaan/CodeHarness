@@ -23,7 +23,7 @@ kimi-code/                          # Root: pnpm workspace
 │       └── web/                    #   React 19 + Vite frontend
 ├── packages/
 │   ├── kaos/                       # Execution environment abstraction
-│   ├── kosong/                     # LLM provider abstraction
+│   ├── llm/                     # LLM provider abstraction
 │   ├── agent-core/                 # Core agent engine (150+ files)
 │   ├── kimi-telemetry/             # Telemetry infrastructure
 │   ├── kimi-code-oauth/            # OAuth authentication
@@ -40,7 +40,7 @@ kimi-code/                          # Root: pnpm workspace
 |---|------|--------|---------------------------|
 | 01 | [01-architecture-overview.md](01-architecture-overview.md) | System overview, data flows, design patterns | **Start here** — understand the whole |
 | 02 | [02-kaos-execution-layer.md](02-kaos-execution-layer.md) | `kaos` package: Kaos interface, LocalKaos, SSH, filesystem/process | **#1** — every tool depends on this |
-| 03 | [03-kosong-llm-provider-layer.md](03-kosong-llm-provider-layer.md) | `kosong` package: ChatProvider, all 5 providers, streaming, capabilities | **#2** — core LLM abstraction |
+| 03 | [03-llm-provider-layer.md](03-llm-provider-layer.md) | `llm` package: ChatProvider, all 5 providers, streaming, capabilities | **#2** — core LLM abstraction |
 | 04 | [04-config-and-provider-management.md](04-config-and-provider-management.md) | Config schema, ProviderManager, OAuth | **#3** — wires providers to config |
 | 05 | [05-agent-core-engine.md](05-agent-core-engine.md) | `agent-core` Agent class: all subsystems, construction order, RPC methods | **#4** — the composition root |
 | 06 | [06-agent-turn-flow.md](06-agent-turn-flow.md) | TurnFlow: prompt/steer/cancel, steer buffering, turn lifecycle | **#5** — user interaction entry |
@@ -58,7 +58,7 @@ kimi-code/                          # Root: pnpm workspace
 ## Dependency Graph (Module Level)
 
 ```
-CLI/TUI (app) ────> SDK ────> Session ────> Agent ────> Loop ────> kosong (LLM)
+CLI/TUI (app) ────> SDK ────> Session ────> Agent ────> Loop ────> llm (LLM)
                      │            │            │                    │
                      │            │            ├──> kaos (I/O)     │
                      │            │            ├──> Tools ───> kaos│
@@ -99,7 +99,7 @@ Throughout these documents:
 
 | Phase | Modules | Why this order |
 |-------|---------|----------------|
-| **Phase 1: Foundation** | Kaos (02) → Config (04) → Kosong (03) | Kaos is needed for file I/O; Config is needed to connect providers; Kosong providers need only HTTP |
+| **Phase 1: Foundation** | Kaos (02) → Config (04) → llm (03) | Kaos is needed for file I/O; Config is needed to connect providers; llm providers need only HTTP |
 | **Phase 2: Agent Core** | Loop (08) → Agent (05) → Context (12) → Turn (06) | Loop is pure function, easiest to port; then wire into Agent; Context enables actual conversations; Turn bridges user input to loop |
 | **Phase 3: Services** | Records (14) → Session (07) → Tools (09) → Permission (11) → Hooks (11) | Records enables persistence; Session enables multi-agent; Tools give the agent actions; Permission + Hooks control safety |
 | **Phase 4: Extensions** | Skills (13) → MCP (10) | Skills are file-based, easy; MCP requires an external protocol implementation |

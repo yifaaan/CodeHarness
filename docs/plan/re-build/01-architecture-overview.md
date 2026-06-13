@@ -81,7 +81,7 @@ Kimi Code CLI is an **AI coding agent** that runs in the terminal. It reads and 
 │        │                │  └────────────────┘                     │
 │        │                │                                          │
 │        │                │  ┌──────────────────┐                   │
-│        │                │  │ kosong (LLM)     │                   │
+│        │                │  │ llm (LLM)     │                   │
 │        │                │  │ ChatProvider     │──> Anthropic      │
 │        │                │  │                  │──> OpenAI         │
 │        │                │  │                  │──> Google GenAI   │
@@ -110,7 +110,7 @@ Kimi Code CLI is an **AI coding agent** that runs in the terminal. It reads and 
          │
          ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│  packages/kaos                       packages/kosong               │
+│  packages/kaos                       packages/llm               │
 │  ┌────────────┐                      ┌──────────────────┐         │
 │  │ LocalKaos  │                      │ AnthropicProvider│──> HTTP │
 │  ├────────────┤                      ├──────────────────┤──> HTTP │
@@ -145,7 +145,7 @@ Kimi Code CLI is an **AI coding agent** that runs in the terminal. It reads and 
          │          │          │          │
          ▼          ▼          ▼          ▼
     ┌───────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐
-    │ kaos  │ │ kosong  │ │ oauth   │ │ telemetry    │
+    │ kaos  │ │ llm  │ │ oauth   │ │ telemetry    │
     │ (I/O) │ │ (LLM)   │ │ (auth)  │ │ (observ.)    │
     └───────┘ └─────────┘ └─────────┘ └──────────────┘
          │          │
@@ -169,7 +169,7 @@ Kimi Code CLI is an **AI coding agent** that runs in the terminal. It reads and 
 | **Proxy** | RPC layer (`createRPC()`) | Bidirectional method exchange enables in-process IPC with automatic serialization. SDK and TUI communicate via RPC methods. |
 | **Observer** | `AgentEvent` system, `McpConnectionManager.onStatusChange()` | Real-time UI updates without polling. Agent emits events, TUI renders them. |
 | **Dependency Injection** | Session → Agent → all subsystems | All subsystems receive their parent Agent via constructor. This makes every subsystem independently testable. |
-| **Adapter** | Kosong providers (AnthropicAdapter, OpenAIAdapter, etc.) | Each LLM provider wraps its SDK in a uniform `ChatProvider` interface. |
+| **Adapter** | llm providers (AnthropicAdapter, OpenAIAdapter, etc.) | Each LLM provider wraps its SDK in a uniform `ChatProvider` interface. |
 | **Two-Phase Execution** | `ExecutableTool.resolveExecution()` + `.execute()` | Pure validation phase then side-effectful execution. Enables permission checking before actual I/O. |
 | **Stateless Loop** | `runTurn()` in `loop/` | All state is injected; the loop function has no side effects except through hooks. Testable and portable. |
 
@@ -245,7 +245,7 @@ KimiConfig (zod-validated schema)
 
 2. **Config drives everything**: The TOML schema is the integration contract. Port the config schema and `ProviderManager` early — they determine how all other components are wired.
 
-3. **Kosong providers are independent HTTP clients**: Each provider adapter is self-contained. Port the `ChatProvider` interface and one provider (OpenAI is the most standard) first, then add others.
+3. **llm providers are independent HTTP clients**: Each provider adapter is self-contained. Port the `ChatProvider` interface and one provider (OpenAI is the most standard) first, then add others.
 
 4. **The loop is a pure function**: `runTurn()` takes all its dependencies as parameters. This is the easiest module to port and test in isolation.
 

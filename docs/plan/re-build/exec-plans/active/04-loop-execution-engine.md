@@ -73,7 +73,7 @@ Implement the stateless loop execution engine that drives the agent's turn-based
 
 ## Dependencies
 
-- **Kosong**: Required for LLM interface
+- **llm**: Required for LLM interface
 - **Kaos**: Required for tool I/O operations
 
 ## Success Criteria

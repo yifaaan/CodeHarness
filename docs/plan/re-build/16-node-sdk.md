@@ -263,8 +263,8 @@ export type {
 
 ```typescript
 // Re-exports all public types for SDK consumers
-export type { ContentPart, TextPart, ThinkPart, ToolCall } from '@moonshot-ai/kosong';
-export type { TokenUsage, FinishReason } from '@moonshot-ai/kosong';
+export type { ContentPart, TextPart, ThinkPart, ToolCall } from '@moonshot-ai/llm';
+export type { TokenUsage, FinishReason } from '@moonshot-ai/llm';
 export type { PermissionMode, PermissionRule } from '@moonshot-ai/agent-core';
 export type { TurnEndResult, TurnStateInfo } from '@moonshot-ai/agent-core';
 export type { SessionInfo, CoreInfo } from '@moonshot-ai/agent-core';
@@ -287,4 +287,4 @@ export { KimiError, KimiErrorPayload, ErrorCodes } from '@moonshot-ai/agent-core
 
 5. **Auth facade is standalone**: `KimiAuthFacade` only depends on the OAuth package. It can be ported independently of the agent engine.
 
-6. **Type re-exports**: The SDK re-exports types from kosong and agent-core. For another language, these types would need to be defined in the SDK itself (or the equivalent of "types" package).
+6. **Type re-exports**: The SDK re-exports types from llm and agent-core. For another language, these types would need to be defined in the SDK itself (or the equivalent of "types" package).

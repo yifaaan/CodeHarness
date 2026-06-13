@@ -181,7 +181,7 @@ class ProviderManager {
 }
 
 interface ResolvedRuntimeProvider {
-  provider: ChatProvider;          // The kosong ChatProvider instance
+  provider: ChatProvider;          // The llm ChatProvider instance
   model: string;                   // The actual model name
   providerName: string;            // Provider config name from config.toml
   providerType: ProviderType;      // anthropic, openai, etc.
