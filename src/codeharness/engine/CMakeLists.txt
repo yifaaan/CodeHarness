@@ -1,4 +1,7 @@
 codeharness_add_static_module(codeharness_engine
+    loop.cpp
+    turn_step.cpp
+    tool_scheduler.cpp
     engine.cpp
 )
 

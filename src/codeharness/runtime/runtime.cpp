@@ -297,7 +297,7 @@ auto RuntimeBundle::set_permission_mode(PermissionMode mode) -> void {
   auto settings = permissions_.settings();
   settings.mode = mode;
   permissions_ = PermissionChecker(std::move(settings));
-  engine_.set_permission_checker(&permissions_);
+  engine_.SetPermissionChecker(&permissions_);
 }
 
 auto RuntimeBundle::current_model_profile() const -> RuntimeModelProfile {
@@ -337,7 +337,7 @@ auto RuntimeBundle::switch_model_profile(const RuntimeModelProfile& profile) -> 
   }
 
   chat_provider_ = std::move(*provider);
-  engine_.set_chat_provider(*chat_provider_);
+  engine_.SetChatProvider(*chat_provider_);
   profile_id_ = profile.id.empty() ? model_display_name(profile.provider_config) : profile.id;
   profile_label_ = profile.label.empty() ? profile_id_ : profile.label;
   provider_type_ = profile.provider_config.type.empty() ? std::string{"echo"} : profile.provider_config.type;
@@ -362,7 +362,7 @@ auto RuntimeBundle::remember_permission_for_session(const PermissionPrompt& prom
   }
 
   permissions_ = PermissionChecker(std::move(settings));
-  engine_.set_permission_checker(&permissions_);
+  engine_.SetPermissionChecker(&permissions_);
 }
 
 auto RuntimeBundle::skills() const noexcept -> const SkillRegistry& { return loaded_skills_.registry; }
@@ -502,7 +502,7 @@ auto RuntimeBundle::run_prompt(std::string_view prompt, const RunPromptOptions& 
     return *current_path.error();
   }
 
-  auto result = engine_.run_streaming(*request, sink);
+  auto result = engine_.RunStreaming(*request, sink);
   if (!result.ok()) {
     return result.status();
   }

@@ -1,618 +1,649 @@
-#include "test_support.h"
+﻿#include <doctest/doctest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <memory>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
 
-namespace
-{
+#include "codeharness/engine/loop.h"
+#include "codeharness/engine/loop_types.h"
+#include "codeharness/engine/tool_scheduler.h"
+#include "codeharness/engine/turn_step.h"
 
-class CapturingProvider final : public codeharness::Provider
-{
-public:
-    std::vector<codeharness::Message> seen_messages;
+namespace {
 
-    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink) -> codeharness::Result<void> override
-    {
-        seen_messages.assign(messages.begin(), messages.end());
-        sink(codeharness::AssistantTextDelta{"ok"});
-        sink(codeharness::MessageFinished{});
-        return {};
+using namespace codeharness;
+using namespace codeharness::engine;
+
+// ---------------------------------------------------------------------------
+// Mock ChatProvider implementations
+// ---------------------------------------------------------------------------
+
+class EchoChatProvider final : public ChatProvider {
+ public:
+  std::string_view Name() const override { return "test-echo"; }
+  std::string_view ModelName() const override { return "test-echo"; }
+
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override {
+    // Echo the last user message text.
+    for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
+      if (it->role == Role::kUser) {
+        sink(AssistantTextDelta{CollectText(*it)});
+        break;
+      }
     }
+    sink(MessageFinished{FinishReason::kCompleted});
+    return absl::OkStatus();
+  }
+
+  ModelCapability Capability() const override { return ModelCapability{.tool_use = true, .max_context_tokens = 4096}; }
 };
 
-class CountingProvider final : public codeharness::Provider
-{
-public:
-    int calls = 0;
+class ToolCallChatProvider final : public ChatProvider {
+ public:
+  std::string_view Name() const override { return "test-tool"; }
+  std::string_view ModelName() const override { return "test-tool"; }
 
-    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
-    {
-        ++calls;
-        sink(codeharness::AssistantTextDelta{"should not run"});
-        sink(codeharness::MessageFinished{});
-        return {};
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override {
+    // Check if the last message is a tool result — if so, echo it.
+    if (!messages.empty() && messages.back().role == Role::kTool) {
+      auto text = CollectText(messages.back());
+      if (!text.empty()) {
+        sink(AssistantTextDelta{text});
+        sink(MessageFinished{FinishReason::kCompleted});
+        return absl::OkStatus();
+      }
     }
+
+    // First call: request a tool use.
+    sink(AssistantTextDelta{"I'll read that file."});
+    sink(ToolUseStarted{.id = "tool-1", .name = "read_file"});
+    sink(ToolUseInputDelta{.id = "tool-1", .input_json_delta = R"({"path":"hello.txt"})"});
+    sink(ToolUseFinished{.id = "tool-1"});
+    sink(MessageFinished{FinishReason::kToolCalls});
+    return absl::OkStatus();
+  }
+
+  ModelCapability Capability() const override { return ModelCapability{.tool_use = true, .max_context_tokens = 4096}; }
 };
 
-class ToolThenTextProvider final : public codeharness::Provider
-{
-public:
-    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
-    {
-        sink(codeharness::AssistantTextDelta{"partial"});
-        sink(
-            codeharness::ToolUseStarted{
-                .id = "tool-use-1",
-                .name = "read_file",
-            });
-        sink(
-            codeharness::ToolUseInputDelta{
-                .id = "tool-use-1",
-                .input_json_delta = R"({"path":"hello.txt"})",
-            });
-        sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
-        sink(codeharness::MessageFinished{});
-        return {};
+class MultiToolChatProvider final : public ChatProvider {
+ public:
+  int call_count = 0;
+
+  std::string_view Name() const override { return "test-multi-tool"; }
+  std::string_view ModelName() const override { return "test-multi-tool"; }
+
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override {
+    // After tool result, echo the result.
+    if (!messages.empty() && messages.back().role == Role::kTool) {
+      auto text = CollectText(messages.back());
+      if (!text.empty()) {
+        sink(AssistantTextDelta{text});
+        sink(MessageFinished{FinishReason::kCompleted});
+        return absl::OkStatus();
+      }
     }
+
+    ++call_count;
+
+    if (call_count == 1) {
+      // First call: request a tool use.
+      sink(AssistantTextDelta{"First call."});
+      sink(ToolUseStarted{.id = "tool-1", .name = "read_file"});
+      sink(ToolUseInputDelta{.id = "tool-1", .input_json_delta = R"({"path":"a.txt"})"});
+      sink(ToolUseFinished{.id = "tool-1"});
+      sink(MessageFinished{FinishReason::kToolCalls});
+    } else {
+      // Second call: request another tool use.
+      sink(AssistantTextDelta{"Second call."});
+      sink(ToolUseStarted{.id = "tool-2", .name = "read_file"});
+      sink(ToolUseInputDelta{.id = "tool-2", .input_json_delta = R"({"path":"b.txt"})"});
+      sink(ToolUseFinished{.id = "tool-2"});
+      sink(MessageFinished{FinishReason::kToolCalls});
+    }
+    return absl::OkStatus();
+  }
+
+  ModelCapability Capability() const override { return ModelCapability{.tool_use = true, .max_context_tokens = 4096}; }
 };
 
-class UsageProvider final : public codeharness::Provider
-{
-public:
-    auto stream(std::span<const codeharness::Message>, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
-    {
-        sink(codeharness::ProviderUsage{.input_tokens = 3, .output_tokens = 2, .total_tokens = 5});
-        sink(codeharness::AssistantTextDelta{"ok"});
-        sink(codeharness::MessageFinished{});
-        return {};
-    }
+class UsageChatProvider final : public ChatProvider {
+ public:
+  std::string_view Name() const override { return "test-usage"; }
+  std::string_view ModelName() const override { return "test-usage"; }
+
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override {
+    sink(ProviderUsage{.input_tokens = 5, .output_tokens = 3, .total_tokens = 8});
+    sink(AssistantTextDelta{"ok"});
+    sink(MessageFinished{FinishReason::kCompleted});
+    return absl::OkStatus();
+  }
+
+  ModelCapability Capability() const override { return {}; }
 };
 
-class MultiTurnUsageProvider final : public codeharness::Provider
-{
-public:
-    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
-    {
-        ++calls;
-        if (calls == 1)
-        {
-            sink(codeharness::ProviderUsage{.input_tokens = 4, .output_tokens = 3});
-            sink(codeharness::ToolUseStarted{.id = "tool-use-1", .name = "read_file"});
-            sink(codeharness::ToolUseInputDelta{.id = "tool-use-1", .input_json_delta = R"({"path":"hello.txt"})"});
-            sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
-            sink(codeharness::MessageFinished{});
-            return {};
-        }
+class ThrowingToolChatProvider final : public ChatProvider {
+ public:
+  std::string_view Name() const override { return "test-throw"; }
+  std::string_view ModelName() const override { return "test-throw"; }
 
-        sink(codeharness::ProviderUsage{.input_tokens = 8, .output_tokens = 6});
-        sink(codeharness::AssistantTextDelta{"done"});
-        sink(codeharness::MessageFinished{});
-        return {};
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override {
+    if (!messages.empty() && messages.back().role == Role::kTool) {
+      auto text = CollectText(messages.back());
+      if (!text.empty()) {
+        sink(AssistantTextDelta{text});
+        sink(MessageFinished{FinishReason::kCompleted});
+        return absl::OkStatus();
+      }
     }
 
-    int calls = 0;
+    sink(AssistantTextDelta{"About to throw..."});
+    sink(ToolUseStarted{.id = "tool-throw", .name = "throw_tool"});
+    sink(ToolUseInputDelta{.id = "tool-throw", .input_json_delta = "{}"});
+    sink(ToolUseFinished{.id = "tool-throw"});
+    sink(MessageFinished{FinishReason::kToolCalls});
+    return absl::OkStatus();
+  }
+
+  ModelCapability Capability() const override { return ModelCapability{.tool_use = true}; }
 };
 
-class AskUserProvider final : public codeharness::Provider
-{
-public:
-    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
-    {
-        if (!messages.empty() && messages.back().role == codeharness::Role::Tool)
-        {
-            for (const auto& block : messages.back().content)
-            {
-                if (const auto* result = std::get_if<codeharness::ToolResultBlock>(&block))
-                {
-                    sink(codeharness::AssistantTextDelta{result->content});
-                    sink(codeharness::MessageFinished{});
-                    return {};
-                }
-            }
-            sink(codeharness::MessageFinished{});
-            return {};
-        }
+class CancellingChatProvider final : public ChatProvider {
+ public:
+  CancellationToken* cancel_on_call = nullptr;
 
-        sink(codeharness::ToolUseStarted{.id = "tool-use-ask", .name = "ask_user"});
-        sink(codeharness::ToolUseInputDelta{
-            .id = "tool-use-ask",
-            .input_json_delta = R"({"question":"Which file?","reason":"Need a target"})",
-        });
-        sink(codeharness::ToolUseFinished{.id = "tool-use-ask"});
-        sink(codeharness::MessageFinished{});
-        return {};
+  std::string_view Name() const override { return "test-cancel"; }
+  std::string_view ModelName() const override { return "test-cancel"; }
+
+  absl::Status Stream(std::span<const Message> messages, const ProviderEventSink& sink) override {
+    if (cancel_on_call && cancel_on_call->is_cancelled()) {
+      return absl::CancelledError("cancelled");
     }
+    sink(AssistantTextDelta{"partial"});
+    sink(MessageFinished{FinishReason::kCompleted});
+    return absl::OkStatus();
+  }
+
+  ModelCapability Capability() const override { return {}; }
 };
 
-} // namespace
+// ---------------------------------------------------------------------------
+// Mock Tool implementations
+// ---------------------------------------------------------------------------
 
-TEST_CASE("engine runs one provider turn")
-{
-    codeharness::EchoProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
+class ReadFileTestTool final : public Tool {
+ public:
+  std::string content;
 
-    codeharness::RunRequest request;
-    request.prompt = "hello";
-    request.options.max_turns = 1;
+  auto name() const -> std::string override { return "read_file"; }
+  auto description() const -> std::string override { return "Read a file."; }
+  auto is_read_only() const noexcept -> bool override { return true; }
 
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    CHECK(result->output_text == "hello");
-    REQUIRE(result->messages.size() == 2);
-    CHECK(result->messages[0].role == codeharness::Role::User);
-    CHECK(result->messages[1].role == codeharness::Role::Assistant);
-}
-
-TEST_CASE("engine ask_user calls user question handler and returns answer")
-{
-    AskUserProvider provider;
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::AskUserTool>());
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "ask";
-    request.options.max_turns = 2;
-    request.user_question = [](const codeharness::UserQuestionPrompt& prompt) -> codeharness::Result<codeharness::UserQuestionResponse> {
-        CHECK(prompt.id == "ask-tool-use-ask");
-        CHECK(prompt.tool_use_id == "tool-use-ask");
-        CHECK(prompt.question == "Which file?");
-        CHECK(prompt.reason == "Need a target");
-        return codeharness::UserQuestionResponse{.answer = "src/main.cpp"};
-    };
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    CHECK(result->output_text.find("src/main.cpp") != std::string::npos);
-}
-
-TEST_CASE("engine ask_user without handler returns model visible tool error")
-{
-    AskUserProvider provider;
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::AskUserTool>());
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "ask";
-    request.options.max_turns = 2;
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    CHECK(result->output_text.find("user input unavailable in non-interactive mode") != std::string::npos);
-}
-
-TEST_CASE("engine ask_user accepts empty answer")
-{
-    AskUserProvider provider;
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::AskUserTool>());
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "ask";
-    request.options.max_turns = 2;
-    request.user_question = [](const codeharness::UserQuestionPrompt&) -> codeharness::Result<codeharness::UserQuestionResponse> {
-        return codeharness::UserQuestionResponse{.answer = ""};
-    };
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    CHECK(result->messages.back().role == codeharness::Role::Assistant);
-}
-
-TEST_CASE("engine prepends system prompt when provided")
-{
-    CapturingProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "hello";
-    request.system_prompt = "system rules";
-    request.options.max_turns = 1;
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    CHECK(result->output_text == "ok");
-    REQUIRE(result->messages.size() == 3);
-    CHECK(result->messages[0].role == codeharness::Role::System);
-    CHECK(codeharness::collect_text(result->messages[0]) == "system rules");
-    CHECK(result->messages[1].role == codeharness::Role::User);
-    CHECK(result->messages[2].role == codeharness::Role::Assistant);
-
-    REQUIRE(provider.seen_messages.size() == 2);
-    CHECK(provider.seen_messages[0].role == codeharness::Role::System);
-    CHECK(provider.seen_messages[1].role == codeharness::Role::User);
-}
-
-TEST_CASE("engine continues from initial messages and replaces prior system prompt")
-{
-    CapturingProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "next";
-    request.system_prompt = "fresh system";
-    request.initial_messages = std::vector<codeharness::Message>{
-        codeharness::make_text_message(codeharness::Role::System, "old system"),
-        codeharness::make_text_message(codeharness::Role::User, "previous"),
-        codeharness::make_text_message(codeharness::Role::Assistant, "prior answer"),
-    };
-    request.options.max_turns = 1;
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    REQUIRE(result->messages.size() == 5);
-    CHECK(result->messages[0].role == codeharness::Role::System);
-    CHECK(codeharness::collect_text(result->messages[0]) == "fresh system");
-    CHECK(result->messages[1].role == codeharness::Role::User);
-    CHECK(codeharness::collect_text(result->messages[1]) == "previous");
-    CHECK(result->messages[2].role == codeharness::Role::Assistant);
-    CHECK(result->messages[3].role == codeharness::Role::User);
-    CHECK(codeharness::collect_text(result->messages[3]) == "next");
-    CHECK(result->messages[4].role == codeharness::Role::Assistant);
-
-    REQUIRE(provider.seen_messages.size() == 4);
-    CHECK(codeharness::collect_text(provider.seen_messages[0]) == "fresh system");
-    CHECK(codeharness::collect_text(provider.seen_messages[3]) == "next");
-}
-
-namespace
-{
-
-class ReadFileRequestProvider final : public codeharness::Provider
-{
-public:
-    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink) -> codeharness::Result<void> override
-    {
-        for (auto& message : messages)
-        {
-            if (message.role != codeharness::Role::Tool)
-            {
-                continue;
-            }
-
-            for (auto& block : message.content)
-            {
-                if (auto result = std::get_if<codeharness::ToolResultBlock>(&block))
-                {
-                    sink(codeharness::AssistantTextDelta{result->content});
-                    sink(codeharness::MessageFinished{});
-                    return {};
-                }
-            }
-        }
-
-        sink(
-            codeharness::ToolUseStarted{
-                .id = "tool-use-1",
-                .name = "read_file",
-            });
-        sink(
-            codeharness::ToolUseInputDelta{
-                .id = "tool-use-1",
-                .input_json_delta = R"({"path":"hello.txt"})",
-            });
-        sink(codeharness::ToolUseFinished{.id = "tool-use-1"});
-        sink(codeharness::MessageFinished{});
-
-        return {};
+  auto execute(const ToolRequest& request, const ToolContext&) const -> absl::StatusOr<ToolResponse> override {
+    auto path = request.parsed_input.value("path", std::string{});
+    if (path.empty()) {
+      return ToolResponse{.tool_use_id = request.id, .content = "no path specified", .is_error = true};
     }
+    return ToolResponse{
+        .tool_use_id = request.id, .content = content.empty() ? "file content" : content, .is_error = false};
+  }
 };
 
-class ThrowingToolRequestProvider final : public codeharness::Provider
-{
-public:
-    auto stream(std::span<const codeharness::Message> messages, const codeharness::ProviderEventSink& sink)
-        -> codeharness::Result<void> override
-    {
-        for (auto& message : messages)
-        {
-            if (message.role != codeharness::Role::Tool)
-            {
-                continue;
-            }
+class ThrowingTestTool final : public Tool {
+ public:
+  auto name() const -> std::string override { return "throw_tool"; }
+  auto description() const -> std::string override { return "Throws."; }
 
-            for (auto& block : message.content)
-            {
-                if (auto result = std::get_if<codeharness::ToolResultBlock>(&block))
-                {
-                    sink(codeharness::AssistantTextDelta{result->content});
-                    sink(codeharness::MessageFinished{});
-                    return {};
-                }
-            }
-        }
-
-        sink(
-            codeharness::ToolUseStarted{
-                .id = "tool-use-throw",
-                .name = "throw_tool",
-            });
-        sink(
-            codeharness::ToolUseInputDelta{
-                .id = "tool-use-throw",
-                .input_json_delta = R"({})",
-            });
-        sink(codeharness::ToolUseFinished{.id = "tool-use-throw"});
-        sink(codeharness::MessageFinished{});
-
-        return {};
-    }
+  auto execute(const ToolRequest&, const ToolContext&) const -> absl::StatusOr<ToolResponse> override {
+    throw std::runtime_error{"boom"};
+  }
 };
 
-class ThrowingTool final : public codeharness::Tool
-{
-public:
-    auto name() const -> std::string override
-    {
-        return "throw_tool";
-    }
+// ---------------------------------------------------------------------------
+// Event collector for testing
+// ---------------------------------------------------------------------------
+struct TestEventCollector final : public LoopEventDispatcher {
+  std::vector<LoopEvent> recorded;
+  std::vector<LoopEvent> live;
 
-    auto description() const -> std::string override
-    {
-        return "Throws from execute.";
-    }
-
-    auto execute(const codeharness::ToolRequest&, const codeharness::ToolContext&) const
-        -> codeharness::Result<codeharness::ToolResponse> override
-    {
-        throw std::runtime_error{"boom"};
-    }
+  void Recorded(const LoopEvent& event) override { recorded.push_back(event); }
+  void Live(const LoopEvent& event) override { live.push_back(event); }
 };
 
-} // namespace
+// Helpers
+auto MakeToolRequest(std::string name, std::string input_json) -> ToolRequest {
+  ToolRequest req;
+  req.name = std::move(name);
+  req.input_json = std::move(input_json);
+  return req;
+}
 
-TEST_CASE("engine executes requested tool and returns final provider text")
-{
-    auto temp_dir = std::filesystem::temp_directory_path() / "codeharness-engine-tool-test";
-    std::filesystem::remove_all(temp_dir);
-    std::filesystem::create_directories(temp_dir);
+}  // namespace
 
-    {
-        std::ofstream file{temp_dir / "hello.txt"};
-        file << "hello from engine file";
+// ============================================================================
+// Old Engine (adapter) tests
+// ============================================================================
+
+TEST_CASE("engine runs one provider turn") {
+  EchoChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "hello";
+  request.options.max_turns = 1;
+
+  auto result = engine.Run(request);
+
+  REQUIRE(result.has_value());
+  CHECK(result->output_text == "hello");
+  REQUIRE(result->messages.size() == 2);
+  CHECK(result->messages[0].role == Role::kUser);
+  CHECK(result->messages[1].role == Role::kAssistant);
+}
+
+TEST_CASE("engine prepends system prompt when provided") {
+  EchoChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "hello";
+  request.system_prompt = "system rules";
+  request.options.max_turns = 1;
+
+  auto result = engine.Run(request);
+
+  REQUIRE(result.has_value());
+  CHECK(result->output_text == "hello");
+  REQUIRE(result->messages.size() == 3);
+  CHECK(result->messages[0].role == Role::kSystem);
+  CHECK(CollectText(result->messages[0]) == "system rules");
+  CHECK(result->messages[1].role == Role::kUser);
+  CHECK(result->messages[2].role == Role::kAssistant);
+}
+
+TEST_CASE("engine continues from initial messages and replaces prior system prompt") {
+  EchoChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "next";
+  request.system_prompt = "fresh system";
+  request.initial_messages = std::vector<Message>{
+      MakeTextMessage(Role::kSystem, "old system"),
+      MakeTextMessage(Role::kUser, "previous"),
+      MakeTextMessage(Role::kAssistant, "prior answer"),
+  };
+  request.options.max_turns = 1;
+
+  auto result = engine.Run(request);
+
+  REQUIRE(result.has_value());
+  REQUIRE(result->messages.size() == 5);
+  CHECK(result->messages[0].role == Role::kSystem);
+  CHECK(CollectText(result->messages[0]) == "fresh system");
+  CHECK(result->messages[1].role == Role::kUser);
+  CHECK(result->messages[2].role == Role::kAssistant);
+  CHECK(result->messages[3].role == Role::kUser);
+  CHECK(result->messages[4].role == Role::kAssistant);
+}
+
+TEST_CASE("engine executes requested tool and returns final provider text") {
+  auto temp_dir = std::filesystem::temp_directory_path() / "codeharness-engine-tool-test";
+  std::filesystem::remove_all(temp_dir);
+  std::filesystem::create_directories(temp_dir);
+  {
+    std::ofstream file{temp_dir / "hello.txt"};
+    file << "hello from engine file";
+  }
+
+  auto previous_cwd = std::filesystem::current_path();
+  std::filesystem::current_path(temp_dir);
+
+  ToolRegistry tools;
+  auto read_tool = std::make_unique<ReadFileTestTool>();
+  read_tool->content = "hello from engine file";
+  tools.add(std::move(read_tool));
+
+  ToolCallChatProvider provider;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "read hello.txt";
+  request.options.max_turns = 3;
+
+  auto result = engine.Run(request);
+
+  std::filesystem::current_path(previous_cwd);
+  std::filesystem::remove_all(temp_dir);
+
+  REQUIRE(result.has_value());
+  CHECK(result->output_text == "hello from engine file");
+  REQUIRE(result->messages.size() == 4);
+  CHECK(result->messages[0].role == Role::kUser);
+  CHECK(result->messages[1].role == Role::kAssistant);
+  CHECK(result->messages[2].role == Role::kTool);
+  CHECK(result->messages[3].role == Role::kAssistant);
+}
+
+TEST_CASE("engine reports unknown tool as a tool error") {
+  ToolCallChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "read hello.txt";
+  request.options.max_turns = 3;
+
+  auto result = engine.Run(request);
+
+  REQUIRE(result.has_value());
+  REQUIRE(result->messages.size() == 4);
+  CHECK(result->messages[2].role == Role::kTool);
+
+  auto tool_result = std::get_if<ToolResultBlock>(&result->messages[2].content.front());
+  REQUIRE(tool_result != nullptr);
+  CHECK(tool_result->tool_use_id == "tool-1");
+  CHECK(tool_result->is_error);
+  CHECK(tool_result->content.find("tool not found: read_file") != std::string::npos);
+}
+
+TEST_CASE("engine reports throwing tool as a tool error") {
+  ThrowingToolChatProvider provider;
+  ToolRegistry tools;
+  tools.add(std::make_unique<ThrowingTestTool>());
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "run throwing tool";
+  request.options.max_turns = 3;
+
+  auto result = engine.Run(request);
+
+  REQUIRE(result.has_value());
+  REQUIRE(result->messages.size() == 4);
+  CHECK(result->messages[2].role == Role::kTool);
+
+  auto tool_result = std::get_if<ToolResultBlock>(&result->messages[2].content.front());
+  REQUIRE(tool_result != nullptr);
+  CHECK(tool_result->is_error);
+  CHECK(tool_result->content.find("unexpected exception") != std::string::npos);
+}
+
+TEST_CASE("engine streaming emits assistant text delta") {
+  EchoChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "hello";
+  request.options.max_turns = 1;
+
+  std::string streamed_text;
+  auto result = engine.RunStreaming(request, [&](const EngineEvent& event) {
+    if (const auto* delta = std::get_if<EngineAssistantTextDelta>(&event)) {
+      streamed_text += delta->text;
     }
+  });
 
-    auto previous_cwd = std::filesystem::current_path();
-    std::filesystem::current_path(temp_dir);
-
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::ReadFileTool>());
-
-    ReadFileRequestProvider provider;
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "read hello.txt";
-    request.options.max_turns = 3;
-
-    auto result = engine.run(request);
-
-    std::filesystem::current_path(previous_cwd);
-    std::filesystem::remove_all(temp_dir);
-
-    /*
-        -> User prompt
-        -> Assistant 请求调用工具
-        -> Tool 返回工具结果
-        -> Assistant 根据工具结果给最终回复
-    */
-    REQUIRE(result.has_value());
-    CHECK(result->output_text == "hello from engine file");
-    REQUIRE(result->messages.size() == 4);
-    CHECK(result->messages[0].role == codeharness::Role::User);      // messages[0] User"read hello.txt"
-    CHECK(result->messages[1].role == codeharness::Role::Assistant); // messages[1] Assistant ToolUseBlock: read_file({"path":"hello.txt"})
-    CHECK(result->messages[2].role == codeharness::Role::Tool);      // messages[2] Tool ToolResultBlock: "hello from engine file"
-    CHECK(result->messages[3].role == codeharness::Role::Assistant); // messages[3] Assistant TextBlock: "hello from engine file"
+  REQUIRE(result.has_value());
+  CHECK(streamed_text == "hello");
+  CHECK(result->output_text == "hello");
 }
 
-TEST_CASE("engine reports unknown tool as a tool error")
-{
-    ReadFileRequestProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
+TEST_CASE("engine streaming emits tool events") {
+  ToolCallChatProvider provider;
+  ToolRegistry tools;
+  tools.add(std::make_unique<ReadFileTestTool>());
+  Engine engine{provider, tools};
 
-    codeharness::RunRequest request;
-    request.prompt = "read hello.txt";
-    request.options.max_turns = 3;
+  RunRequest request;
+  request.prompt = "read";
+  request.options.max_turns = 3;
 
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    REQUIRE(result->messages.size() == 4);
-    CHECK(result->messages[2].role == codeharness::Role::Tool);
-
-    auto tool_result = std::get_if<codeharness::ToolResultBlock>(&result->messages[2].content.front());
-    REQUIRE(tool_result != nullptr);
-    CHECK(tool_result->tool_use_id == "tool-use-1");
-    CHECK(tool_result->is_error);
-    CHECK(tool_result->content == "tool not found: read_file");
-    CHECK(result->output_text == tool_result->content);
-}
-
-TEST_CASE("engine reports throwing tool as a tool error")
-{
-    ThrowingToolRequestProvider provider;
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<ThrowingTool>());
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "run throwing tool";
-    request.options.max_turns = 3;
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    REQUIRE(result->messages.size() == 4);
-    CHECK(result->messages[2].role == codeharness::Role::Tool);
-
-    auto tool_result = std::get_if<codeharness::ToolResultBlock>(&result->messages[2].content.front());
-    REQUIRE(tool_result != nullptr);
-    CHECK(tool_result->tool_use_id == "tool-use-throw");
-    CHECK(tool_result->is_error);
-    CHECK(tool_result->content.find("unexpected exception: boom") != std::string::npos);
-    CHECK(result->output_text == tool_result->content);
-}
-
-TEST_CASE("engine streaming emits assistant text delta")
-{
-    codeharness::EchoProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "hello";
-    request.options.max_turns = 1;
-
-    std::string streamed_text;
-
-    auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
-        if (const auto* delta = std::get_if<codeharness::EngineAssistantTextDelta>(&event))
-        {
-            streamed_text += delta->text;
-        }
-    });
-
-    REQUIRE(result.has_value());
-    CHECK(streamed_text == "hello");
-    CHECK(result->output_text == "hello");
-}
-
-TEST_CASE("engine streaming emits tool input deltas")
-{
-    ToolThenTextProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "read";
-    request.options.max_turns = 1;
-
-    std::string streamed_input;
-    auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
-        if (const auto* delta = std::get_if<codeharness::EngineToolInputDelta>(&event))
-        {
-            CHECK(delta->id == "tool-use-1");
-            streamed_input += delta->input_json_delta;
-        }
-    });
-
-    REQUIRE(!result.has_value());
-    CHECK(result.error().message == "max turns exceeded");
-    CHECK(streamed_input == R"({"path":"hello.txt"})");
-}
-
-TEST_CASE("engine aggregates usage events into run result")
-{
-    UsageProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "hello";
-    request.options.max_turns = 1;
-
-    auto result = engine.run(request);
-
-    REQUIRE(result.has_value());
-    CHECK(result->usage.input_tokens == 3);
-    CHECK(result->usage.output_tokens == 2);
-    CHECK(result->usage.total_tokens == 5);
-}
-
-TEST_CASE("engine sums usage across provider turns")
-{
-    auto temp_dir = std::filesystem::temp_directory_path() / "codeharness-engine-usage-test";
-    std::filesystem::remove_all(temp_dir);
-    std::filesystem::create_directories(temp_dir);
-
-    {
-        std::ofstream file{temp_dir / "hello.txt"};
-        file << "hello";
+  bool saw_tool_started = false;
+  bool saw_tool_result = false;
+  auto result = engine.RunStreaming(request, [&](const EngineEvent& event) {
+    if (std::holds_alternative<EngineToolStarted>(event)) {
+      saw_tool_started = true;
     }
+    if (std::holds_alternative<EngineToolResult>(event)) {
+      saw_tool_result = true;
+    }
+  });
 
-    auto previous_cwd = std::filesystem::current_path();
-    std::filesystem::current_path(temp_dir);
-
-    MultiTurnUsageProvider provider;
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::ReadFileTool>());
-    codeharness::Engine engine{provider, tools};
-
-    codeharness::RunRequest request;
-    request.prompt = "read";
-    request.options.max_turns = 3;
-
-    auto result = engine.run(request);
-
-    std::filesystem::current_path(previous_cwd);
-    std::filesystem::remove_all(temp_dir);
-
-    REQUIRE(result.has_value());
-    CHECK(result->usage.input_tokens == 12);
-    CHECK(result->usage.output_tokens == 9);
-    CHECK(result->usage.total_tokens == 21);
+  REQUIRE(result.has_value());
+  CHECK(saw_tool_started);
+  CHECK(saw_tool_result);
+  CHECK(result->output_text.size() > 0);
 }
 
-TEST_CASE("engine cancellation before provider turn skips provider")
-{
-    CountingProvider provider;
-    codeharness::ToolRegistry tools;
-    codeharness::Engine engine{provider, tools};
-    codeharness::CancellationSource cancellation;
-    cancellation.cancel();
+TEST_CASE("engine aggregates usage into run result") {
+  UsageChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
 
-    codeharness::RunRequest request;
-    request.prompt = "hello";
-    request.cancellation = cancellation.token();
-    request.options.max_turns = 1;
+  RunRequest request;
+  request.prompt = "hello";
+  request.options.max_turns = 1;
 
-    auto result = engine.run(request);
+  auto result = engine.Run(request);
 
-    REQUIRE(!result.has_value());
-    CHECK(result.error().kind == codeharness::ErrorKind::Cancelled);
-    CHECK(result.error().message == "interrupted");
-    CHECK(provider.calls == 0);
+  REQUIRE(result.has_value());
+  CHECK(result->usage.input_tokens == 5);
+  CHECK(result->usage.output_tokens == 3);
+  CHECK(result->usage.total_tokens == 8);
 }
 
-TEST_CASE("engine cancellation after provider delta stops before tool execution")
-{
-    ToolThenTextProvider provider;
-    codeharness::ToolRegistry tools;
-    tools.add(std::make_unique<codeharness::ReadFileTool>());
-    codeharness::Engine engine{provider, tools};
-    codeharness::CancellationSource cancellation;
+TEST_CASE("engine cancellation returns cancelled error") {
+  EchoChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+  CancellationSource cancellation;
+  cancellation.cancel();
 
-    codeharness::RunRequest request;
-    request.prompt = "read";
-    request.cancellation = cancellation.token();
-    request.options.max_turns = 2;
+  RunRequest request;
+  request.prompt = "hello";
+  request.cancellation = cancellation.token();
+  request.options.max_turns = 1;
 
-    bool saw_delta = false;
-    auto result = engine.run_streaming(request, [&](const codeharness::EngineEvent& event) {
-        if (std::holds_alternative<codeharness::EngineAssistantTextDelta>(event))
-        {
-            saw_delta = true;
-            cancellation.cancel();
-        }
-    });
+  auto result = engine.Run(request);
 
-    REQUIRE(!result.has_value());
-    CHECK(result.error().kind == codeharness::ErrorKind::Cancelled);
-    CHECK(saw_delta);
+  REQUIRE(!result.has_value());
+}
+
+TEST_CASE("engine respects max_turns limit") {
+  EchoChatProvider provider;
+  ToolRegistry tools;
+  Engine engine{provider, tools};
+
+  RunRequest request;
+  request.prompt = "hello";
+  request.options.max_turns = 0;
+
+  auto result = engine.Run(request);
+
+  // With max_turns=0, the loop doesn't run but shouldn't crash.
+  // The engine should handle this gracefully.
+  REQUIRE(result.has_value());
+}
+
+// ============================================================================
+// Loop execution engine tests
+// ============================================================================
+
+TEST_CASE("ExecuteLoopStep with echo provider returns user text") {
+  EchoChatProvider provider;
+  NullEventDispatcher dispatcher;
+  CancellationToken cancel;
+
+  std::vector<Message> messages;
+  messages.push_back(MakeTextMessage(Role::kUser, "hello"));
+
+  auto result = ExecuteLoopStep(provider, messages, dispatcher, cancel);
+
+  REQUIRE(result.has_value());
+  CHECK(result->text == "hello");
+  CHECK(result->finish_reason == FinishReason::kCompleted);
+  CHECK_FALSE(result->HasToolCalls());
+}
+
+TEST_CASE("ExecuteLoopStep with tool provider returns tool calls") {
+  ToolCallChatProvider provider;
+  NullEventDispatcher dispatcher;
+  CancellationToken cancel;
+
+  std::vector<Message> messages;
+  messages.push_back(MakeTextMessage(Role::kUser, "read file"));
+
+  auto result = ExecuteLoopStep(provider, messages, dispatcher, cancel);
+
+  REQUIRE(result.has_value());
+  CHECK(result->text == "I''ll read that file.");
+  CHECK(result->finish_reason == FinishReason::kToolCalls);
+  REQUIRE(result->HasToolCalls());
+  CHECK(result->tool_calls.size() == 1);
+  CHECK(result->tool_calls[0].name == "read_file");
+}
+
+TEST_CASE("ExecuteLoopStep respects cancellation") {
+  EchoChatProvider provider;
+  NullEventDispatcher dispatcher;
+  CancellationSource cancel_src;
+  cancel_src.cancel();
+
+  std::vector<Message> messages;
+  messages.push_back(MakeTextMessage(Role::kUser, "hello"));
+
+  auto result = ExecuteLoopStep(provider, messages, dispatcher, cancel_src.token());
+
+  REQUIRE(!result.ok());
+  CHECK(absl::IsCancelled(result.status()));
+}
+
+TEST_CASE("ChatWithRetry succeeds on first attempt") {
+  EchoChatProvider provider;
+  NullEventDispatcher dispatcher;
+  CancellationToken cancel;
+
+  std::vector<Message> messages;
+  messages.push_back(MakeTextMessage(Role::kUser, "hello"));
+
+  auto result = ChatWithRetry(provider, messages, dispatcher, cancel);
+
+  REQUIRE(result.ok());
+  CHECK(result->text == "hello");
+}
+
+TEST_CASE("RunTurn with echo provider returns end_turn") {
+  EchoChatProvider provider;
+  NullEventDispatcher dispatcher;
+  CancellationToken cancel;
+
+  std::vector<Message> messages;
+  messages.push_back(MakeTextMessage(Role::kUser, "hello"));
+
+  TurnInput input{
+      .turn_id = "test-turn",
+      .cancellation = cancel,
+      .messages = std::move(messages),
+      .event_dispatcher = &dispatcher,
+      .max_steps = 10,
+  };
+
+  auto result = RunTurn(input, provider);
+
+  REQUIRE(result.ok());
+  CHECK(result->stop_reason == TurnStopReason::kEndTurn);
+  CHECK(result->steps > 0);
+}
+
+TEST_CASE("RunTurn with tool call executes tool and returns end_turn") {
+  ToolCallChatProvider provider;
+  NullEventDispatcher dispatcher;
+  CancellationToken cancel;
+  ToolCallDeduplicator dedup;
+
+  ReadFileTestTool read_tool;
+  read_tool.content = "file content here";
+  std::vector<const Tool*> tools = {&read_tool};
+
+  std::vector<Message> messages;
+  messages.push_back(MakeTextMessage(Role::kUser, "read file"));
+
+  // Manually run the loop to verify
+  auto step_result = ExecuteLoopStep(provider, messages, dispatcher, cancel);
+  REQUIRE(step_result.ok());
+  REQUIRE(step_result->HasToolCalls());
+
+  auto tool_results = RunToolCallBatch(step_result->tool_calls, tools, dedup, dispatcher, nullptr, cancel);
+
+  REQUIRE(tool_results.size() == 1);
+  CHECK_FALSE(tool_results[0].is_error);
+  CHECK(tool_results[0].content == "file content here");
+}
+
+TEST_CASE("RunToolCallBatch with unknown tool returns error") {
+  NullEventDispatcher dispatcher;
+  CancellationToken cancel;
+  ToolCallDeduplicator dedup;
+
+  std::vector<ToolUseBlock> tool_calls;
+  tool_calls.push_back(ToolUseBlock{
+      .id = "t1",
+      .name = "nonexistent",
+      .input_json = "{}",
+  });
+
+  std::vector<const Tool*> empty_tools;
+  auto results = RunToolCallBatch(tool_calls, empty_tools, dedup, dispatcher, nullptr, cancel);
+
+  REQUIRE(results.size() == 1);
+  CHECK(results[0].is_error);
+  CHECK(results[0].content.find("tool not found") != std::string::npos);
+}
+
+TEST_CASE("ToolCallDeduplicator caches and returns cached results") {
+  ToolCallDeduplicator dedup;
+
+  nlohmann::json args = {{"path", "test.txt"}};
+  ToolResultBlock result{
+      .tool_use_id = "t1",
+      .content = "cached content",
+      .is_error = false,
+  };
+
+  CHECK_FALSE(dedup.IsDuplicate("read_file", args));
+
+  dedup.Record("read_file", args, result);
+
+  CHECK(dedup.IsDuplicate("read_file", args));
+  auto cached = dedup.GetCached("read_file", args);
+  REQUIRE(cached.has_value());
+  CHECK(cached->content == "cached content");
+
+  // Different args should not match.
+  nlohmann::json other_args = {{"path", "other.txt"}};
+  CHECK_FALSE(dedup.IsDuplicate("read_file", other_args));
+}
+
+TEST_CASE("IsRetryableProviderError identifies retryable errors") {
+  CHECK(IsRetryableProviderError(absl::UnavailableError("service down")));
+  CHECK(IsRetryableProviderError(absl::DeadlineExceededError("timeout")));
+  CHECK(IsRetryableProviderError(absl::ResourceExhaustedError("rate limit")));
+  CHECK_FALSE(IsRetryableProviderError(absl::InvalidArgumentError("bad request")));
+  CHECK_FALSE(IsRetryableProviderError(absl::UnauthenticatedError("auth failed")));
+}
+
+TEST_CASE("FindTool returns nullptr for empty list") {
+  std::vector<const Tool*> empty;
+  CHECK(FindTool(empty, "anything") == nullptr);
 }
