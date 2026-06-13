@@ -13,6 +13,7 @@ add_executable(codeharness_tests
   llm/message_json_test.cpp
   llm/openai_provider_test.cpp
   llm/capability_test.cpp
+  engine/loop_test.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE

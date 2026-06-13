@@ -19,6 +19,7 @@ add_library(codeharness
   llm/openai_provider.cpp
   llm/beast_http_client.cpp
   llm/capability.cpp
+  engine/loop.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
