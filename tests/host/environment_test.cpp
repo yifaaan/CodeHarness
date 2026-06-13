@@ -1,8 +1,9 @@
+#include "host/environment.h"
+
 #include <doctest/doctest.h>
 
 #include <string>
 
-#include "host/environment.h"
 #include "host/local_host.h"
 
 namespace host = codeharness::host;
@@ -37,8 +38,7 @@ TEST_CASE("environment has PATH directories") {
 
 TEST_CASE("shell name is one of the expected values") {
   auto env = host::DetectEnvironment();
-  bool valid_name = (env.shell_name == "bash" || env.shell_name == "sh" ||
-                     env.shell_name == "cmd");
+  bool valid_name = (env.shell_name == "bash" || env.shell_name == "sh" || env.shell_name == "cmd");
   CHECK(valid_name);
 }
 

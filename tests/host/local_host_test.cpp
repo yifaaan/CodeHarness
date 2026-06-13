@@ -1,3 +1,7 @@
+#include "host/local_host.h"
+
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
 #include <doctest/doctest.h>
 
 #include <cstdlib>
@@ -5,10 +9,6 @@
 #include <fstream>
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-
-#include "host/local_host.h"
 #include "host/host_path.h"
 
 namespace host = codeharness::host;
@@ -50,8 +50,17 @@ struct LocalHostFixture {
   }
 };
 
-#define CHECK_OK(expr) do { auto _s = (expr); CHECK(_s.ok()); } while(0)
-#define CHECK_VALUE(expr, expected) do { auto _v = (expr); CHECK(_v.ok()); CHECK_EQ(_v.value(), expected); } while(0)
+#define CHECK_OK(expr) \
+  do {                 \
+    auto _s = (expr);  \
+    CHECK(_s.ok());    \
+  } while (0)
+#define CHECK_VALUE(expr, expected) \
+  do {                              \
+    auto _v = (expr);               \
+    CHECK(_v.ok());                 \
+    CHECK_EQ(_v.value(), expected); \
+  } while (0)
 
 TEST_CASE("LocalHost::path_class") {
   LocalHostFixture f;

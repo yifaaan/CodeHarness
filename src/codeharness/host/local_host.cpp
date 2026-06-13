@@ -1,18 +1,3 @@
-#include "local_host.h"
-
-#include <algorithm>
-#include <array>
-#include <cstdlib>
-#include <fstream>
-#include <sstream>
-#include <system_error>
-
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "fmt/format.h"
-#include "glob/glob.h"
-#include "spdlog/spdlog.h"
-
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -24,9 +9,22 @@
 #include <unistd.h>
 #endif
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
+#include <fmt/format.h>
+#include <glob/glob.h>
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <array>
+#include <cstdlib>
+#include <fstream>
 #include <reproc++/reproc.hpp>
+#include <sstream>
+#include <system_error>
 
 #include "environment.h"
+#include "local_host.h"
 
 namespace codeharness::host {
 

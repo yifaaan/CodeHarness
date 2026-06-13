@@ -1,9 +1,10 @@
+#include "host/host_path.h"
+
 #include <doctest/doctest.h>
 
 #include <filesystem>
 #include <string>
 
-#include "host/host_path.h"
 #include "host/local_host.h"
 
 namespace host = codeharness::host;
@@ -27,8 +28,7 @@ TEST_CASE("HostPath::Name") {
 TEST_CASE("HostPath::Parent") {
   auto parent = host::HostPath("foo/bar/baz.txt").Parent();
   std::string ps = parent.String();
-  bool ok = (ps.find("foo/bar") != std::string::npos ||
-             ps.find("foo\\bar") != std::string::npos);
+  bool ok = (ps.find("foo/bar") != std::string::npos || ps.find("foo\\bar") != std::string::npos);
   CHECK(ok);
 }
 

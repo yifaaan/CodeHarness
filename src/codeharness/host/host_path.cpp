@@ -1,12 +1,13 @@
 #include "host_path.h"
 
+#include <absl/status/status.h>
+#include <absl/status/statusor.h>
+#include <fmt/format.h>
+
 #include <cstdlib>
 #include <filesystem>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
 #include "current_host.h"
-#include "fmt/format.h"
 
 namespace codeharness::host {
 
