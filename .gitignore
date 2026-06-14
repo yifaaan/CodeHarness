@@ -24,3 +24,4 @@ graphify-out
 # Claude/AGENTS
 .claude
 .codex
+.opencode
