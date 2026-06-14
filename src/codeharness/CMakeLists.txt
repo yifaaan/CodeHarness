@@ -10,24 +10,24 @@ find_package(Boost CONFIG REQUIRED COMPONENTS beast)
 find_package(OpenSSL CONFIG REQUIRED)
 
 add_library(codeharness
-  host/host_path.cpp
-  host/local_host.cpp
-  host/environment.cpp
-  host/current_host.cpp
-  llm/sse_parser.cpp
-  llm/message_json.cpp
-  llm/openai_provider.cpp
-  llm/beast_http_client.cpp
-  llm/capability.cpp
-  engine/loop.cpp
-  tools/tool_output.cpp
-  tools/tool_manager.cpp
-  tools/read_file.cpp
-  tools/write_file.cpp
-  tools/edit_file.cpp
-  tools/glob.cpp
-  tools/grep.cpp
-  tools/bash.cpp
+  Host/HostPath.cpp
+  Host/LocalHost.cpp
+  Host/Environment.cpp
+  Host/CurrentHost.cpp
+  Llm/SseParser.cpp
+  Llm/MessageJson.cpp
+  Llm/OpenAiProvider.cpp
+  Llm/BeastHttpClient.cpp
+  Llm/Capability.cpp
+  Engine/Loop.cpp
+  Tools/ToolOutput.cpp
+  Tools/ToolManager.cpp
+  Tools/ReadFile.cpp
+  Tools/WriteFile.cpp
+  Tools/EditFile.cpp
+  Tools/Glob.cpp
+  Tools/Grep.cpp
+  Tools/Bash.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -4,21 +4,21 @@ find_package(reproc++ CONFIG REQUIRED)
 find_package(absl CONFIG REQUIRED)
 
 add_executable(codeharness_tests
-  host/main.cpp
-  host/local_host_test.cpp
-  host/host_path_test.cpp
-  host/environment_test.cpp
-  host/process_lifecycle_test.cpp
-  llm/sse_parser_test.cpp
-  llm/message_json_test.cpp
-  llm/openai_provider_test.cpp
-  llm/capability_test.cpp
-  engine/loop_test.cpp
-  tools/tool_output_test.cpp
-  tools/tool_manager_test.cpp
-  tools/file_tools_test.cpp
-  tools/search_tools_test.cpp
-  tools/bash_test.cpp
+  Host/Main.cpp
+  Host/LocalHostTest.cpp
+  Host/HostPathTest.cpp
+  Host/EnvironmentTest.cpp
+  Host/ProcessLifecycleTest.cpp
+  Llm/SseParserTest.cpp
+  Llm/MessageJsonTest.cpp
+  Llm/OpenAiProviderTest.cpp
+  Llm/CapabilityTest.cpp
+  Engine/LoopTest.cpp
+  Tools/ToolOutputTest.cpp
+  Tools/ToolManagerTest.cpp
+  Tools/FileToolsTest.cpp
+  Tools/SearchToolsTest.cpp
+  Tools/BashTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE
