@@ -6,18 +6,18 @@
 #include <stop_token>
 #include <string>
 
-#include "absl/status/statusor.h"
 #include "Engine/Tool.h"
 #include "Tools/ToolTestFixture.h"
+#include "absl/status/statusor.h"
 
 namespace tools = codeharness::tools;
 namespace engine = codeharness::engine;
 using json = nlohmann::json;
 
 #ifdef _WIN32
-const char *kSlowCmd = "ping -n 30 127.0.0.1 > nul";
+const char* kSlowCmd = "ping -n 30 127.0.0.1 > nul";
 #else
-const char *kSlowCmd = "sleep 30";
+const char* kSlowCmd = "sleep 30";
 #endif
 
 TEST_CASE("BashTool: runs a command and captures output")

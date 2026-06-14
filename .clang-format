@@ -11,3 +11,6 @@ SpaceBeforeParens: ControlStatements
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
+PointerAlignment: Left
+ReferenceAlignment: Left
+AccessModifierOffset: -4

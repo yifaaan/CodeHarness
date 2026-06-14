@@ -23,7 +23,7 @@ namespace codeharness::host
 
 		std::string FindGitOnPath()
 		{
-			const char *pathEnv = std::getenv("PATH");
+			const char* pathEnv = std::getenv("PATH");
 			if (!pathEnv)
 				return {};
 
@@ -37,7 +37,7 @@ namespace codeharness::host
 			}
 			dirs.push_back(pathStr.substr(start));
 
-			for (const auto &dir : dirs)
+			for (const auto& dir : dirs)
 			{
 				std::error_code ec;
 				auto gitExe = std::filesystem::path(dir) / "git.exe";
@@ -56,13 +56,13 @@ namespace codeharness::host
 				"C:\\Program Files (x86)\\Git\\bin\\git.exe",
 			};
 
-			const char *localAppData = std::getenv("LOCALAPPDATA");
+			const char* localAppData = std::getenv("LOCALAPPDATA");
 			if (localAppData)
 			{
 				candidates.push_back(std::string(localAppData) + "\\Programs\\Git\\bin\\git.exe");
 			}
 
-			for (const auto &candidate : candidates)
+			for (const auto& candidate : candidates)
 			{
 				std::error_code ec;
 				if (std::filesystem::exists(candidate, ec))
@@ -73,10 +73,10 @@ namespace codeharness::host
 			return {};
 		}
 
-		std::string ResolveGitBashPath(const std::string &gitExe)
+		std::string ResolveGitBashPath(const std::string& gitExe)
 		{
 			std::string cmd = "\"" + gitExe + "\" --exec-path";
-			FILE *pipe = _popen(cmd.c_str(), "r");
+			FILE* pipe = _popen(cmd.c_str(), "r");
 			if (!pipe)
 				return {};
 
@@ -117,7 +117,7 @@ namespace codeharness::host
 
 	std::string ProbeShell()
 	{
-		const char *kimShell = std::getenv("KIMI_SHELL_PATH");
+		const char* kimShell = std::getenv("KIMI_SHELL_PATH");
 		if (kimShell && kimShell[0])
 		{
 			std::error_code ec;
@@ -147,18 +147,18 @@ namespace codeharness::host
 			"C:\\Program Files\\Git\\bin\\bash.exe",
 			"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
 		};
-		const char *localAppData = std::getenv("LOCALAPPDATA");
+		const char* localAppData = std::getenv("LOCALAPPDATA");
 		if (localAppData)
 		{
 			bashCandidates.push_back(std::string(localAppData) + "\\Programs\\Git\\bin\\bash.exe");
 		}
-		const char *userprofile = std::getenv("USERPROFILE");
+		const char* userprofile = std::getenv("USERPROFILE");
 		if (userprofile)
 		{
 			bashCandidates.push_back(std::string(userprofile) + "\\scoop\\apps\\git\\current\\bin\\bash.exe");
 		}
 
-		for (const auto &candidate : bashCandidates)
+		for (const auto& candidate : bashCandidates)
 		{
 			std::error_code ec;
 			if (std::filesystem::exists(candidate, ec))
@@ -170,7 +170,7 @@ namespace codeharness::host
 		return "cmd.exe";
 #else
 		std::vector<std::string> candidates = {"/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/bin/sh"};
-		for (const auto &candidate : candidates)
+		for (const auto& candidate : candidates)
 		{
 			std::error_code ec;
 			if (std::filesystem::exists(candidate, ec))
@@ -204,7 +204,7 @@ namespace codeharness::host
 
 #ifdef _WIN32
 		result.isWindows = true;
-		const char *pathEnv = std::getenv("PATH");
+		const char* pathEnv = std::getenv("PATH");
 		if (pathEnv)
 		{
 			std::string pathStr(pathEnv);
@@ -218,7 +218,7 @@ namespace codeharness::host
 		}
 #else
 		result.isWindows = false;
-		const char *pathEnv = std::getenv("PATH");
+		const char* pathEnv = std::getenv("PATH");
 		if (pathEnv)
 		{
 			std::string pathStr(pathEnv);

@@ -15,11 +15,11 @@ namespace codeharness::host
 	namespace
 	{
 
-		absl::StatusOr<Host *> ResolveHost(Host *host)
+		absl::StatusOr<Host*> ResolveHost(Host* host)
 		{
 			if (host)
 				return host;
-			auto *h = GetCurrentHostNoThrow();
+			auto* h = GetCurrentHostNoThrow();
 			if (h)
 				return h;
 			return absl::InternalError("no host available");
@@ -29,7 +29,7 @@ namespace codeharness::host
 
 	HostPath::HostPath(std::string_view path, std::string_view pathClass) : path(path), pathClass(pathClass) {}
 
-	HostPath::HostPath(const std::filesystem::path &path, std::string_view pathClass)
+	HostPath::HostPath(const std::filesystem::path& path, std::string_view pathClass)
 		: path(path), pathClass(pathClass) {}
 
 	std::string HostPath::Name() const
@@ -79,7 +79,7 @@ namespace codeharness::host
 		return HostPath(ec ? path : p, pathClass);
 	}
 
-	HostPath HostPath::RelativeTo(const HostPath &other) const
+	HostPath HostPath::RelativeTo(const HostPath& other) const
 	{
 		auto rel = std::filesystem::relative(path, other.path);
 		return HostPath(rel, pathClass);
@@ -89,7 +89,7 @@ namespace codeharness::host
 	{
 		if (path.empty() || path.string()[0] != '~')
 			return *this;
-		const char *Home = std::getenv("HOME");
+		const char* Home = std::getenv("HOME");
 		if (!Home)
 			Home = std::getenv("USERPROFILE");
 		if (!Home)
@@ -107,7 +107,7 @@ namespace codeharness::host
 		return HostPath(ec ? path : p.lexically_normal(), pathClass);
 	}
 
-	absl::StatusOr<StatResult> HostPath::Stat(Host *host) const
+	absl::StatusOr<StatResult> HostPath::Stat(Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -115,7 +115,7 @@ namespace codeharness::host
 		return (*h)->Stat(path.string());
 	}
 
-	absl::StatusOr<bool> HostPath::Exists(Host *host) const
+	absl::StatusOr<bool> HostPath::Exists(Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -130,7 +130,7 @@ namespace codeharness::host
 		return false;
 	}
 
-	absl::StatusOr<bool> HostPath::IsFile(Host *host) const
+	absl::StatusOr<bool> HostPath::IsFile(Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -141,7 +141,7 @@ namespace codeharness::host
 		return (s->stMode & 0170000) == 0100000;
 	}
 
-	absl::StatusOr<bool> HostPath::IsDir(Host *host) const
+	absl::StatusOr<bool> HostPath::IsDir(Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -152,13 +152,13 @@ namespace codeharness::host
 		return (s->stMode & 0170000) == 0040000;
 	}
 
-	absl::StatusOr<std::vector<std::string>> HostPath::Iterdir(Host *host) const
+	absl::StatusOr<std::vector<std::string>> HostPath::Iterdir(Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
 		{
 			std::vector<std::string> result;
-			for (auto &e : std::filesystem::directory_iterator(path))
+			for (auto& e : std::filesystem::directory_iterator(path))
 			{
 				result.push_back(e.path().filename().string());
 			}
@@ -167,7 +167,7 @@ namespace codeharness::host
 		return (*h)->Iterdir(path.string());
 	}
 
-	absl::StatusOr<std::vector<std::string>> HostPath::Glob(std::string_view pattern, Host *host) const
+	absl::StatusOr<std::vector<std::string>> HostPath::Glob(std::string_view pattern, Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -175,7 +175,7 @@ namespace codeharness::host
 		return (*h)->Glob(pattern, path.string());
 	}
 
-	absl::StatusOr<std::string> HostPath::ReadText(Host *host) const
+	absl::StatusOr<std::string> HostPath::ReadText(Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -183,7 +183,7 @@ namespace codeharness::host
 		return (*h)->ReadText(path.string());
 	}
 
-	absl::StatusOr<std::vector<std::string>> HostPath::ReadLines(Host *host, int count) const
+	absl::StatusOr<std::vector<std::string>> HostPath::ReadLines(Host* host, int count) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -191,7 +191,7 @@ namespace codeharness::host
 		return (*h)->ReadLines(path.string(), count);
 	}
 
-	absl::Status HostPath::WriteText(std::string_view data, Host *host) const
+	absl::Status HostPath::WriteText(std::string_view data, Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())
@@ -199,7 +199,7 @@ namespace codeharness::host
 		return (*h)->WriteText(path.string(), data);
 	}
 
-	absl::Status HostPath::Mkdir(const MkdirOptions &options, Host *host) const
+	absl::Status HostPath::Mkdir(const MkdirOptions& options, Host* host) const
 	{
 		auto h = ResolveHost(host);
 		if (!h.ok())

@@ -67,13 +67,13 @@ namespace codeharness::engine
 
 	using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent, ToolCallStartedEvent, ToolResultEvent, ErrorEvent>;
 
-	using EventDispatcher = std::function<void(const LoopEvent &)>;
+	using EventDispatcher = std::function<void(const LoopEvent&)>;
 
 	struct TurnInput
 	{
-		llm::ChatProvider *provider = nullptr;
-		std::vector<ExecutableTool *> tools;
-		host::Host *host = nullptr;
+		llm::ChatProvider* provider = nullptr;
+		std::vector<ExecutableTool*> tools;
+		host::Host* host = nullptr;
 		std::string systemPrompt;
 		std::vector<llm::Message> history;
 		EventDispatcher dispatchEvent;

@@ -8,6 +8,7 @@ find_package(absl CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Boost CONFIG REQUIRED COMPONENTS beast)
 find_package(OpenSSL CONFIG REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 add_library(codeharness
   Host/HostPath.cpp
@@ -19,6 +20,8 @@ add_library(codeharness
   Llm/OpenAiProvider.cpp
   Llm/BeastHttpClient.cpp
   Llm/Capability.cpp
+  Config/ConfigManager.cpp
+  Config/ProviderManager.cpp
   Engine/Loop.cpp
   Tools/ToolOutput.cpp
   Tools/ToolManager.cpp
@@ -43,6 +46,7 @@ target_link_libraries(codeharness PUBLIC
   nlohmann_json::nlohmann_json
   Boost::beast
   OpenSSL::SSL
+  tomlplusplus::tomlplusplus
 )
 
 if(CODEHARNESS_BUILD_TESTS)

@@ -30,7 +30,7 @@ struct ToolFixture
 		std::filesystem::remove_all(tmp_dir, ec);
 	}
 
-	void WriteFile(const std::string &rel, const std::string &content)
+	void WriteFile(const std::string& rel, const std::string& content)
 	{
 		auto full = tmp_dir / rel;
 		std::filesystem::create_directories(full.parent_path());
@@ -38,14 +38,14 @@ struct ToolFixture
 		f << content;
 	}
 
-	std::string ReadFile(const std::string &rel)
+	std::string ReadFile(const std::string& rel)
 	{
 		auto full = tmp_dir / rel;
 		std::ifstream f(full, std::ios::binary);
 		return std::string((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
 	}
 
-	bool Exists(const std::string &rel)
+	bool Exists(const std::string& rel)
 	{
 		std::error_code ec;
 		return std::filesystem::exists(tmp_dir / rel, ec);

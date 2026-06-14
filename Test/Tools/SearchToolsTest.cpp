@@ -3,17 +3,17 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
-#include "absl/status/statusor.h"
 #include "Engine/Tool.h"
 #include "Tools/Glob.h"
 #include "Tools/Grep.h"
 #include "Tools/ToolTestFixture.h"
+#include "absl/status/statusor.h"
 
 namespace tools = codeharness::tools;
 namespace engine = codeharness::engine;
 using json = nlohmann::json;
 
-static engine::ToolContext CtxFor(host::Host *h)
+static engine::ToolContext CtxFor(host::Host* h)
 {
 	return engine::ToolContext{.host = h};
 }

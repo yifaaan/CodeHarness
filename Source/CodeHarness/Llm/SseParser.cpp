@@ -67,7 +67,7 @@ namespace codeharness::llm
 		done = false;
 	}
 
-	bool SseParser::TryExtractLine(std::string &line)
+	bool SseParser::TryExtractLine(std::string& line)
 	{
 		if (buffer.empty())
 			return false;

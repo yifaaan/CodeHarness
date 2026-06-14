@@ -37,7 +37,7 @@ namespace codeharness::tools
 		return lines;
 	}
 
-	std::string NumberLines(const std::vector<std::string> &lines, int start)
+	std::string NumberLines(const std::vector<std::string>& lines, int start)
 	{
 		std::string out;
 		for (std::size_t i = 0; i < lines.size(); ++i)
@@ -51,7 +51,7 @@ namespace codeharness::tools
 	{
 		auto lines = SplitLines(output);
 
-		for (auto &line : lines)
+		for (auto& line : lines)
 		{
 			if (line.size() > maxLineChars)
 			{
@@ -61,7 +61,7 @@ namespace codeharness::tools
 		}
 
 		std::string joined;
-		for (auto &line : lines)
+		for (auto& line : lines)
 		{
 			if (joined.size() + line.size() + 1 >= maxChars)
 			{

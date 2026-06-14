@@ -6,8 +6,8 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
-#include "absl/status/statusor.h"
 #include "Engine/Tool.h"
+#include "absl/status/statusor.h"
 
 namespace tools = codeharness::tools;
 namespace engine = codeharness::engine;
@@ -19,7 +19,7 @@ namespace
 	// A trivial tool used only for registration tests.
 	class StubTool : public engine::ExecutableTool
 	{
-	  public:
+	public:
 		explicit StubTool(std::string Name) : _name(std::move(Name)) {}
 		std::string Name() const override
 		{
@@ -33,16 +33,16 @@ namespace
 		{
 			return json::object();
 		}
-		absl::StatusOr<engine::ToolExecution> ResolveExecution(const json &) override
+		absl::StatusOr<engine::ToolExecution> ResolveExecution(const json&) override
 		{
 			return engine::ToolExecution{.description = "stub"};
 		}
-		absl::StatusOr<engine::ToolResult> Execute(const json &, const engine::ToolContext &) override
+		absl::StatusOr<engine::ToolResult> Execute(const json&, const engine::ToolContext&) override
 		{
 			return engine::ToolResult{.content = "stub"};
 		}
 
-	  private:
+	private:
 		std::string _name;
 	};
 

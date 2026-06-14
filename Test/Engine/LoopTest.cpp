@@ -42,7 +42,7 @@ namespace
 
 	class MockChatProvider : public llm::ChatProvider
 	{
-	  public:
+	public:
 		std::vector<CannedResponse> responses;
 		size_t callCount = 0;
 
@@ -59,7 +59,7 @@ namespace
 			return std::nullopt;
 		}
 
-		absl::Status Generate(std::string_view systemPrompt, std::span<const llm::Tool> tools, std::span<const llm::Message> history, const llm::StreamCallbacks &callbacks, std::stop_token stopToken = {}) override
+		absl::Status Generate(std::string_view systemPrompt, std::span<const llm::Tool> tools, std::span<const llm::Message> history, const llm::StreamCallbacks& callbacks, std::stop_token stopToken = {}) override
 		{
 			size_t idx = callCount++;
 			if (idx >= responses.size())
@@ -67,14 +67,14 @@ namespace
 				return absl::InternalError("no more canned responses");
 			}
 
-			const auto &resp = responses[idx];
+			const auto& resp = responses[idx];
 
 			if (!resp.text.empty() && callbacks.onText)
 			{
 				callbacks.onText(resp.text);
 			}
 
-			for (const auto &tc : resp.toolCalls)
+			for (const auto& tc : resp.toolCalls)
 			{
 				if (callbacks.onToolCallStart)
 				{
@@ -97,11 +97,11 @@ namespace
 
 	class MockTool : public eng::ExecutableTool
 	{
-	  public:
+	public:
 		std::string toolName;
 		std::string toolDesc;
 		json toolParams = json::object();
-		std::function<eng::ToolResult(const json &)> handler;
+		std::function<eng::ToolResult(const json&)> handler;
 
 		std::string Name() const override
 		{
@@ -116,12 +116,12 @@ namespace
 			return toolParams;
 		}
 
-		absl::StatusOr<eng::ToolExecution> ResolveExecution(const json &args) override
+		absl::StatusOr<eng::ToolExecution> ResolveExecution(const json& args) override
 		{
 			return eng::ToolExecution{.description = fmt::format("execute {}", toolName)};
 		}
 
-		absl::StatusOr<eng::ToolResult> Execute(const json &args, const eng::ToolContext &ctx) override
+		absl::StatusOr<eng::ToolResult> Execute(const json& args, const eng::ToolContext& ctx) override
 		{
 			if (handler)
 				return handler(args);
@@ -135,21 +135,21 @@ namespace
 
 		int CountStepStarted() const
 		{
-			return std::count_if(events.begin(), events.end(), [](const auto &e) {
+			return std::count_if(events.begin(), events.end(), [](const auto& e) {
 				return std::holds_alternative<eng::StepStartedEvent>(e);
 			});
 		}
 
 		int CountAssistantDeltas() const
 		{
-			return std::count_if(events.begin(), events.end(), [](const auto &e) {
+			return std::count_if(events.begin(), events.end(), [](const auto& e) {
 				return std::holds_alternative<eng::AssistantDeltaEvent>(e);
 			});
 		}
 
 		int CountToolResults() const
 		{
-			return std::count_if(events.begin(), events.end(), [](const auto &e) {
+			return std::count_if(events.begin(), events.end(), [](const auto& e) {
 				return std::holds_alternative<eng::ToolResultEvent>(e);
 			});
 		}
@@ -158,7 +158,7 @@ namespace
 		{
 			for (auto it = events.rbegin(); it != events.rend(); ++it)
 			{
-				if (auto *tr = std::get_if<eng::ToolResultEvent>(&*it))
+				if (auto* tr = std::get_if<eng::ToolResultEvent>(&*it))
 					return *tr;
 			}
 			return std::nullopt;
@@ -167,9 +167,9 @@ namespace
 		std::string AllText() const
 		{
 			std::string result;
-			for (const auto &e : events)
+			for (const auto& e : events)
 			{
-				if (auto *d = std::get_if<eng::AssistantDeltaEvent>(&e))
+				if (auto* d = std::get_if<eng::AssistantDeltaEvent>(&e))
 				{
 					result += d->text;
 				}
@@ -179,7 +179,7 @@ namespace
 
 		eng::EventDispatcher MakeDispatcher()
 		{
-			return [this](const eng::LoopEvent &e) { events.push_back(e); };
+			return [this](const eng::LoopEvent& e) { events.push_back(e); };
 		}
 	};
 
@@ -223,7 +223,7 @@ TEST_CASE("Loop: single tool call then text completes in 2 steps")
 
 	MockTool echo;
 	echo.toolName = "echo";
-	echo.handler = [](const json &args) -> eng::ToolResult {
+	echo.handler = [](const json& args) -> eng::ToolResult {
 		return {.content = args.value("msg", "no msg")};
 	};
 
@@ -259,7 +259,7 @@ TEST_CASE("Loop: multiple tool calls in one step")
 
 	MockTool echo;
 	echo.toolName = "echo";
-	echo.handler = [](const json &args) -> eng::ToolResult {
+	echo.handler = [](const json& args) -> eng::ToolResult {
 		return {.content = args.value("msg", "")};
 	};
 
@@ -276,8 +276,8 @@ TEST_CASE("Loop: multiple tool calls in one step")
 	CHECK(log.CountToolResults() == 2);
 
 	REQUIRE(result.updatedHistory.size() >= 4);
-	auto &toolMsg1 = result.updatedHistory[result.updatedHistory.size() - 3];
-	auto &toolMsg2 = result.updatedHistory[result.updatedHistory.size() - 2];
+	auto& toolMsg1 = result.updatedHistory[result.updatedHistory.size() - 3];
+	auto& toolMsg2 = result.updatedHistory[result.updatedHistory.size() - 2];
 	CHECK(toolMsg1.role == llm::Role::Tool);
 	CHECK(toolMsg2.role == llm::Role::Tool);
 }
@@ -413,7 +413,7 @@ TEST_CASE("Loop: tool execution error becomes error result in history")
 
 	MockTool failing;
 	failing.toolName = "failing_tool";
-	failing.handler = [](const json &) -> eng::ToolResult {
+	failing.handler = [](const json&) -> eng::ToolResult {
 		return {.content = "permission denied", .isError = true};
 	};
 
@@ -494,9 +494,9 @@ TEST_CASE("Loop: history accumulates assistant and tool messages")
 	CHECK(result.updatedHistory[2].role == llm::Role::Tool);
 	CHECK(result.updatedHistory[3].role == llm::Role::Assistant);
 
-	auto &finalAssistant = result.updatedHistory[3];
+	auto& finalAssistant = result.updatedHistory[3];
 	REQUIRE_FALSE(finalAssistant.content.empty());
-	auto *text = std::get_if<llm::TextPart>(&finalAssistant.content[0]);
+	auto* text = std::get_if<llm::TextPart>(&finalAssistant.content[0]);
 	REQUIRE(text);
 	CHECK(text->text == "final answer");
 }

@@ -39,7 +39,7 @@ namespace codeharness::host
 	namespace
 	{
 
-		std::string ReadFileContents(const std::filesystem::path &path)
+		std::string ReadFileContents(const std::filesystem::path& path)
 		{
 			std::ifstream file(path, std::ios::ate);
 			if (!file.is_open())
@@ -51,7 +51,7 @@ namespace codeharness::host
 			return content;
 		}
 
-		absl::Status WriteFileContents(const std::filesystem::path &path, std::string_view data)
+		absl::Status WriteFileContents(const std::filesystem::path& path, std::string_view data)
 		{
 			std::ofstream file(path, std::ios::binary);
 			if (!file.is_open())
@@ -64,12 +64,12 @@ namespace codeharness::host
 
 		class ReprocProcess : public HostProcess
 		{
-		  public:
+		public:
 			explicit ReprocProcess(reproc::process _proc) : proc(std::move(_proc)) {}
 
 			absl::Status WriteStdin(std::string_view data) override
 			{
-				auto [written, ec] = proc.write(reinterpret_cast<const uint8_t *>(data.data()), data.size());
+				auto [written, ec] = proc.write(reinterpret_cast<const uint8_t*>(data.data()), data.size());
 				if (ec)
 					return absl::InternalError(fmt::format("failed to write stdin: {}", ec.message()));
 				return absl::OkStatus();
@@ -96,7 +96,7 @@ namespace codeharness::host
 						return absl::InternalError(fmt::format("failed to read stdout: {}", ec.message()));
 					if (bytes == 0)
 						break;
-					result.append(reinterpret_cast<char *>(buffer.data()), bytes);
+					result.append(reinterpret_cast<char*>(buffer.data()), bytes);
 				}
 				return result;
 			}
@@ -114,14 +114,14 @@ namespace codeharness::host
 						return absl::InternalError(fmt::format("failed to read stderr: {}", ec.message()));
 					if (bytes == 0)
 						break;
-					result.append(reinterpret_cast<char *>(buffer.data()), bytes);
+					result.append(reinterpret_cast<char*>(buffer.data()), bytes);
 				}
 				return result;
 			}
 
 			absl::StatusOr<int> Pid() const override
 			{
-				auto &mutableProc = const_cast<reproc::process &>(proc);
+				auto& mutableProc = const_cast<reproc::process&>(proc);
 				auto [pid, ec] = mutableProc.pid();
 				if (ec)
 					return absl::InternalError(fmt::format("failed to get pid: {}", ec.message()));
@@ -130,7 +130,7 @@ namespace codeharness::host
 
 			absl::StatusOr<int> ExitCode() const override
 			{
-				auto &mutableProc = const_cast<reproc::process &>(proc);
+				auto& mutableProc = const_cast<reproc::process&>(proc);
 				auto [code, ec] = mutableProc.wait(reproc::milliseconds(0));
 				if (ec)
 					return -1;
@@ -145,7 +145,7 @@ namespace codeharness::host
 				return code;
 			}
 
-			absl::Status Kill(const std::string &signal) override
+			absl::Status Kill(const std::string& signal) override
 			{
 				auto ec = proc.terminate();
 				if (ec)
@@ -171,14 +171,14 @@ namespace codeharness::host
 
 				auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
 
-				auto readStream = [&](reproc::stream s, std::string &dest, bool &done) {
+				auto readStream = [&](reproc::stream s, std::string& dest, bool& done) {
 					auto [n, ec] = proc.read(s, buffer.data(), buffer.size());
 					if (ec || n == 0)
 					{
 						done = true; // EOF (broken_pipe / 0 bytes) or error
 						return;
 					}
-					dest.append(reinterpret_cast<char *>(buffer.data()), n);
+					dest.append(reinterpret_cast<char*>(buffer.data()), n);
 					if (dest.size() >= kMaxPerStream)
 						done = true; // stop runaway output
 				};
@@ -229,7 +229,7 @@ namespace codeharness::host
 				}
 			}
 
-		  private:
+		private:
 			reproc::process proc;
 		};
 
@@ -280,7 +280,7 @@ namespace codeharness::host
 
 	absl::StatusOr<std::string> LocalHost::GetHome() const
 	{
-		const char *home = std::getenv("HOME");
+		const char* home = std::getenv("HOME");
 		if (!home)
 			home = std::getenv("USERPROFILE");
 		if (!home)
@@ -373,7 +373,7 @@ namespace codeharness::host
 				result.stIno = (static_cast<uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
 				result.stNlink = info.nNumberOfLinks;
 				result.stSize = (static_cast<int64_t>(info.nFileSizeHigh) << 32) | info.nFileSizeLow;
-				auto toUnix = [](const FILETIME &ft) -> int64_t {
+				auto toUnix = [](const FILETIME& ft) -> int64_t {
 					ULARGE_INTEGER li;
 					li.LowPart = ft.dwLowDateTime;
 					li.HighPart = ft.dwHighDateTime;
@@ -388,7 +388,7 @@ namespace codeharness::host
 		}
 #else
 		struct stat nativeStat;
-		auto assignFromNative = [&](const struct stat &st) {
+		auto assignFromNative = [&](const struct stat& st) {
 			result.stDev = st.st_dev;
 			result.stIno = st.st_ino;
 			result.stNlink = st.st_nlink;
@@ -439,7 +439,7 @@ namespace codeharness::host
 		return entries;
 	}
 
-	absl::StatusOr<std::vector<std::string>> LocalHost::Glob(std::string_view pattern, std::string_view path, const GlobOptions &options)
+	absl::StatusOr<std::vector<std::string>> LocalHost::Glob(std::string_view pattern, std::string_view path, const GlobOptions& options)
 	{
 		auto root = path.empty() ? cwd : ResolvePath(path);
 		auto fullPattern = (root / pattern).string();
@@ -459,13 +459,13 @@ namespace codeharness::host
 				matches = glob::glob(fullPattern);
 			}
 		}
-		catch (const std::exception &e)
+		catch (const std::exception& e)
 		{
 			return absl::InternalError(fmt::format("glob failed: {}", e.what()));
 		}
 
 		std::vector<std::string> results;
-		for (const auto &m : matches)
+		for (const auto& m : matches)
 		{
 			auto normal = std::filesystem::absolute(m).lexically_normal().string();
 			if (!options.includeDirs)
@@ -492,7 +492,7 @@ namespace codeharness::host
 		auto size = file.tellg();
 		file.seekg(0);
 		std::vector<uint8_t> content(static_cast<size_t>(size));
-		file.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(content.size()));
+		file.read(reinterpret_cast<char*>(content.data()), static_cast<std::streamsize>(content.size()));
 		return content;
 	}
 
@@ -534,7 +534,7 @@ namespace codeharness::host
 	absl::Status LocalHost::WriteBytes(std::string_view path, std::span<const uint8_t> data)
 	{
 		auto p = ResolvePath(path);
-		return WriteFileContents(p, std::string_view(reinterpret_cast<const char *>(data.data()), data.size()));
+		return WriteFileContents(p, std::string_view(reinterpret_cast<const char*>(data.data()), data.size()));
 	}
 
 	absl::Status LocalHost::WriteText(std::string_view path, std::string_view data)
@@ -542,7 +542,7 @@ namespace codeharness::host
 		return WriteFileContents(ResolvePath(path), data);
 	}
 
-	absl::Status LocalHost::Mkdir(std::string_view path, const MkdirOptions &options)
+	absl::Status LocalHost::Mkdir(std::string_view path, const MkdirOptions& options)
 	{
 		auto p = ResolvePath(path);
 		std::error_code ec;
@@ -593,7 +593,7 @@ namespace codeharness::host
 
 		std::string shell = shellPath;
 #ifdef _WIN32
-		auto hasNonAscii = [](const std::string &s) {
+		auto hasNonAscii = [](const std::string& s) {
 			return std::any_of(s.begin(), s.end(), [](char c) { return static_cast<unsigned char>(c) > 127; });
 		};
 		if (hasNonAscii(shell))
@@ -626,7 +626,7 @@ namespace codeharness::host
 	absl::StatusOr<std::unique_ptr<HostProcess>> LocalHost::ExecWithEnv(
 		std::vector<std::string> args,
 		std::string_view cwd,
-		const std::vector<std::pair<std::string, std::string>> &env)
+		const std::vector<std::pair<std::string, std::string>>& env)
 	{
 		std::string workDirStr;
 		if (!cwd.empty())

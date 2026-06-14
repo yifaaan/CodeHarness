@@ -13,6 +13,8 @@ add_executable(codeharness_tests
   Llm/MessageJsonTest.cpp
   Llm/OpenAiProviderTest.cpp
   Llm/CapabilityTest.cpp
+  Config/ConfigManagerTest.cpp
+  Config/ProviderManagerTest.cpp
   Engine/LoopTest.cpp
   Tools/ToolOutputTest.cpp
   Tools/ToolManagerTest.cpp

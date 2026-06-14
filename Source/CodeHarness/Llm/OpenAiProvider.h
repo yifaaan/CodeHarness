@@ -25,18 +25,18 @@ namespace codeharness::llm
 
 	class OpenAiProvider : public ChatProvider
 	{
-	  public:
-		OpenAiProvider(OpenAiConfig _config, HttpClient *_http);
+	public:
+		OpenAiProvider(OpenAiConfig _config, HttpClient* _http);
 
 		std::string Name() const override;
 		std::string ModelName() const override;
 		std::optional<ThinkingEffort> ThinkingEffortLevel() const override;
 
-		absl::Status Generate(std::string_view systemPrompt, std::span<const Tool> tools, std::span<const Message> history, const StreamCallbacks &callbacks, std::stop_token stopToken = {}) override;
+		absl::Status Generate(std::string_view systemPrompt, std::span<const Tool> tools, std::span<const Message> history, const StreamCallbacks& callbacks, std::stop_token stopToken = {}) override;
 
-	  private:
+	private:
 		OpenAiConfig config;
-		HttpClient *http;
+		HttpClient* http;
 	};
 
 } // namespace codeharness::llm

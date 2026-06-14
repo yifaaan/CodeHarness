@@ -4,11 +4,11 @@
 #include <string>
 #include <vector>
 
+#include "Host/Host.h"
+#include "Tools/ToolOutput.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "fmt/format.h"
-#include "Host/Host.h"
-#include "Tools/ToolOutput.h"
 
 namespace codeharness::tools
 {
@@ -18,7 +18,7 @@ namespace codeharness::tools
 
 		constexpr int kMaxReadLines = 1000;
 
-		std::string GetPath(const nlohmann::json &args)
+		std::string GetPath(const nlohmann::json& args)
 		{
 			return args.value("path", std::string{});
 		}
@@ -46,7 +46,7 @@ namespace codeharness::tools
 		};
 	}
 
-	absl::StatusOr<engine::ToolExecution> ReadFileTool::ResolveExecution(const nlohmann::json &args)
+	absl::StatusOr<engine::ToolExecution> ReadFileTool::ResolveExecution(const nlohmann::json& args)
 	{
 		auto path = GetPath(args);
 		if (path.empty())
@@ -54,7 +54,7 @@ namespace codeharness::tools
 		return engine::ToolExecution{.description = fmt::format("Read {}", path), .requiresPermission = false};
 	}
 
-	absl::StatusOr<engine::ToolResult> ReadFileTool::Execute(const nlohmann::json &args, const engine::ToolContext &ctx)
+	absl::StatusOr<engine::ToolResult> ReadFileTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");

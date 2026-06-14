@@ -14,7 +14,7 @@ namespace codeharness::host
 	namespace
 	{
 
-		thread_local Host *_tlsCurrentHost = nullptr;
+		thread_local Host* _tlsCurrentHost = nullptr;
 
 		struct DefaultHostHolder
 		{
@@ -22,7 +22,7 @@ namespace codeharness::host
 			std::once_flag flag;
 		};
 
-		DefaultHostHolder &DefaultHost()
+		DefaultHostHolder& DefaultHost()
 		{
 			static DefaultHostHolder holder;
 			return holder;
@@ -35,7 +35,7 @@ namespace codeharness::host
 
 	} // namespace
 
-	Host *GetCurrentHost()
+	Host* GetCurrentHost()
 	{
 		if (_tlsCurrentHost)
 			return _tlsCurrentHost;
@@ -43,12 +43,12 @@ namespace codeharness::host
 		return DefaultHost().instance.get();
 	}
 
-	Host *GetCurrentHostNoThrow()
+	Host* GetCurrentHostNoThrow()
 	{
 		return _tlsCurrentHost;
 	}
 
-	void SetCurrentHost(Host *host)
+	void SetCurrentHost(Host* host)
 	{
 		_tlsCurrentHost = host;
 	}
@@ -93,7 +93,7 @@ namespace codeharness::host
 		return GetCurrentHost()->Iterdir(path);
 	}
 
-	absl::StatusOr<std::vector<std::string>> Glob(std::string_view pattern, std::string_view path, const GlobOptions &options)
+	absl::StatusOr<std::vector<std::string>> Glob(std::string_view pattern, std::string_view path, const GlobOptions& options)
 	{
 		return GetCurrentHost()->Glob(pattern, path, options);
 	}
@@ -123,7 +123,7 @@ namespace codeharness::host
 		return GetCurrentHost()->WriteText(path, data);
 	}
 
-	absl::Status Mkdir(std::string_view path, const MkdirOptions &options)
+	absl::Status Mkdir(std::string_view path, const MkdirOptions& options)
 	{
 		return GetCurrentHost()->Mkdir(path, options);
 	}
@@ -133,7 +133,7 @@ namespace codeharness::host
 		return GetCurrentHost()->Exec(command, cwd);
 	}
 
-	absl::StatusOr<std::unique_ptr<HostProcess>> ExecWithEnv(std::vector<std::string> args, std::string_view cwd, const std::vector<std::pair<std::string, std::string>> &env)
+	absl::StatusOr<std::unique_ptr<HostProcess>> ExecWithEnv(std::vector<std::string> args, std::string_view cwd, const std::vector<std::pair<std::string, std::string>>& env)
 	{
 		return GetCurrentHost()->ExecWithEnv(std::move(args), cwd, env);
 	}

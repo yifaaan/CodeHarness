@@ -3,12 +3,12 @@
 #include <string>
 #include <string_view>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "fmt/format.h"
 #include "Host/Host.h"
 #include "Host/HostTypes.h"
 #include "Tools/ToolOutput.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "fmt/format.h"
 
 namespace codeharness::tools
 {
@@ -44,7 +44,7 @@ namespace codeharness::tools
 		};
 	}
 
-	absl::StatusOr<engine::ToolExecution> GlobTool::ResolveExecution(const nlohmann::json &args)
+	absl::StatusOr<engine::ToolExecution> GlobTool::ResolveExecution(const nlohmann::json& args)
 	{
 		auto pattern = args.value("pattern", std::string{});
 		if (IsTooBroad(pattern))
@@ -54,7 +54,7 @@ namespace codeharness::tools
 		return engine::ToolExecution{.description = fmt::format("Glob {}", pattern), .requiresPermission = false};
 	}
 
-	absl::StatusOr<engine::ToolResult> GlobTool::Execute(const nlohmann::json &args, const engine::ToolContext &ctx)
+	absl::StatusOr<engine::ToolResult> GlobTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");
@@ -80,7 +80,7 @@ namespace codeharness::tools
 		}
 
 		std::string out;
-		for (const auto &m : *matches)
+		for (const auto& m : *matches)
 		{
 			out += m;
 			out += '\n';

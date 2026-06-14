@@ -50,7 +50,7 @@ namespace codeharness::llm
 		}
 
 		template <typename Stream>
-		absl::StatusOr<HttpResponse> DoStreamRequest(Stream &stream, const HttpRequest &req, const StreamChunkCallback &onChunk, std::stop_token stopToken)
+		absl::StatusOr<HttpResponse> DoStreamRequest(Stream& stream, const HttpRequest& req, const StreamChunkCallback& onChunk, std::stop_token stopToken)
 		{
 			beast::error_code ec;
 
@@ -60,7 +60,7 @@ namespace codeharness::llm
 			httpReq.version(11);
 			httpReq.set(http::field::host, req.host);
 			httpReq.set(http::field::user_agent, "CodeHarness/0.1");
-			for (const auto &[key, value] : req.headers)
+			for (const auto& [key, value] : req.headers)
 			{
 				httpReq.set(key, value);
 			}
@@ -83,7 +83,7 @@ namespace codeharness::llm
 				return ErrorCodeToStatus(ec, "failed to read response headers");
 
 			int status = parser.get().result_int();
-			auto &body = parser.get().body();
+			auto& body = parser.get().body();
 
 			if (status != 200)
 			{
@@ -163,7 +163,7 @@ namespace codeharness::llm
 
 	BeastHttpClient::~BeastHttpClient() = default;
 
-	absl::StatusOr<HttpResponse> BeastHttpClient::Request(const HttpRequest &req)
+	absl::StatusOr<HttpResponse> BeastHttpClient::Request(const HttpRequest& req)
 	{
 		std::string body;
 		auto result = StreamRequest(req, [&body](std::string_view chunk) {
@@ -177,7 +177,7 @@ namespace codeharness::llm
 		return resp;
 	}
 
-	absl::StatusOr<HttpResponse> BeastHttpClient::StreamRequest(const HttpRequest &req, const StreamChunkCallback &onChunk, std::stop_token stopToken)
+	absl::StatusOr<HttpResponse> BeastHttpClient::StreamRequest(const HttpRequest& req, const StreamChunkCallback& onChunk, std::stop_token stopToken)
 	{
 		if (!req.useTls)
 		{

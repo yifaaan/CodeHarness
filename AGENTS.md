@@ -8,6 +8,7 @@
 |--------|-----------|-----------|--------|
 | **Host** | `codeharness::host` | `src/codeharness/host/` | ✅ Implemented |
 | **Llm** | `codeharness::llm` | `src/codeharness/llm/` | ✅ Implemented |
+| **Config** | `codeharness::config` | `src/codeharness/config/` | ✅ Implemented |
 | **Engine** | `codeharness::engine` | `src/codeharness/engine/` | ✅ Implemented |
 | **Tools** | `codeharness::tools` | `src/codeharness/tools/` | ✅ Implemented |
 
@@ -35,6 +36,18 @@ The Llm layer provides a unified interface for LLM providers with streaming supp
 - `SseParser` — Server-Sent Events line/event parser
 
 **Design:** Provider receives `HttpClient*` (abstract). Tests use `MockHttpClient` with canned SSE responses — no network needed. Streaming uses callback-based model: `on_text`, `on_tool_call_start/delta`, `on_finish`.
+
+### Config (Configuration + Provider Management)
+
+The Config layer loads `config.toml`, validates it, and resolves model aliases to live `ChatProvider` instances. See [src/codeharness/config/](src/codeharness/config/) for source.
+
+**Key interfaces:**
+- `KimiConfig` — root config struct (`defaultModel`, `providers`, `models`, `thinking`)
+- `ConfigManager` — TOML load/save/validate via injected `Host*` (`~/.codeharness/config.toml`, `$CODEHARNESS_HOME` override)
+- `ProviderManager` — factory: model alias → `[providers]` config → credentials → `OpenAiProvider`
+- `ProviderType` / `PermissionMode` / `ResolvedProviderConfig` — enums + static capability view
+
+**Design:** All file I/O goes through `Host*` (testable, no direct disk). TOML parsed with `toml++`. Credentials resolve from `api_key` field → `[providers.<n>.env]` sub-table → (OpenAiProvider's own `OPENAI_API_KEY` fallback); `api_key` values support `$VAR`/`${VAR}` expansion against the process environment. Only the OpenAI-compatible family (`openai`, `kimi`, `openai_responses`) is constructible today; `anthropic`/`google-genai`/`vertexai` parse and validate but return `UnimplementedError`. OAuth, permission-rule evaluation, and hooks are deferred.
 
 ### Engine (Turn Execution Loop)
 
@@ -81,6 +94,7 @@ The Tools module implements concrete `ExecutableTool` subclasses that let the ag
 | `reproc++` | Process spawning |
 | `boost-beast` + `OpenSSL` | HTTPS client (streaming SSE) |
 | `nlohmann-json` | JSON serialization |
+| `toml++` | Config file (`config.toml`) parsing |
 | `doctest` | Unit testing |
 
 ## Quality Metrics

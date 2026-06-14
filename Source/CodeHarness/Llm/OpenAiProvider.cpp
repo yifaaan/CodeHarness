@@ -39,11 +39,11 @@ namespace codeharness::llm
 
 	} // namespace
 
-	OpenAiProvider::OpenAiProvider(OpenAiConfig _config, HttpClient *_http) : config(std::move(_config)), http(_http)
+	OpenAiProvider::OpenAiProvider(OpenAiConfig _config, HttpClient* _http) : config(std::move(_config)), http(_http)
 	{
 		if (config.apiKey.empty())
 		{
-			if (const char *env = std::getenv("OPENAI_API_KEY"))
+			if (const char* env = std::getenv("OPENAI_API_KEY"))
 			{
 				config.apiKey = env;
 			}
@@ -65,7 +65,7 @@ namespace codeharness::llm
 		return config.thinking;
 	}
 
-	absl::Status OpenAiProvider::Generate(std::string_view systemPrompt, std::span<const Tool> tools, std::span<const Message> history, const StreamCallbacks &callbacks, std::stop_token stopToken)
+	absl::Status OpenAiProvider::Generate(std::string_view systemPrompt, std::span<const Tool> tools, std::span<const Message> history, const StreamCallbacks& callbacks, std::stop_token stopToken)
 	{
 		if (config.apiKey.empty())
 		{

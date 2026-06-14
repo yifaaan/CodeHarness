@@ -2,12 +2,12 @@
 
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "fmt/format.h"
 #include "Host/Host.h"
 #include "Host/HostProcess.h"
 #include "Tools/ToolOutput.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "fmt/format.h"
 
 namespace codeharness::tools
 {
@@ -27,7 +27,7 @@ namespace codeharness::tools
 			return requested;
 		}
 
-		std::string GetCommand(const nlohmann::json &args)
+		std::string GetCommand(const nlohmann::json& args)
 		{
 			return args.value("command", std::string{});
 		}
@@ -56,7 +56,7 @@ namespace codeharness::tools
 		};
 	}
 
-	absl::StatusOr<engine::ToolExecution> BashTool::ResolveExecution(const nlohmann::json &args)
+	absl::StatusOr<engine::ToolExecution> BashTool::ResolveExecution(const nlohmann::json& args)
 	{
 		auto command = GetCommand(args);
 		if (command.empty())
@@ -64,7 +64,7 @@ namespace codeharness::tools
 		return engine::ToolExecution{.description = fmt::format("Bash: {}", command), .requiresPermission = true};
 	}
 
-	absl::StatusOr<engine::ToolResult> BashTool::Execute(const nlohmann::json &args, const engine::ToolContext &ctx)
+	absl::StatusOr<engine::ToolResult> BashTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");

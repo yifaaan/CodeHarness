@@ -24,7 +24,7 @@ namespace codeharness::host
 
 	class HostProcess
 	{
-	  public:
+	public:
 		virtual ~HostProcess() = default;
 
 		virtual absl::Status WriteStdin(std::string_view data) = 0;
@@ -34,7 +34,7 @@ namespace codeharness::host
 		virtual absl::StatusOr<int> Pid() const = 0;
 		virtual absl::StatusOr<int> ExitCode() const = 0;
 		virtual absl::StatusOr<int> Wait() = 0;
-		virtual absl::Status Kill(const std::string &signal = "SIGTERM") = 0;
+		virtual absl::Status Kill(const std::string& signal = "SIGTERM") = 0;
 
 		// Drain stdout and stderr concurrently (avoiding pipe-buffer deadlock) while
 		// waiting for the process to exit. Returns when the process exits, `TimeoutMs`

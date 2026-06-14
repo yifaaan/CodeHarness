@@ -20,24 +20,24 @@ namespace
 
 	class MockHttpClient : public llm::HttpClient
 	{
-	  public:
+	public:
 		std::string capturedBody;
 		std::vector<std::pair<std::string, std::string>> capturedHeaders;
 		int responseStatus = 200;
 		std::vector<std::string> responseChunks;
 
-		absl::StatusOr<llm::HttpResponse> Request(const llm::HttpRequest &req) override
+		absl::StatusOr<llm::HttpResponse> Request(const llm::HttpRequest& req) override
 		{
 			capturedBody = req.body;
 			capturedHeaders = req.headers;
 			return llm::HttpResponse{responseStatus, {}, ""};
 		}
 
-		absl::StatusOr<llm::HttpResponse> StreamRequest(const llm::HttpRequest &req, const llm::StreamChunkCallback &onChunk, std::stop_token = {}) override
+		absl::StatusOr<llm::HttpResponse> StreamRequest(const llm::HttpRequest& req, const llm::StreamChunkCallback& onChunk, std::stop_token = {}) override
 		{
 			capturedBody = req.body;
 			capturedHeaders = req.headers;
-			for (const auto &chunk : responseChunks)
+			for (const auto& chunk : responseChunks)
 			{
 				if (!onChunk(chunk))
 					break;
@@ -71,7 +71,7 @@ namespace
 					},
 				.onToolCallDelta =
 					[this](int idx, std::string_view args) {
-						for (auto &tc : toolCalls)
+						for (auto& tc : toolCalls)
 						{
 							if (tc.index == idx)
 							{
@@ -81,7 +81,7 @@ namespace
 						}
 					},
 				.onFinish =
-					[this](llm::FinishReason f, const llm::TokenUsage &u) {
+					[this](llm::FinishReason f, const llm::TokenUsage& u) {
 						finish = f;
 						usage = u;
 					},
@@ -94,7 +94,7 @@ namespace
 		return {.apiKey = "test-key", .host = "api.openai.com", .model = "gpt-4o"};
 	}
 
-	std::string SSE(const std::string &Data)
+	std::string SSE(const std::string& Data)
 	{
 		return "data: " + Data + "\n\n";
 	}
@@ -201,7 +201,7 @@ TEST_CASE("OpenAiProvider: auth header")
 	CHECK(provider.Generate("", {}, {}, state.ToCallbacks()).ok());
 
 	bool foundAuth = false;
-	for (const auto &[key, value] : mock.capturedHeaders)
+	for (const auto& [key, value] : mock.capturedHeaders)
 	{
 		if (key == "Authorization" && value == "Bearer test-key")
 		{

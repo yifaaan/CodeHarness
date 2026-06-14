@@ -46,7 +46,7 @@ struct LocalHostFixture
 		std::filesystem::remove_all(tmpDir, ec);
 	}
 
-	void CreateFile(const std::string &relPath, const std::string &content)
+	void CreateFile(const std::string& relPath, const std::string& content)
 	{
 		auto fullPath = tmpDir / relPath;
 		std::ofstream file(fullPath, std::ios::binary);
@@ -268,7 +268,7 @@ TEST_CASE("LocalHost::glob - all txt files")
 	CHECK_GE(results->size(), 2);
 	bool hasHello = false;
 	bool hasNumbers = false;
-	for (const auto &r : *results)
+	for (const auto& r : *results)
 	{
 		if (r.find("hello.txt") != std::string::npos)
 			hasHello = true;

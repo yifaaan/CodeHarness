@@ -99,6 +99,7 @@ Implement the configuration system and provider management to connect LLM provid
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-14 | Completed | Implemented `Config/` module: `ConfigTypes.h`, `Config.h`, `ConfigManager` (TOML load/save/validate + `$VAR` expansion via `toml++`), `ProviderManager` (model alias → `OpenAiProvider`, OpenAI-compatible-only). 27 tests passing. Moved to `completed/`. |
 
 ## Architecture Invariants
 

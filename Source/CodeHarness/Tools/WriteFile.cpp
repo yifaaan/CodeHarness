@@ -2,10 +2,10 @@
 
 #include <string>
 
+#include "Host/Host.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "fmt/format.h"
-#include "Host/Host.h"
 
 namespace codeharness::tools
 {
@@ -13,12 +13,12 @@ namespace codeharness::tools
 	namespace
 	{
 
-		std::string GetPath(const nlohmann::json &args)
+		std::string GetPath(const nlohmann::json& args)
 		{
 			return args.value("path", std::string{});
 		}
 
-		std::string GetMode(const nlohmann::json &args)
+		std::string GetMode(const nlohmann::json& args)
 		{
 			return args.value("mode", std::string{"overwrite"});
 		}
@@ -48,7 +48,7 @@ namespace codeharness::tools
 		};
 	}
 
-	absl::StatusOr<engine::ToolExecution> WriteFileTool::ResolveExecution(const nlohmann::json &args)
+	absl::StatusOr<engine::ToolExecution> WriteFileTool::ResolveExecution(const nlohmann::json& args)
 	{
 		auto path = GetPath(args);
 		if (path.empty())
@@ -61,7 +61,7 @@ namespace codeharness::tools
 		return engine::ToolExecution{.description = fmt::format("{} {}", mode, path), .requiresPermission = true};
 	}
 
-	absl::StatusOr<engine::ToolResult> WriteFileTool::Execute(const nlohmann::json &args, const engine::ToolContext &ctx)
+	absl::StatusOr<engine::ToolResult> WriteFileTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");

@@ -11,12 +11,12 @@ namespace codeharness::llm
 	namespace
 	{
 
-		std::string ConcatTextParts(const std::vector<ContentPart> &parts)
+		std::string ConcatTextParts(const std::vector<ContentPart>& parts)
 		{
 			std::string result;
-			for (const auto &part : parts)
+			for (const auto& part : parts)
 			{
-				if (auto *text = std::get_if<TextPart>(&part))
+				if (auto* text = std::get_if<TextPart>(&part))
 				{
 					if (!result.empty())
 						result += '\n';
@@ -37,7 +37,7 @@ namespace codeharness::llm
 			arr.push_back({{"role", "system"}, {"content", std::string(systemPrompt)}});
 		}
 
-		for (const auto &msg : messages)
+		for (const auto& msg : messages)
 		{
 			nlohmann::json obj;
 			obj["role"] = msg.role == Role::User ? "user" : msg.role == Role::Assistant ? "assistant"
@@ -53,7 +53,7 @@ namespace codeharness::llm
 			if (msg.role == Role::Assistant && !msg.toolCalls.empty())
 			{
 				auto calls = nlohmann::json::array();
-				for (const auto &tc : msg.toolCalls)
+				for (const auto& tc : msg.toolCalls)
 				{
 					calls.push_back(
 						{{"id", tc.id}, {"type", "function"}, {"function", {{"name", tc.name}, {"arguments", tc.arguments}}}});
@@ -70,7 +70,7 @@ namespace codeharness::llm
 	nlohmann::json ToolsToJson(std::span<const Tool> tools)
 	{
 		auto arr = nlohmann::json::array();
-		for (const auto &tool : tools)
+		for (const auto& tool : tools)
 		{
 			auto func = nlohmann::json{
 				{"name", tool.name},
@@ -82,14 +82,14 @@ namespace codeharness::llm
 		return arr;
 	}
 
-	absl::StatusOr<StreamChunk> ParseStreamChunk(const std::string &json_str)
+	absl::StatusOr<StreamChunk> ParseStreamChunk(const std::string& json_str)
 	{
 		nlohmann::json j;
 		try
 		{
 			j = nlohmann::json::parse(json_str);
 		}
-		catch (const nlohmann::json::parse_error &e)
+		catch (const nlohmann::json::parse_error& e)
 		{
 			return absl::InternalError(fmt::format("failed to parse SSE chunk: {}", e.what()));
 		}
@@ -98,7 +98,7 @@ namespace codeharness::llm
 
 		if (j.contains("usage") && j["usage"].is_object())
 		{
-			const auto &u = j["usage"];
+			const auto& u = j["usage"];
 			TokenUsage usage;
 			usage.output = u.value("completion_tokens", 0);
 			int64_t prompt = u.value("prompt_tokens", 0);
@@ -117,7 +117,7 @@ namespace codeharness::llm
 			return chunk;
 		}
 
-		const auto &choice = j["choices"][0];
+		const auto& choice = j["choices"][0];
 
 		if (choice.contains("finish_reason") && !choice["finish_reason"].is_null())
 		{
@@ -129,7 +129,7 @@ namespace codeharness::llm
 			return chunk;
 		}
 
-		const auto &delta = choice["delta"];
+		const auto& delta = choice["delta"];
 
 		if (delta.contains("content") && !delta["content"].is_null())
 		{
@@ -138,14 +138,14 @@ namespace codeharness::llm
 
 		if (delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty())
 		{
-			const auto &tc = delta["tool_calls"][0];
+			const auto& tc = delta["tool_calls"][0];
 			if (tc.contains("index"))
 				chunk.toolCallIndex = tc["index"].get<int>();
 			if (tc.contains("id") && !tc["id"].is_null())
 				chunk.toolCallId = tc["id"].get<std::string>();
 			if (tc.contains("function") && tc["function"].is_object())
 			{
-				const auto &fn = tc["function"];
+				const auto& fn = tc["function"];
 				if (fn.contains("name") && !fn["name"].is_null())
 					chunk.toolCallName = fn["name"].get<std::string>();
 				if (fn.contains("arguments") && !fn["arguments"].is_null())

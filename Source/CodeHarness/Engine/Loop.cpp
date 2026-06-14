@@ -5,9 +5,9 @@
 #include <string>
 #include <utility>
 
+#include "Llm/ChatProvider.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
-#include "Llm/ChatProvider.h"
 #include "spdlog/spdlog.h"
 
 namespace codeharness::engine
@@ -16,7 +16,7 @@ namespace codeharness::engine
 	namespace
 	{
 
-		void Dispatch(const TurnInput &input, LoopEvent event)
+		void Dispatch(const TurnInput& input, LoopEvent event)
 		{
 			if (input.dispatchEvent)
 			{
@@ -24,7 +24,7 @@ namespace codeharness::engine
 			}
 		}
 
-		ToolResult ExecuteToolCall(ExecutableTool &tool, const llm::ToolCall &tc, const ToolContext &ctx)
+		ToolResult ExecuteToolCall(ExecutableTool& tool, const llm::ToolCall& tc, const ToolContext& ctx)
 		{
 			nlohmann::json args;
 			if (!tc.arguments.empty())
@@ -33,7 +33,7 @@ namespace codeharness::engine
 				{
 					args = nlohmann::json::parse(tc.arguments);
 				}
-				catch (const nlohmann::json::parse_error &e)
+				catch (const nlohmann::json::parse_error& e)
 				{
 					return {.content = fmt::format("invalid tool arguments: {}", e.what()), .isError = true};
 				}
@@ -54,9 +54,9 @@ namespace codeharness::engine
 			return std::move(*result);
 		}
 
-		ExecutableTool *FindTool(std::vector<ExecutableTool *> &tools, std::string_view name)
+		ExecutableTool* FindTool(std::vector<ExecutableTool*>& tools, std::string_view name)
 		{
-			for (auto *t : tools)
+			for (auto* t : tools)
 			{
 				if (t->Name() == name)
 					return t;
@@ -66,14 +66,14 @@ namespace codeharness::engine
 
 	} // namespace
 
-	TurnResult RunTurn(TurnInput input, const LoopHooks &hooks)
+	TurnResult RunTurn(TurnInput input, const LoopHooks& hooks)
 	{
 		TurnResult result;
 		result.updatedHistory = std::move(input.history);
 
 		std::vector<llm::Tool> toolDefs;
 		toolDefs.reserve(input.tools.size());
-		for (auto *t : input.tools)
+		for (auto* t : input.tools)
 		{
 			toolDefs.push_back(t->GetToolDefinition());
 		}
@@ -120,7 +120,7 @@ namespace codeharness::engine
 						}
 					},
 				.onFinish =
-					[&](llm::FinishReason f, const llm::TokenUsage &u) {
+					[&](llm::FinishReason f, const llm::TokenUsage& u) {
 						finishReason = f;
 						stepUsage = u;
 					},
@@ -142,7 +142,7 @@ namespace codeharness::engine
 			result.totalUsage.inputCacheRead += stepUsage.inputCacheRead;
 			result.totalUsage.inputCacheCreation += stepUsage.inputCacheCreation;
 
-			pendingCalls.erase(std::remove_if(pendingCalls.begin(), pendingCalls.end(), [](const llm::ToolCall &tc) { return tc.name.empty(); }),
+			pendingCalls.erase(std::remove_if(pendingCalls.begin(), pendingCalls.end(), [](const llm::ToolCall& tc) { return tc.name.empty(); }),
 							   pendingCalls.end());
 
 			llm::Message assistantMsg;
@@ -179,7 +179,7 @@ namespace codeharness::engine
 
 			ToolContext ctx{.host = input.host, .stopToken = input.stopToken};
 
-			for (const auto &tc : pendingCalls)
+			for (const auto& tc : pendingCalls)
 			{
 				if (input.stopToken.stop_requested())
 				{
@@ -202,7 +202,7 @@ namespace codeharness::engine
 
 				Dispatch(input, ToolCallStartedEvent{tc.id, tc.name, args});
 
-				auto *tool = FindTool(input.tools, tc.name);
+				auto* tool = FindTool(input.tools, tc.name);
 				ToolResult toolResult;
 				if (!tool)
 				{

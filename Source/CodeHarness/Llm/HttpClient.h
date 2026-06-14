@@ -34,12 +34,12 @@ namespace codeharness::llm
 
 	class HttpClient
 	{
-	  public:
+	public:
 		virtual ~HttpClient() = default;
 
-		virtual absl::StatusOr<HttpResponse> Request(const HttpRequest &req) = 0;
+		virtual absl::StatusOr<HttpResponse> Request(const HttpRequest& req) = 0;
 
-		virtual absl::StatusOr<HttpResponse> StreamRequest(const HttpRequest &req, const StreamChunkCallback &onChunk, std::stop_token stopToken = {}) = 0;
+		virtual absl::StatusOr<HttpResponse> StreamRequest(const HttpRequest& req, const StreamChunkCallback& onChunk, std::stop_token stopToken = {}) = 0;
 	};
 
 } // namespace codeharness::llm

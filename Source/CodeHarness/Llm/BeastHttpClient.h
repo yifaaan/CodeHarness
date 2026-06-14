@@ -17,17 +17,17 @@ namespace codeharness::llm
 
 	class BeastHttpClient : public HttpClient
 	{
-	  public:
+	public:
 		BeastHttpClient();
 		~BeastHttpClient() override;
 
-		BeastHttpClient(const BeastHttpClient &) = delete;
-		BeastHttpClient &operator=(const BeastHttpClient &) = delete;
+		BeastHttpClient(const BeastHttpClient&) = delete;
+		BeastHttpClient& operator=(const BeastHttpClient&) = delete;
 
-		absl::StatusOr<HttpResponse> Request(const HttpRequest &req) override;
-		absl::StatusOr<HttpResponse> StreamRequest(const HttpRequest &req, const StreamChunkCallback &onChunk, std::stop_token stopToken = {}) override;
+		absl::StatusOr<HttpResponse> Request(const HttpRequest& req) override;
+		absl::StatusOr<HttpResponse> StreamRequest(const HttpRequest& req, const StreamChunkCallback& onChunk, std::stop_token stopToken = {}) override;
 
-	  private:
+	private:
 		std::unique_ptr<boost::asio::ssl::context> sslCtx;
 	};
 

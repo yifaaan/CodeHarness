@@ -22,6 +22,6 @@ namespace codeharness::tools
 	std::vector<std::string> SplitLines(std::string_view text);
 
 	// Render lines with 1-based (or `start`-based) line-number prefixes: "<n>\t<line>".
-	std::string NumberLines(const std::vector<std::string> &lines, int start = 1);
+	std::string NumberLines(const std::vector<std::string>& lines, int start = 1);
 
 } // namespace codeharness::tools

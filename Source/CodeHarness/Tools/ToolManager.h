@@ -18,25 +18,25 @@ namespace codeharness::tools
 	// Agent layer and are deferred.
 	class ToolManager
 	{
-	  public:
+	public:
 		ToolManager() = default;
 		~ToolManager() = default;
-		ToolManager(const ToolManager &) = delete;
-		ToolManager &operator=(const ToolManager &) = delete;
+		ToolManager(const ToolManager&) = delete;
+		ToolManager& operator=(const ToolManager&) = delete;
 
 		// Register a tool; the manager takes ownership. Nullptr is ignored.
 		void Register(std::unique_ptr<engine::ExecutableTool> tool);
 
 		// Look up a tool by name, or nullptr if not registered.
-		engine::ExecutableTool *Find(std::string_view name) const;
+		engine::ExecutableTool* Find(std::string_view name) const;
 
 		// Pointers to all registered tools, suitable for `engine::TurnInput::tools`.
-		std::vector<engine::ExecutableTool *> LoopTools() const;
+		std::vector<engine::ExecutableTool*> LoopTools() const;
 
 		// Number of registered tools.
 		std::size_t Size() const;
 
-	  private:
+	private:
 		std::vector<std::unique_ptr<engine::ExecutableTool>> tools;
 	};
 

@@ -11,9 +11,9 @@ namespace codeharness::tools
 			tools.push_back(std::move(tool));
 	}
 
-	engine::ExecutableTool *ToolManager::Find(std::string_view name) const
+	engine::ExecutableTool* ToolManager::Find(std::string_view name) const
 	{
-		for (const auto &t : tools)
+		for (const auto& t : tools)
 		{
 			if (t->Name() == name)
 				return t.get();
@@ -21,11 +21,11 @@ namespace codeharness::tools
 		return nullptr;
 	}
 
-	std::vector<engine::ExecutableTool *> ToolManager::LoopTools() const
+	std::vector<engine::ExecutableTool*> ToolManager::LoopTools() const
 	{
-		std::vector<engine::ExecutableTool *> result;
+		std::vector<engine::ExecutableTool*> result;
 		result.reserve(tools.size());
-		for (const auto &t : tools)
+		for (const auto& t : tools)
 			result.push_back(t.get());
 		return result;
 	}

@@ -28,7 +28,7 @@ namespace codeharness::llm
 		std::optional<TokenUsage> usage;
 	};
 
-	absl::StatusOr<StreamChunk> ParseStreamChunk(const std::string &jsonStr);
+	absl::StatusOr<StreamChunk> ParseStreamChunk(const std::string& jsonStr);
 
 	FinishReason MapFinishReason(std::string_view reason);
 

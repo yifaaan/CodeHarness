@@ -5,9 +5,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include "Llm/Types.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "Llm/Types.h"
 
 namespace codeharness::host
 {
@@ -25,7 +25,7 @@ namespace codeharness::engine
 
 	struct ToolContext
 	{
-		host::Host *host = nullptr;
+		host::Host* host = nullptr;
 		std::stop_token stopToken;
 	};
 
@@ -37,15 +37,15 @@ namespace codeharness::engine
 
 	class ExecutableTool
 	{
-	  public:
+	public:
 		virtual ~ExecutableTool() = default;
 
 		virtual std::string Name() const = 0;
 		virtual std::string Description() const = 0;
 		virtual nlohmann::json Parameters() const = 0;
 
-		virtual absl::StatusOr<ToolExecution> ResolveExecution(const nlohmann::json &args) = 0;
-		virtual absl::StatusOr<ToolResult> Execute(const nlohmann::json &args, const ToolContext &ctx) = 0;
+		virtual absl::StatusOr<ToolExecution> ResolveExecution(const nlohmann::json& args) = 0;
+		virtual absl::StatusOr<ToolResult> Execute(const nlohmann::json& args, const ToolContext& ctx) = 0;
 
 		llm::Tool GetToolDefinition() const
 		{

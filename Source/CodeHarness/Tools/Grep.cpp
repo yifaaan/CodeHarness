@@ -7,12 +7,12 @@
 #include <string>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "fmt/format.h"
 #include "Host/Host.h"
 #include "Host/HostTypes.h"
 #include "Tools/ToolOutput.h"
+#include "absl/status/status.h"
+#include "absl/status/statusor.h"
+#include "fmt/format.h"
 
 namespace codeharness::tools
 {
@@ -29,7 +29,7 @@ namespace codeharness::tools
 
 		// Filename match for simple glob filters ("*.cpp", "*.h", "*"). We match on the
 		// filename only, since the caller wants file-type filters regardless of depth.
-		bool MatchesFilename(const std::string &filename, const std::string &fileGlob)
+		bool MatchesFilename(const std::string& filename, const std::string& fileGlob)
 		{
 			if (fileGlob.empty() || fileGlob == "*")
 				return true;
@@ -77,7 +77,7 @@ namespace codeharness::tools
 		};
 	}
 
-	absl::StatusOr<engine::ToolExecution> GrepTool::ResolveExecution(const nlohmann::json &args)
+	absl::StatusOr<engine::ToolExecution> GrepTool::ResolveExecution(const nlohmann::json& args)
 	{
 		auto pattern = args.value("pattern", std::string{});
 		if (pattern.empty())
@@ -90,7 +90,7 @@ namespace codeharness::tools
 		return engine::ToolExecution{.description = fmt::format("Grep /{}/", pattern), .requiresPermission = false};
 	}
 
-	absl::StatusOr<engine::ToolResult> GrepTool::Execute(const nlohmann::json &args, const engine::ToolContext &ctx)
+	absl::StatusOr<engine::ToolResult> GrepTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");
@@ -132,26 +132,26 @@ namespace codeharness::tools
 		gopts.includeDirs = false;
 
 		std::vector<std::string> candidates;
-		for (const char *pat : {"*", "**/*"})
+		for (const char* pat : {"*", "**/*"})
 		{
 			auto found = ctx.host->Glob(pat, path, gopts);
 			if (found.ok())
 			{
-				for (auto &f : *found)
+				for (auto& f : *found)
 					candidates.push_back(std::move(f));
 			}
 		}
 		std::sort(candidates.begin(), candidates.end());
 		candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
 
-		auto &files = candidates;
+		auto& files = candidates;
 
 		std::string out;
 		int remaining = headLimit;
 		bool limitHit = false;
 		bool prevActive = false;
 
-		for (const auto &file : files)
+		for (const auto& file : files)
 		{
 			if (limitHit)
 				break;
