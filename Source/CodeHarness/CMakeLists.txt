@@ -47,5 +47,5 @@ target_link_libraries(codeharness PUBLIC
 
 if(CODEHARNESS_BUILD_TESTS)
   enable_testing()
-  add_subdirectory(${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/Test ${CMAKE_BINARY_DIR}/Test)
 endif()
