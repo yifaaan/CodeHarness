@@ -62,6 +62,21 @@ namespace codeharness::host
 			return absl::OkStatus();
 		}
 
+		absl::Status AppendFileContents(const std::filesystem::path& path, std::string_view data)
+		{
+			std::ofstream file(path, std::ios::binary | std::ios::app);
+			if (!file.is_open())
+			{
+				return absl::InternalError(fmt::format("failed to append file: {}", path.string()));
+			}
+			file.write(data.data(), static_cast<std::streamsize>(data.size()));
+			if (!file)
+			{
+				return absl::InternalError(fmt::format("failed to append file: {}", path.string()));
+			}
+			return absl::OkStatus();
+		}
+
 		class ReprocProcess : public HostProcess
 		{
 		public:
@@ -540,6 +555,11 @@ namespace codeharness::host
 	absl::Status LocalHost::WriteText(std::string_view path, std::string_view data)
 	{
 		return WriteFileContents(ResolvePath(path), data);
+	}
+
+	absl::Status LocalHost::AppendText(std::string_view path, std::string_view data)
+	{
+		return AppendFileContents(ResolvePath(path), data);
 	}
 
 	absl::Status LocalHost::Mkdir(std::string_view path, const MkdirOptions& options)

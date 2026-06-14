@@ -205,6 +205,43 @@ TEST_CASE("LocalHost::write_text + read_text roundtrip")
 	CHECK_EQ(*content, "fresh content\nsecond line\n");
 }
 
+TEST_CASE("LocalHost::append_text - creates new file")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.AppendText("append_new.txt", "first line\n"));
+	auto content = f.host.ReadText("append_new.txt");
+	CHECK(content.ok());
+	CHECK_EQ(*content, "first line\n");
+}
+
+TEST_CASE("LocalHost::append_text - preserves existing content")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.WriteText("log.txt", "first\n"));
+	CHECK_OK(f.host.AppendText("log.txt", "second\n"));
+	CHECK_OK(f.host.AppendText("log.txt", "third\n"));
+	auto content = f.host.ReadText("log.txt");
+	CHECK(content.ok());
+	CHECK_EQ(*content, "first\nsecond\nthird\n");
+}
+
+TEST_CASE("LocalHost::append_text - empty data is no-op")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.WriteText("stable.txt", "stable\n"));
+	CHECK_OK(f.host.AppendText("stable.txt", ""));
+	auto content = f.host.ReadText("stable.txt");
+	CHECK(content.ok());
+	CHECK_EQ(*content, "stable\n");
+}
+
+TEST_CASE("LocalHost::append_text - non-existent directory fails")
+{
+	LocalHostFixture f;
+	auto status = f.host.AppendText("nonexistent_dir/file.txt", "data\n");
+	CHECK_FALSE(status.ok());
+}
+
 TEST_CASE("LocalHost::read_bytes")
 {
 	LocalHostFixture f;

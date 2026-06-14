@@ -35,6 +35,7 @@ namespace codeharness::host
 		virtual absl::StatusOr<std::vector<std::string>> ReadLines(std::string_view path, int count = 0) = 0;
 		virtual absl::Status WriteBytes(std::string_view path, std::span<const uint8_t> data) = 0;
 		virtual absl::Status WriteText(std::string_view path, std::string_view data) = 0;
+		virtual absl::Status AppendText(std::string_view path, std::string_view data) = 0;
 		virtual absl::Status Mkdir(std::string_view path, const MkdirOptions& options = {}) = 0;
 
 		virtual absl::StatusOr<std::unique_ptr<HostProcess>> Exec(std::string_view command, std::string_view cwd = "") = 0;
