@@ -15,12 +15,14 @@ add_executable(codeharness_tests
   Llm/CapabilityTest.cpp
   Config/ConfigManagerTest.cpp
   Config/ProviderManagerTest.cpp
+  Agent/AgentTest.cpp
   Engine/LoopTest.cpp
   Tools/ToolOutputTest.cpp
   Tools/ToolManagerTest.cpp
   Tools/FileToolsTest.cpp
   Tools/SearchToolsTest.cpp
   Tools/BashTest.cpp
+  Records/RecordsTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE

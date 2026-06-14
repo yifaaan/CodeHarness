@@ -22,6 +22,7 @@ add_library(codeharness
   Llm/Capability.cpp
   Config/ConfigManager.cpp
   Config/ProviderManager.cpp
+  Agent/Agent.cpp
   Engine/Loop.cpp
   Tools/ToolOutput.cpp
   Tools/ToolManager.cpp
@@ -31,6 +32,9 @@ add_library(codeharness
   Tools/Glob.cpp
   Tools/Grep.cpp
   Tools/Bash.cpp
+  Records/RecordJson.cpp
+  Records/FilePersistence.cpp
+  Records/AgentRecords.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
