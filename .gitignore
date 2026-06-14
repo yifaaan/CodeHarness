@@ -19,6 +19,7 @@ Thumbs.db
 compile_commands.json
 CMakeUserPresets.json
 out/
-
+graphify-out
+.codegraph/
 # Claude/AGENTS
 .claude
