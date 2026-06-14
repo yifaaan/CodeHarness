@@ -10,24 +10,26 @@
 
 #include "types.h"
 
-namespace codeharness::llm {
+namespace codeharness::llm
+{
 
-nlohmann::json MessagesToJson(std::string_view system_prompt, std::span<const Message> messages);
+nlohmann::json MessagesToJson(std::string_view systemPrompt, std::span<const Message> messages);
 
 nlohmann::json ToolsToJson(std::span<const Tool> tools);
 
-struct StreamChunk {
-  std::optional<std::string> content;
-  std::optional<int> tool_call_index;
-  std::optional<std::string> tool_call_id;
-  std::optional<std::string> tool_call_name;
-  std::optional<std::string> tool_call_args;
-  std::optional<std::string> finish_reason;
-  std::optional<TokenUsage> usage;
+struct StreamChunk
+{
+	std::optional<std::string> content;
+	std::optional<int> toolCallIndex;
+	std::optional<std::string> toolCallId;
+	std::optional<std::string> toolCallName;
+	std::optional<std::string> toolCallArgs;
+	std::optional<std::string> finishReason;
+	std::optional<TokenUsage> usage;
 };
 
-absl::StatusOr<StreamChunk> ParseStreamChunk(const std::string& json_str);
+absl::StatusOr<StreamChunk> ParseStreamChunk(const std::string& jsonStr);
 
 FinishReason MapFinishReason(std::string_view reason);
 
-}  // namespace codeharness::llm
+} // namespace codeharness::llm

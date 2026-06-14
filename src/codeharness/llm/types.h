@@ -7,67 +7,89 @@
 #include <variant>
 #include <vector>
 
-namespace codeharness::llm {
+namespace codeharness::llm
+{
 
-enum class Role { kUser, kAssistant, kTool };
-
-enum class FinishReason {
-  kCompleted,
-  kToolCalls,
-  kTruncated,
-  kFiltered,
-  kPaused,
-  kOther,
+enum class Role
+{
+	User,
+	Assistant,
+	Tool
 };
 
-enum class ThinkingEffort { kOff, kLow, kMedium, kHigh, kXHigh, kMax };
-
-struct TextPart {
-  std::string text;
+enum class FinishReason
+{
+	Completed,
+	ToolCalls,
+	Truncated,
+	Filtered,
+	Paused,
+	Other,
 };
 
-struct ThinkPart {
-  std::string think;
-  std::optional<std::string> encrypted;
+enum class ThinkingEffort
+{
+	Off,
+	Low,
+	Medium,
+	High,
+	XHigh,
+	Max
+};
+
+struct TextPart
+{
+	std::string text;
+};
+
+struct ThinkPart
+{
+	std::string think;
+	std::optional<std::string> encrypted;
 };
 
 using ContentPart = std::variant<TextPart, ThinkPart>;
 
-struct ToolCall {
-  std::string id;
-  std::string name;
-  std::string arguments;
+struct ToolCall
+{
+	std::string id;
+	std::string name;
+	std::string arguments;
 };
 
-struct Message {
-  Role role = Role::kUser;
-  std::vector<ContentPart> content;
-  std::optional<std::string> tool_call_id;
-  std::vector<ToolCall> tool_calls;
+struct Message
+{
+	Role role = Role::User;
+	std::vector<ContentPart> content;
+	std::optional<std::string> toolCallId;
+	std::vector<ToolCall> toolCalls;
 };
 
-struct Tool {
-  std::string name;
-  std::string description;
-  nlohmann::json input_schema;
+struct Tool
+{
+	std::string name;
+	std::string description;
+	nlohmann::json inputSchema;
 };
 
-struct TokenUsage {
-  int64_t input_other = 0;
-  int64_t output = 0;
-  int64_t input_cache_read = 0;
-  int64_t input_cache_creation = 0;
+struct TokenUsage
+{
+	int64_t inputOther = 0;
+	int64_t output = 0;
+	int64_t inputCacheRead = 0;
+	int64_t inputCacheCreation = 0;
 };
 
-struct ModelCapability {
-  bool image_in = false;
-  bool video_in = false;
-  bool audio_in = false;
-  bool thinking = false;
-  bool tool_use = false;
-  int64_t max_context_tokens = 0;
+struct ModelCapability
+{
+	bool imageIn = false;
+	bool videoIn = false;
+	bool audioIn = false;
+	bool thinking = false;
+	bool toolUse = false;
+	int64_t maxContextTokens = 0;
 };
 
-inline constexpr ModelCapability kUnknownCapability{};
+inline constexpr ModelCapability UnknownCapability{};
 
-}  // namespace codeharness::llm
+} // namespace codeharness::llm

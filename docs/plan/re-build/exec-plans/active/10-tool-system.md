@@ -126,6 +126,7 @@ Implement the tool system including the ExecutableTool interface, ToolManager, a
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-13 | Done | Implemented `ToolManager` + Read/Write/Edit/Glob/Grep/Bash under `src/codeharness/tools/`. ExecutableTool interface kept in `engine/`. Grep uses in-process `re2`. Added `HostProcess::Drain` (reproc poll, single-threaded) for deadlock-free Bash output draining. Wired `TurnInput.host` → `ToolContext`. 167 tests passing. Active-set selection, MCP, and user-defined tools deferred. |
 
 ## Architecture Invariants
 

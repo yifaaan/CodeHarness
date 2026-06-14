@@ -14,6 +14,11 @@ add_executable(codeharness_tests
   llm/openai_provider_test.cpp
   llm/capability_test.cpp
   engine/loop_test.cpp
+  tools/tool_output_test.cpp
+  tools/tool_manager_test.cpp
+  tools/file_tools_test.cpp
+  tools/search_tools_test.cpp
+  tools/bash_test.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE

@@ -4,8 +4,9 @@
 
 #include "types.h"
 
-namespace codeharness::llm {
+namespace codeharness::llm
+{
 
-ModelCapability GetCapability(std::string_view model_name);
+ModelCapability GetCapability(std::string_view modelName);
 
-}  // namespace codeharness::llm
+} // namespace codeharness::llm

@@ -5,30 +5,34 @@
 #include <string>
 #include <vector>
 
-namespace codeharness::host {
+namespace codeharness::host
+{
 
-struct StatResult {
-  uint32_t st_mode = 0;
-  uint64_t st_ino = 0;
-  uint64_t st_dev = 0;
-  uint16_t st_nlink = 0;
-  uint32_t st_uid = 0;
-  uint32_t st_gid = 0;
-  int64_t st_size = 0;
-  int64_t st_atime = 0;
-  int64_t st_mtime = 0;
-  int64_t st_ctime = 0;
+struct StatResult
+{
+	uint32_t stMode = 0;
+	uint64_t stIno = 0;
+	uint64_t stDev = 0;
+	uint16_t stNlink = 0;
+	uint32_t stUid = 0;
+	uint32_t stGid = 0;
+	int64_t stSize = 0;
+	int64_t stAtime = 0;
+	int64_t stMtime = 0;
+	int64_t stCtime = 0;
 };
 
-struct GlobOptions {
-  std::filesystem::path cwd;
-  bool include_dirs = true;
-  int max_depth = -1;
+struct GlobOptions
+{
+	std::filesystem::path cwd;
+	bool includeDirs = true;
+	int maxDepth = -1;
 };
 
-struct MkdirOptions {
-  bool exist_ok = true;
-  bool recursive = false;
+struct MkdirOptions
+{
+	bool existOk = true;
+	bool recursive = false;
 };
 
-}  // namespace codeharness::host
+} // namespace codeharness::host

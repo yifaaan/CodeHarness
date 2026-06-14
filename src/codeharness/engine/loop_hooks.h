@@ -3,12 +3,14 @@
 #include <functional>
 #include <string_view>
 
-namespace codeharness::engine {
+namespace codeharness::engine
+{
 
-struct LoopHooks {
-  std::function<void(int)> before_step;
-  std::function<void(int)> after_step;
-  std::function<bool(std::string_view)> should_continue_after_stop;
+struct LoopHooks
+{
+	std::function<void(int)> beforeStep;
+	std::function<void(int)> afterStep;
+	std::function<bool(std::string_view)> shouldContinueAfterStop;
 };
 
-}  // namespace codeharness::engine
+} // namespace codeharness::engine

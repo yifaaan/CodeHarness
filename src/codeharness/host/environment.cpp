@@ -14,186 +14,225 @@
 #include <windows.h>
 #endif
 
-namespace codeharness::host {
+namespace codeharness::host
+{
 
 #ifdef _WIN32
-namespace {
+namespace
+{
 
-std::string FindGitOnPath() {
-  const char* path_env = std::getenv("PATH");
-  if (!path_env) return {};
+std::string FindGitOnPath()
+{
+	const char* pathEnv = std::getenv("PATH");
+	if (!pathEnv)
+		return {};
 
-  std::string path_str(path_env);
-  std::vector<std::string> dirs;
-  size_t start = 0, end;
-  while ((end = path_str.find(';', start)) != std::string::npos) {
-    dirs.push_back(path_str.substr(start, end - start));
-    start = end + 1;
-  }
-  dirs.push_back(path_str.substr(start));
+	std::string pathStr(pathEnv);
+	std::vector<std::string> dirs;
+	size_t start = 0, end;
+	while ((end = pathStr.find(';', start)) != std::string::npos)
+	{
+		dirs.push_back(pathStr.substr(start, end - start));
+		start = end + 1;
+	}
+	dirs.push_back(pathStr.substr(start));
 
-  for (const auto& dir : dirs) {
-    std::error_code ec;
-    auto git_exe = std::filesystem::path(dir) / "git.exe";
-    if (std::filesystem::exists(git_exe, ec)) {
-      return git_exe.string();
-    }
-  }
-  return {};
+	for (const auto& dir : dirs)
+	{
+		std::error_code ec;
+		auto gitExe = std::filesystem::path(dir) / "git.exe";
+		if (std::filesystem::exists(gitExe, ec))
+		{
+			return gitExe.string();
+		}
+	}
+	return {};
 }
 
-std::string FindGitInProgramFiles() {
-  std::vector<std::string> candidates = {
-      "C:\\Program Files\\Git\\bin\\git.exe",
-      "C:\\Program Files (x86)\\Git\\bin\\git.exe",
-  };
+std::string FindGitInProgramFiles()
+{
+	std::vector<std::string> candidates = {
+		"C:\\Program Files\\Git\\bin\\git.exe",
+		"C:\\Program Files (x86)\\Git\\bin\\git.exe",
+	};
 
-  const char* local_appdata = std::getenv("LOCALAPPDATA");
-  if (local_appdata) {
-    candidates.push_back(std::string(local_appdata) + "\\Programs\\Git\\bin\\git.exe");
-  }
+	const char* localAppData = std::getenv("LOCALAPPDATA");
+	if (localAppData)
+	{
+		candidates.push_back(std::string(localAppData) + "\\Programs\\Git\\bin\\git.exe");
+	}
 
-  for (const auto& candidate : candidates) {
-    std::error_code ec;
-    if (std::filesystem::exists(candidate, ec)) {
-      return candidate;
-    }
-  }
-  return {};
+	for (const auto& candidate : candidates)
+	{
+		std::error_code ec;
+		if (std::filesystem::exists(candidate, ec))
+		{
+			return candidate;
+		}
+	}
+	return {};
 }
 
-std::string ResolveGitBashPath(const std::string& git_exe) {
-  std::string cmd = "\"" + git_exe + "\" --exec-path";
-  FILE* pipe = _popen(cmd.c_str(), "r");
-  if (!pipe) return {};
+std::string ResolveGitBashPath(const std::string& gitExe)
+{
+	std::string cmd = "\"" + gitExe + "\" --exec-path";
+	FILE* pipe = _popen(cmd.c_str(), "r");
+	if (!pipe)
+		return {};
 
-  char buffer[4096];
-  std::string result;
-  while (fgets(buffer, sizeof(buffer), pipe)) {
-    result += buffer;
-  }
-  _pclose(pipe);
+	char buffer[4096];
+	std::string result;
+	while (fgets(buffer, sizeof(buffer), pipe))
+	{
+		result += buffer;
+	}
+	_pclose(pipe);
 
-  result.erase(std::remove(result.begin(), result.end(), '\n'), result.end());
-  result.erase(std::remove(result.begin(), result.end(), '\r'), result.end());
+	result.erase(std::remove(result.begin(), result.end(), '\n'), result.end());
+	result.erase(std::remove(result.begin(), result.end(), '\r'), result.end());
 
-  if (result.empty()) return {};
+	if (result.empty())
+		return {};
 
-  std::filesystem::path exec_path(result);
-  auto git_root = exec_path.parent_path().parent_path().parent_path();
-  auto bash_candidate = git_root / "bin" / "bash.exe";
-  std::error_code ec;
-  if (std::filesystem::exists(bash_candidate, ec)) {
-    return bash_candidate.string();
-  }
+	std::filesystem::path execPath(result);
+	auto gitRoot = execPath.parent_path().parent_path().parent_path();
+	auto bashCandidate = gitRoot / "bin" / "bash.exe";
+	std::error_code ec;
+	if (std::filesystem::exists(bashCandidate, ec))
+	{
+		return bashCandidate.string();
+	}
 
-  auto mingw_bash = exec_path.parent_path() / "bash.exe";
-  if (std::filesystem::exists(mingw_bash, ec)) {
-    return mingw_bash.string();
-  }
+	auto mingwBash = execPath.parent_path() / "bash.exe";
+	if (std::filesystem::exists(mingwBash, ec))
+	{
+		return mingwBash.string();
+	}
 
-  return {};
+	return {};
 }
 
-}  // namespace
+} // namespace
 #endif
 
-std::string ProbeShell() {
-  const char* kim_shell = std::getenv("KIMI_SHELL_PATH");
-  if (kim_shell && kim_shell[0]) {
-    std::error_code ec;
-    if (std::filesystem::exists(kim_shell, ec)) {
-      return kim_shell;
-    }
-  }
+std::string ProbeShell()
+{
+	const char* kimShell = std::getenv("KIMI_SHELL_PATH");
+	if (kimShell && kimShell[0])
+	{
+		std::error_code ec;
+		if (std::filesystem::exists(kimShell, ec))
+		{
+			return kimShell;
+		}
+	}
 
 #ifdef _WIN32
-  auto git_exe = FindGitOnPath();
-  if (git_exe.empty()) {
-    git_exe = FindGitInProgramFiles();
-  }
+	auto gitExe = FindGitOnPath();
+	if (gitExe.empty())
+	{
+		gitExe = FindGitInProgramFiles();
+	}
 
-  if (!git_exe.empty()) {
-    auto bash_path = ResolveGitBashPath(git_exe);
-    if (!bash_path.empty()) {
-      return bash_path;
-    }
-  }
+	if (!gitExe.empty())
+	{
+		auto bashPath = ResolveGitBashPath(gitExe);
+		if (!bashPath.empty())
+		{
+			return bashPath;
+		}
+	}
 
-  std::vector<std::string> bash_candidates = {
-      "C:\\Program Files\\Git\\bin\\bash.exe",
-      "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
-  };
-  const char* local_appdata = std::getenv("LOCALAPPDATA");
-  if (local_appdata) {
-    bash_candidates.push_back(std::string(local_appdata) + "\\Programs\\Git\\bin\\bash.exe");
-  }
-  const char* userprofile = std::getenv("USERPROFILE");
-  if (userprofile) {
-    bash_candidates.push_back(std::string(userprofile) + "\\scoop\\apps\\git\\current\\bin\\bash.exe");
-  }
+	std::vector<std::string> bashCandidates = {
+		"C:\\Program Files\\Git\\bin\\bash.exe",
+		"C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+	};
+	const char* localAppData = std::getenv("LOCALAPPDATA");
+	if (localAppData)
+	{
+		bashCandidates.push_back(std::string(localAppData) + "\\Programs\\Git\\bin\\bash.exe");
+	}
+	const char* userprofile = std::getenv("USERPROFILE");
+	if (userprofile)
+	{
+		bashCandidates.push_back(std::string(userprofile) + "\\scoop\\apps\\git\\current\\bin\\bash.exe");
+	}
 
-  for (const auto& candidate : bash_candidates) {
-    std::error_code ec;
-    if (std::filesystem::exists(candidate, ec)) {
-      return candidate;
-    }
-  }
+	for (const auto& candidate : bashCandidates)
+	{
+		std::error_code ec;
+		if (std::filesystem::exists(candidate, ec))
+		{
+			return candidate;
+		}
+	}
 
-  return "cmd.exe";
+	return "cmd.exe";
 #else
-  std::vector<std::string> candidates = {"/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/bin/sh"};
-  for (const auto& candidate : candidates) {
-    std::error_code ec;
-    if (std::filesystem::exists(candidate, ec)) {
-      return candidate;
-    }
-  }
-  return "/bin/sh";
+	std::vector<std::string> candidates = {"/bin/bash", "/usr/bin/bash", "/usr/local/bin/bash", "/bin/sh"};
+	for (const auto& candidate : candidates)
+	{
+		std::error_code ec;
+		if (std::filesystem::exists(candidate, ec))
+		{
+			return candidate;
+		}
+	}
+	return "/bin/sh";
 #endif
 }
 
-EnvironmentResult DetectEnvironment() {
-  EnvironmentResult result;
-  result.shell_path = ProbeShell();
+EnvironmentResult DetectEnvironment()
+{
+	EnvironmentResult result;
+	result.shellPath = ProbeShell();
 
-  auto shell_filename = std::filesystem::path(result.shell_path).filename().string();
-  std::transform(shell_filename.begin(), shell_filename.end(), shell_filename.begin(), ::tolower);
-  if (shell_filename == "bash.exe" || shell_filename == "bash") {
-    result.shell_name = "bash";
-  } else if (shell_filename == "cmd.exe" || shell_filename == "cmd") {
-    result.shell_name = "cmd";
-  } else {
-    result.shell_name = "sh";
-  }
+	auto shellFilename = std::filesystem::path(result.shellPath).filename().string();
+	std::transform(shellFilename.begin(), shellFilename.end(), shellFilename.begin(), ::tolower);
+	if (shellFilename == "bash.exe" || shellFilename == "bash")
+	{
+		result.shellName = "bash";
+	}
+	else if (shellFilename == "cmd.exe" || shellFilename == "cmd")
+	{
+		result.shellName = "cmd";
+	}
+	else
+	{
+		result.shellName = "sh";
+	}
 
 #ifdef _WIN32
-  result.is_windows = true;
-  const char* path_env = std::getenv("PATH");
-  if (path_env) {
-    std::string path_str(path_env);
-    size_t start = 0, end;
-    while ((end = path_str.find(';', start)) != std::string::npos) {
-      result.path_dirs.push_back(path_str.substr(start, end - start));
-      start = end + 1;
-    }
-    result.path_dirs.push_back(path_str.substr(start));
-  }
+	result.isWindows = true;
+	const char* pathEnv = std::getenv("PATH");
+	if (pathEnv)
+	{
+		std::string pathStr(pathEnv);
+		size_t start = 0, end;
+		while ((end = pathStr.find(';', start)) != std::string::npos)
+		{
+			result.pathDirs.push_back(pathStr.substr(start, end - start));
+			start = end + 1;
+		}
+		result.pathDirs.push_back(pathStr.substr(start));
+	}
 #else
-  result.is_windows = false;
-  const char* path_env = std::getenv("PATH");
-  if (path_env) {
-    std::string path_str(path_env);
-    size_t start = 0, end;
-    while ((end = path_str.find(':', start)) != std::string::npos) {
-      result.path_dirs.push_back(path_str.substr(start, end - start));
-      start = end + 1;
-    }
-    result.path_dirs.push_back(path_str.substr(start));
-  }
+	result.isWindows = false;
+	const char* pathEnv = std::getenv("PATH");
+	if (pathEnv)
+	{
+		std::string pathStr(pathEnv);
+		size_t start = 0, end;
+		while ((end = pathStr.find(':', start)) != std::string::npos)
+		{
+			result.pathDirs.push_back(pathStr.substr(start, end - start));
+			start = end + 1;
+		}
+		result.pathDirs.push_back(pathStr.substr(start));
+	}
 #endif
 
-  return result;
+	return result;
 }
 
-}  // namespace codeharness::host
+} // namespace codeharness::host

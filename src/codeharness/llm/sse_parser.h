@@ -4,22 +4,24 @@
 #include <string>
 #include <string_view>
 
-namespace codeharness::llm {
+namespace codeharness::llm
+{
 
-class SseParser {
- public:
-  void Feed(std::string_view data);
-  std::optional<std::string> NextEvent();
-  bool Done() const;
-  void Reset();
+class SseParser
+{
+public:
+	void Feed(std::string_view data);
+	std::optional<std::string> NextEvent();
+	bool Done() const;
+	void Reset();
 
- private:
-  bool TryExtractLine(std::string& line);
+private:
+	bool TryExtractLine(std::string& line);
 
-  std::string buffer_;
-  std::string current_event_data_;
-  bool current_event_has_data_ = false;
-  bool done_ = false;
+	std::string buffer;
+	std::string currentEventData;
+	bool currentEventHasData = false;
+	bool done = false;
 };
 
-}  // namespace codeharness::llm
+} // namespace codeharness::llm

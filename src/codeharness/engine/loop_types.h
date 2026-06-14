@@ -1,78 +1,93 @@
 #pragma once
 
 #include <functional>
+#include <nlohmann/json.hpp>
 #include <stop_token>
 #include <string>
 #include <variant>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-
 #include "llm/types.h"
 #include "tool.h"
 
-namespace codeharness::llm {
+namespace codeharness::host
+{
+class Host;
+}
+
+namespace codeharness::llm
+{
 class ChatProvider;
 }
 
-namespace codeharness::engine {
+namespace codeharness::engine
+{
 
-enum class StopReason {
-  kCompleted,
-  kMaxSteps,
-  kAborted,
-  kError,
+enum class StopReason
+{
+	Completed,
+	MaxSteps,
+	Aborted,
+	Error,
 };
 
-struct StepStartedEvent {
-  int step;
+struct StepStartedEvent
+{
+	int step;
 };
 
-struct StepCompletedEvent {
-  int step;
+struct StepCompletedEvent
+{
+	int step;
 };
 
-struct AssistantDeltaEvent {
-  std::string text;
+struct AssistantDeltaEvent
+{
+	std::string text;
 };
 
-struct ToolCallStartedEvent {
-  std::string id;
-  std::string name;
-  nlohmann::json args;
+struct ToolCallStartedEvent
+{
+	std::string id;
+	std::string name;
+	nlohmann::json args;
 };
 
-struct ToolResultEvent {
-  std::string id;
-  std::string name;
-  ToolResult result;
+struct ToolResultEvent
+{
+	std::string id;
+	std::string name;
+	ToolResult result;
 };
 
-struct ErrorEvent {
-  std::string message;
+struct ErrorEvent
+{
+	std::string message;
 };
 
-using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent,
-                               ToolCallStartedEvent, ToolResultEvent, ErrorEvent>;
+using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent, ToolCallStartedEvent, ToolResultEvent, ErrorEvent>;
 
 using EventDispatcher = std::function<void(const LoopEvent&)>;
 
-struct TurnInput {
-  llm::ChatProvider* provider = nullptr;
-  std::vector<ExecutableTool*> tools;
-  std::string system_prompt;
-  std::vector<llm::Message> history;
-  EventDispatcher dispatch_event;
-  std::stop_token stop_token;
-  int max_steps = 1000;
+struct TurnInput
+{
+	llm::ChatProvider* provider = nullptr;
+	std::vector<ExecutableTool*> tools;
+	host::Host* host = nullptr;
+	std::string systemPrompt;
+	std::vector<llm::Message> history;
+	EventDispatcher dispatchEvent;
+	std::stop_token stopToken;
+	int maxSteps = 1000;
 };
 
-struct TurnResult {
-  StopReason stop_reason = StopReason::kCompleted;
-  int steps_executed = 0;
-  llm::TokenUsage total_usage;
-  std::vector<llm::Message> updated_history;
-  std::string error_message;
+struct TurnResult
+{
+	StopReason stopReason = StopReason::Completed;
+	int stepsExecuted = 0;
+	llm::TokenUsage totalUsage;
+	std::vector<llm::Message> updatedHistory;
+	std::string errorMessage;
 };
 
-}  // namespace codeharness::engine
+} // namespace codeharness::engine

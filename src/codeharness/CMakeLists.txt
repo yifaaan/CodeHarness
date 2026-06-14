@@ -20,6 +20,14 @@ add_library(codeharness
   llm/beast_http_client.cpp
   llm/capability.cpp
   engine/loop.cpp
+  tools/tool_output.cpp
+  tools/tool_manager.cpp
+  tools/read_file.cpp
+  tools/write_file.cpp
+  tools/edit_file.cpp
+  tools/glob.cpp
+  tools/grep.cpp
+  tools/bash.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
