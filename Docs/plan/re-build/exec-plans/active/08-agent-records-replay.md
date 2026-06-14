@@ -92,6 +92,7 @@ Implement the event sourcing system for recording agent state changes and replay
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-14 | Completed | Minimal 4-kind set shipped: `TurnPrompt`, `TurnCancel`, `ContextAppendMessage`, `ContextAppendLoopEvent`. `Host::AppendText` added to abstract append semantics. `Agent::SetRecords` + `Agent::Resume()` wire the sink. 218 tests green. Remaining 16+ record kinds deferred until their owning modules (Session/Permission/Hooks/Compaction) come online. |
 
 ## Architecture Invariants
 

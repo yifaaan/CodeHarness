@@ -11,6 +11,8 @@
 | **Config** | `codeharness::config` | `src/codeharness/config/` | ✅ Implemented |
 | **Engine** | `codeharness::engine` | `src/codeharness/engine/` | ✅ Implemented |
 | **Tools** | `codeharness::tools` | `src/codeharness/tools/` | ✅ Implemented |
+| **Agent** | `codeharness::agent` | `src/codeharness/agent/` | ✅ Implemented |
+| **Records** | `codeharness::records` | `src/codeharness/records/` | ✅ Implemented |
 
 ### Host (Execution Environment Abstraction)
 
@@ -22,7 +24,7 @@ The Host layer abstracts filesystem and process operations. See [src/codeharness
 - `HostPath` — pathlib-like path utility
 - `LocalHost` — local machine implementation
 
-**All functions use PascalCase** (e.g. `ReadText`, `GetCwd`, `ExecWithEnv`). See [docs/coding-conventions.md](docs/coding-conventions.md).
+**All functions use PascalCase** (e.g. `ReadText`, `GetCwd`, `ExecWithEnv`, `AppendText`). See [docs/coding-conventions.md](docs/coding-conventions.md).
 
 ### Llm (LLM Provider Abstraction)
 
@@ -75,6 +77,31 @@ The Tools module implements concrete `ExecutableTool` subclasses that let the ag
 **Design:** Each tool implements the two-phase `ResolveExecution` (pure validation, sets `requires_permission`) → `Execute` (side effects via `Host`). All I/O goes through `codeharness::host::Host`. Read-only tools (Read/Glob/Grep) are auto-allow; Write/Edit/Bash require permission. Bash drains stdout/stderr deadlock-free via `HostProcess::Drain` (reproc poll, single-threaded). Active-set selection, MCP, and user-defined tools are deferred to the (future) Agent layer.
 
 **Engine host wiring:** `TurnInput.host` (`host::Host*`) is propagated into each tool's `ToolContext` by `RunTurn`.
+
+### Agent (Composition Root v1)
+
+The Agent layer provides the first user-facing composition layer over the stateless Engine loop. See [Source/CodeHarness/Agent/](Source/CodeHarness/Agent/) for source.
+
+**Key interfaces:**
+- `Agent` — synchronous prompt API (`Prompt`, `Cancel`, `ClearContext`, active tool filtering)
+- `AgentConfig` / `AgentProfile` — system prompt, max steps, default active tools
+- `AgentEvent` — turn lifecycle, status changes, errors, and forwarded loop events
+- `PromptResult` — turn id, stop reason, usage, and error summary
+
+**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history, converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory`. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into in-memory history. Session/RPC, permissions, hooks, compaction, skills, and MCP remain deferred modules.
+
+### Records (Event Sourcing)
+
+The Records module implements append-only event sourcing over a Host-backed `wire.jsonl` stream. See [Source/CodeHarness/Records/](Source/CodeHarness/Records/) for source.
+
+**Key interfaces:**
+- `AgentRecords` — owns a `RecordPersistence`; `Log(record)`, `ReadAll()`, `Replay(apply)`, `IsRestoring()`, `Flush()`, `Close()`
+- `RecordPersistence` — abstract append/read/flush/close backend
+- `FilePersistence` — `Host`-backed `wire.jsonl` (append via `Host::AppendText`, read via `Host::ReadLines`)
+- `RecordTypes.h` — `AgentRecord` variant + 4 record kinds (minimal set): `TurnPromptRecord`, `TurnCancelRecord`, `ContextAppendMessageRecord`, `ContextAppendLoopEventRecord`
+- `RecordJson.h` — `WireRecordToJson` / `ParseWireRecord` + per-payload helpers (`MessageToJson`, `LoopEventToJson`, `ContentPartToJson`)
+
+**Design:** All I/O goes through `Host*` (testable, no direct disk). The minimal 4-kind set covers `turn.prompt`, `turn.cancel`, `context.append_message`, `context.append_loop_event`. Wire format is one JSON object per line with `{"type","...","ts":<ms>,"protocol":"1.0",...}`. `AgentRecords::Replay` toggles `restoring_` for the duration of the apply loop; `Log()` short-circuits to `OkStatus` when `restoring_` is set, so replay never re-records. Session will own directory layout (`~/.codeharness/sessions/<workdir-key>/<session-id>/agents/<agent-id>/wire.jsonl`); Records currently takes an explicit `basePath`. Additional record kinds (permission/compaction/plan_mode/tools/usage) deferred until the corresponding modules come online. `Host::AppendText` was added to the `Host` interface to enable atomic append semantics without read-rewrite.
 
 ## Core Principles
 
