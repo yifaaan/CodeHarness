@@ -24,6 +24,7 @@ add_executable(codeharness_tests
   Tools/BashTest.cpp
   Records/RecordsTest.cpp
   Permission/PermissionTest.cpp
+  Session/SessionTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE
