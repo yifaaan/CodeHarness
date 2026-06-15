@@ -22,7 +22,9 @@ Agent 协调：
   ├── ToolManager (管理工具)
   ├── Host (文件/进程)
   ├── PermissionGate (权限)
-  └── AgentRecords (记录)
+  ├── AgentRecords (记录)
+  ├── ContextMemory (上下文管理)
+  └── HookEngine (生命周期钩子)
   ↓
 Loop.RunTurn()
   ↓
@@ -139,6 +141,16 @@ public:
     
     // 从记录恢复状态
     absl::Status Resume();
+    
+    // ===== Context 相关 =====
+    
+    // 设置压缩配置（覆盖从 LLM Capability 获取的默认值）
+    void SetCompactionConfig(context::CompactionConfig cfg);
+    
+    // ===== Hooks 相关 =====
+    
+    // 设置钩子引擎
+    void SetHookEngine(hooks::HookEngine* engine);
 
 private:
     // ===== 内部方法 =====
@@ -166,11 +178,17 @@ private:
     AgentConfig config;
     
     // 状态
-    std::vector<llm::Message> history;  // 对话历史
+    context::ContextMemory history;  // 对话历史（使用 ContextMemory 而非裸 vector）
     std::vector<std::string> activeTools;  // 活跃工具列表
     AgentStatus status = AgentStatus::Idle;  // 当前状态
     EventDispatcher dispatchEvent;  // 事件分发器
     records::AgentRecords* records = nullptr;  // 记录器
+    
+    // Context 压缩
+    std::optional<context::CompactionConfig> compactionConfig;
+    
+    // Hooks
+    hooks::HookEngine* hookEngine = nullptr;
 
     // 权限
     std::unique_ptr<permission::PermissionGate> permissionGate;
@@ -510,7 +528,152 @@ absl::Status Agent::Resume()
 }
 ```
 
-## 7. 测试分析
+## 7. Context 集成
+
+### 7.1 为什么使用 ContextMemory
+
+**问题**：裸 `vector<Message>` 无法追踪 Token 用量
+
+```cpp
+// ❌ 旧方式
+std::vector<llm::Message> history;
+// 每次检查 Token 需要重新计算
+int64_t tokens = EstimateTokens(history);  // O(n)
+
+// ✅ 新方式
+context::ContextMemory history;
+// Token 缓存，O(1) 查询
+int64_t tokens = history.TokenCount();
+```
+
+### 7.2 压缩触发时机
+
+```cpp
+absl::StatusOr<PromptResult> Agent::Prompt(std::string_view text)
+{
+    // ... 前置检查 ...
+    
+    // ===== Context 压缩检查 =====
+    // 获取模型的 context window 大小
+    auto capability = llm::GetCapability(provider->ModelName());
+    int64_t maxTokens = compactionConfig 
+        ? compactionConfig->maxContextTokens 
+        : capability.maxContextTokens;
+    
+    // 计算当前用量 + 新消息
+    int64_t usedTokens = history.TokenCount() + EstimateTokens(text);
+    
+    // 检查是否需要压缩
+    context::CompactionConfig cfg{
+        .maxContextTokens = maxTokens,
+        .compactThreshold = 0.75,  // 75% 触发
+        .retainTail = 10           // 保留最后 10 条
+    };
+    
+    if (context::ShouldCompact(usedTokens, cfg)) {
+        // 发送压缩开始事件
+        Dispatch(ContextCompactingEvent{});
+        
+        // 执行压缩
+        auto compactResult = context::Compact(provider, history.Messages(), cfg);
+        if (compactResult.ok() && *compactResult) {
+            // 用压缩后的历史替换
+            auto newHistory = context::BuildCompactedHistory(
+                (*compactResult)->summary,
+                history.Messages(),
+                cfg.retainTail
+            );
+            history.ReplaceAll(std::move(newHistory));
+        }
+        
+        // 发送压缩结束事件
+        Dispatch(ContextCompactedEvent{});
+    }
+    
+    // 继续正常流程...
+}
+```
+
+### 7.3 SetCompactionConfig
+
+```cpp
+void Agent::SetCompactionConfig(context::CompactionConfig cfg)
+{
+    compactionConfig = cfg;
+}
+```
+
+**使用示例**：
+```cpp
+Agent agent(provider, host, &toolManager);
+
+// 自定义压缩配置
+agent.SetCompactionConfig({
+    .maxContextTokens = 128000,  // GPT-4 的 context window
+    .compactThreshold = 0.7,     // 70% 触发
+    .retainTail = 15             // 保留最后 15 条消息
+});
+```
+
+## 8. Hooks 集成
+
+### 8.1 SetHookEngine
+
+```cpp
+void Agent::SetHookEngine(hooks::HookEngine* engine)
+{
+    hookEngine = engine;
+}
+```
+
+### 8.2 钩子触发点
+
+Agent 触发 3 个钩子事件：
+
+| 事件 | 类型 | 触发时机 |
+|------|------|----------|
+| `UserPromptSubmit` | 阻塞型 | 用户输入后，Prompt 执行前 |
+| `PreCompact` | 信息型 | Context 压缩前 |
+| `PostCompact` | 信息型 | Context 压缩后 |
+
+```cpp
+absl::StatusOr<PromptResult> Agent::Prompt(std::string_view text)
+{
+    // ===== UserPromptSubmit 钩子 =====
+    if (hookEngine) {
+        auto block = hookEngine->TriggerBlock(
+            hooks::HookEvent::UserPromptSubmit,
+            {.event = UserPromptSubmit, .target = "", .payload = {{"prompt", text}}},
+            {}
+        );
+        if (block && block->action == hooks::HookAction::Block) {
+            return absl::CancelledError(block->reason);
+        }
+    }
+    
+    // 继续执行...
+}
+```
+
+### 8.3 使用示例
+
+```cpp
+// 从配置创建 HookEngine
+std::vector<hooks::HookDef> hookDefs = {
+    {
+        .event = hooks::HookEvent::UserPromptSubmit,
+        .command = "/usr/local/bin/check-prompt.sh",
+        .timeoutSeconds = 5
+    }
+};
+
+hooks::HookEngine hookEngine(hookDefs, host);
+
+// 设置到 Agent
+agent.SetHookEngine(&hookEngine);
+```
+
+## 9. 测试分析
 
 ### 7.1 基本测试
 

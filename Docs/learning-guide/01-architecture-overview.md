@@ -19,20 +19,21 @@
 │  │  - Prompt()    发起对话                                              │    │
 │  │  - Cancel()    取消执行                                              │    │
 │  │  - SetPermissionMode()  设置权限模式                                 │    │
+│  │  - SetHookEngine()      设置钩子引擎                                 │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
-└───────────┬─────────────────┬─────────────────┬─────────────────┬───────────┘
-            │                 │                 │                 │
-            ▼                 ▼                 ▼                 ▼
-┌───────────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│   Engine 层       │ │  Session 层   │ │ Permission 层 │ │  Records 层   │
-│                   │ │               │ │               │ │               │
-│  Loop             │ │  Session      │ │ PermissionGate│ │ AgentRecords  │
-│  ToolManager      │ │  SessionStore │ │               │ │               │
-└─────────┬─────────┘ └───────────────┘ └───────────────┘ └───────────────┘
-          │
-          ├─────────────────────────────────────────────────────────┐
-          │                                                         │
-          ▼                                                         ▼
+└───────┬───────────┬───────────┬───────────┬───────────┬───────────┬─────────┘
+        │           │           │           │           │           │
+        ▼           ▼           ▼           ▼           ▼           ▼
+┌───────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+│Engine 层  │ │Session  │ │Permission│ │ Records │ │ Context │ │ Hooks   │
+│           │ │  层     │ │   层     │ │   层    │ │   层    │ │   层    │
+│ Loop      │ │ Session │ │Permission│ │AgentRecs│ │ContextMem│ │HookEngine│
+│ToolMgr    │ │Store    │ │  Gate    │ │         │ │Compactor│ │         │
+└─────┬─────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+      │
+      ├─────────────────────────────────────────────────────────┐
+      │                                                         │
+      ▼                                                         ▼
 ┌───────────────────┐                                     ┌───────────────┐
 │    Tools 层       │                                     │    LLM 层     │
 │                   │                                     │               │
@@ -173,6 +174,38 @@
 - `SessionStore`：存储管理
 
 **详见**：[08-session-records.md](08-session-records.md)
+
+### 2.8 Context 层
+
+**职责**：管理上下文内存和 Token 估算，实现自动压缩
+
+**为什么需要**：
+- LLM 有 Context Window 限制
+- 对话历史不能无限增长
+- 需要智能压缩以保持连贯性
+
+**关键类**：
+- `ContextMemory`：消息存储 + Token 缓存
+- `TokenEstimate`：启发式 Token 估算
+- `Compactor`：上下文压缩器
+
+**详见**：[10-context-memory.md](10-context-memory.md)
+
+### 2.9 Hooks 层
+
+**职责**：运行用户配置的生命周期钩子
+
+**为什么需要**：
+- 用户自定义扩展点
+- 安全策略注入
+- 审计日志
+
+**关键类**：
+- `HookEngine`：钩子执行引擎
+- `HookDef`：钩子定义
+- `HookEvent`：11 种生命周期事件
+
+**详见**：[11-hooks-system.md](11-hooks-system.md)
 
 ## 3. 八大设计原则
 
@@ -376,9 +409,11 @@ CLI/TUI → Agent → Engine → Tools → Host
 | Tools | ExecutableTool, BashTool | 可执行操作 | Host |
 | Engine | Loop, TurnInput | 执行循环 | LLM, Tools, Host |
 | Permission | PermissionGate | 权限控制 | 无 |
-| Agent | Agent | 组合根 | Engine, Permission, Records |
+| Agent | Agent | 组合根 | Engine, Permission, Records, Context, Hooks |
 | Session | Session, SessionStore | 会话管理 | Agent |
 | Records | AgentRecords | 事件记录 | 无 |
+| Context | ContextMemory, Compactor | 上下文内存与压缩 | LLM |
+| Hooks | HookEngine, HookDef | 生命周期钩子 | Host |
 
 ## 6. 数据流向
 

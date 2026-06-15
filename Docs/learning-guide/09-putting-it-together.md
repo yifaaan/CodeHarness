@@ -8,11 +8,15 @@
 
 **预期流程**：
 1. Agent 接收请求
-2. LLM 分析意图，决定调用 Bash 工具执行 `ls -la`
-3. 权限系统询问用户是否允许
-4. 用户允许，执行命令
-5. 返回结果给 LLM
-6. LLM 分析结果，生成回答
+2. **UserPromptSubmit 钩子检查**（新增）
+3. **Context 压缩检查**（新增）
+4. LLM 分析意图，决定调用 Bash 工具执行 `ls -la`
+5. **PreToolUse 钩子检查**（新增）
+6. 权限系统询问用户是否允许
+7. 用户允许，执行命令
+8. **PostToolUse 钩子触发**（新增）
+9. 返回结果给 LLM
+10. LLM 分析结果，生成回答
 
 ## 2. 初始化阶段
 
@@ -56,6 +60,25 @@ agent->SetApprovalCallback([](auto toolName, auto args, auto description) {
     char c;
     std::cin >> c;
     return c == 'y' ? PermissionDecision::Allow : PermissionDecision::Deny;
+});
+
+// ===== 设置 HookEngine（新增）=====
+std::vector<hooks::HookDef> hookDefs = {
+    {
+        .event = hooks::HookEvent::PreToolUse,
+        .command = "/usr/local/bin/check-command.sh",
+        .matcher = "Bash",  // 只检查 Bash 工具
+        .timeoutSeconds = 5
+    }
+};
+auto hookEngine = std::make_unique<hooks::HookEngine>(hookDefs, host.get());
+agent->SetHookEngine(hookEngine.get());
+
+// ===== 设置压缩配置（新增）=====
+agent->SetCompactionConfig({
+    .maxContextTokens = 128000,
+    .compactThreshold = 0.75,
+    .retainTail = 10
 });
 
 // ===== 设置记录 =====
@@ -121,39 +144,55 @@ Agent::Prompt("帮我看看当前目录的文件结构")
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 3. 创建 stop_source                                                 │
+│ 3. UserPromptSubmit 钩子（新增）                                     │
+│    hookEngine->TriggerBlock(UserPromptSubmit, {...})                │
+│    如果 Block → 返回错误                                            │
+└─────────────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 4. 创建 stop_source                                                 │
 │    currentStopSource = stop_source{}                                │
 │    status = Running                                                 │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 4. 发送事件                                                         │
+│ 5. 发送事件                                                         │
 │    Dispatch(TurnStartedEvent{turnId})                               │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 5. 记录事件                                                         │
+│ 6. 记录事件                                                         │
 │    records->Log(TurnPrompt, {turnId, input, origin})                │
 │    写入 wire.jsonl:                                                  │
 │    {"meta":{"ts":...},"record":{"TurnPrompt":{...}}}                 │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 6. 构建用户消息                                                      │
+│ 7. 构建用户消息                                                      │
 │    userMsg.role = User                                              │
 │    userMsg.content = [TextPart{text}]                               │
-│    history.push(userMsg)                                            │
+│    history.Append(userMsg)  // 使用 ContextMemory                   │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 7. 记录消息                                                         │
+│ 8. Context 压缩检查（新增）                                          │
+│    usedTokens = history.TokenCount() + Estimate(text)               │
+│    if (usedTokens > maxTokens * 0.75):                              │
+│        Dispatch(PreCompact)                                         │
+│        Compact(provider, history) → 摘要                            │
+│        history.ReplaceAll(compacted)                                │
+│        Dispatch(PostCompact)                                        │
+└─────────────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 9. 记录消息                                                         │
 │    records->Log(ContextAppendMessage, {message})                    │
 │    写入 wire.jsonl                                                   │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 8. 构建 TurnInput                                                   │
-│    input.provider = provider                                        │
+│ 10. 构建 TurnInput                                                  │
+│     input.provider = provider                                       │
 │    input.tools = BuildLoopTools() → [Bash*, Read*, ...]             │
 │    input.host = host                                                │
 │    input.history = history                                          │
@@ -330,19 +369,29 @@ LLM 流结束
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 2. 发送事件                                                         │
+│ 2. PreToolUse 钩子（新增）                                           │
+│    hookEngine->TriggerBlock(PreToolUse, {                           │
+│        .event = PreToolUse,                                         │
+│        .target = "Bash",                                            │
+│        .payload = {{"name", "Bash"}, {"args", args}}               │
+│    })                                                               │
+│    如果 Block → 跳过执行，返回错误                                   │
+└─────────────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. 发送事件                                                         │
 │    Dispatch(ToolCallStartedEvent{"call_123", "Bash", args})         │
 │    → 用户看到: "Tool Bash started"                                   │
 │    → 记录到 wire.jsonl                                               │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 3. 查找工具                                                         │
+│ 4. 查找工具                                                         │
 │    tool = FindTool(input.tools, "Bash") → BashTool*                 │
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 4. ResolveExecution                                                 │
+│ 5. ResolveExecution                                                 │
 │    resolution = bashTool.ResolveExecution(args)                     │
 │    → ToolExecution{                                                 │
 │         description: "Execute: ls -la",                             │
@@ -357,7 +406,7 @@ LLM 流结束
 requiresPermission == true && permissionGate != null
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 5. 发送权限请求事件                                                  │
+│ 6. 发送权限请求事件                                                  │
 │    Dispatch(PermissionRequestedEvent{"Bash", args, "Execute: ls -la"})│
 │    → 用户看到: "=== Permission Request ==="                          │
 │               "Tool: Bash"                                           │
@@ -367,7 +416,7 @@ requiresPermission == true && permissionGate != null
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 6. 权限门控检查                                                      │
+│ 7. 权限门控检查                                                      │
 │    shouldRun = permissionGate.ShouldRun(                            │
 │        true, "Bash", args, "Execute: ls -la"                        │
 │    )                                                                │
@@ -380,7 +429,7 @@ requiresPermission == true && permissionGate != null
 └─────────────────────────────────────────────────────────────────────┘
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
-│ 7. 用户允许 → 继续执行                                               │
+│ 8. 用户允许 → 继续执行                                               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -428,6 +477,16 @@ requiresPermission == true && permissionGate != null
 工具执行完成 → ToolResult
         ↓
 ┌─────────────────────────────────────────────────────────────────────┐
+│ PostToolUse 钩子（新增）                                             │
+│    hookEngine->Trigger(PostToolUse, {                               │
+│        .event = PostToolUse,                                        │
+│        .target = "Bash",                                            │
+│        .payload = {{"result", result.content}}                      │
+│    })                                                               │
+│    信息型事件，不阻塞                                                 │
+└─────────────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────────────┐
 │ 发送结果事件                                                         │
 │    Dispatch(ToolResultEvent{"call_123", "Bash", result})            │
 │    → 用户看到: "Tool result: ..."                                    │
@@ -439,7 +498,7 @@ requiresPermission == true && permissionGate != null
 │    toolMsg.role = Tool                                              │
 │    toolMsg.toolCallId = "call_123"                                  │
 │    toolMsg.content = [TextPart{result.content}]                     │
-│    history.push(toolMsg)                                            │
+│    history.Append(toolMsg)  // 使用 ContextMemory                   │
 │                                                                      │
 │ 记录到 wire.jsonl                                                   │
 │    records->Log(ContextAppendMessage, {message})                    │
