@@ -16,6 +16,7 @@
 | **Permission** | `codeharness::permission` | `Source/CodeHarness/Permission/` | ✅ Implemented (MVP) |
 | **Session** | `codeharness::session` | `Source/CodeHarness/Session/` | ✅ Implemented (MVP) |
 | **Cli** | `codeharness::cli` | `Source/CodeHarness/Cli/` | ✅ Implemented (MVP) |
+| **Context** | `codeharness::context` | `Source/CodeHarness/Context/` | ✅ Implemented (MVP) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -91,7 +92,7 @@ The Agent layer provides the first user-facing composition layer over the statel
 - `AgentEvent` — turn lifecycle, status changes, errors, and forwarded loop events
 - `PromptResult` — turn id, stop reason, usage, and error summary
 
-**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history, converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory`. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into in-memory history (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks, compaction, skills, and MCP remain deferred modules.
+**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history as a `ContextMemory` (so the context window can be budgeted), converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory` back into the `ContextMemory`. Before each turn it may run between-turn compaction (see Context module) when history exceeds the model's window. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into the `ContextMemory` (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks, skills, and MCP remain deferred modules.
 
 ### Records (Event Sourcing)
 
@@ -145,6 +146,20 @@ The Cli module is the first executable target — turns the library into a runna
 **Design (MVP scope):** One-shot `--prompt` mode only. `Run` wires the full chain: load `config.toml` → resolve provider → register built-in tools → `Session::Create` → wire the agent's event dispatcher (stream `AssistantDeltaEvent` text to stdout) → set permission mode (`Yolo` for `--yolo`, else `Manual` with a synchronous stdin y/n approval callback) → `Agent::Prompt` → `Session::Close`. `Main.cpp` owns the `LocalHost` + `BeastHttpClient` (synchronous, no threading) lifetimes and injects them via `RunDeps`. The `codeharness_cli` executable is always built (not gated on `CODEHARNESS_BUILD_TESTS`). Out of scope (deferred to plan #14): the TUI/`shell` mode, reverse-RPC approval panel, REPL/multi-turn, `--continue`/`--session` resume flags, `--output-format stream-json`, and a config auto-creation wizard.
 
 **Build:** `cmake --build` produces `codeharness_cli.exe` alongside `codeharness_tests.exe`. `CliParser.cpp`/`RunPrompt.cpp` live in the `codeharness` library (so tests link them); only `Main.cpp` is exclusive to the executable. CLI11 is now a library dependency.
+
+### Context (Memory + Compaction)
+
+The Context module stops `Agent::history` from growing unbounded. See [Source/CodeHarness/Context/](Source/CodeHarness/Context/) for source.
+
+**Key interfaces:**
+- `ContextMemory` — owns the conversation `std::vector<llm::Message>` plus a cached running token estimate; `Append`/`ReplaceAll`/`Clear`/`Messages`/`TokenCount`
+- `TokenEstimate` — heuristic `EstimateTokens(text|Message|span)` ≈ chars/4 + per-message/tool-call overhead (conservative; swap point for a real tokenizer)
+- `Compactor` — `ShouldCompact(usedTokens, cfg)` + `Compact(provider, history, cfg)` (summarizes the prefix via a second `Generate`, keeps the tail); `BuildCompactedHistory` builds the summary + retained tail
+- `CompactionConfig` — `{maxContextTokens, compactThreshold=0.75, retainTail=10}`; `ContextCompactingEvent` in the `AgentEvent` variant
+
+**Design (MVP scope):** Between-turn compaction only, living entirely in the Agent layer. `Agent` now holds a `ContextMemory` instead of a bare vector. In `Prompt()`, before building the turn history, it resolves `maxContextTokens` from `llm::GetCapability(provider->ModelName())` (unless `SetCompactionConfig` overrode it), and if `history.tokenCount() + incoming` crosses 75% it runs `Compact` — a second `Generate` produces a summary, the prefix is replaced by one summary message, the last 10 messages are kept verbatim. **Zero changes to `Loop.cpp`, `LoopTypes.h`, `LoopEvent`, `ChatProvider`, or any provider** — the loop keeps receiving a plain (shorter) `std::vector<llm::Message>`. `Resume()` replays records through `ContextMemory::Append` to keep the token cache consistent. Closes tech-debt TD-006. Out of scope (deferred to plan #06): the `InjectionManager` (plan/permission-mode injection — needs a wider `LoopHooks::beforeStep`), mid-turn compaction (between tool-call steps inside one turn), a real `CountTokens` provider virtual, and `ContextMessage` metadata (origin/id/createdAt).
+
+**Llm helper exported:** `ConcatTextParts` (flattens a message's content parts into one string) was promoted from `MessageJson.cpp`'s anonymous namespace to a public `codeharness::llm` function in `MessageJson.h`, so `TokenEstimate` can measure message text.
 
 ## Core Principles
 

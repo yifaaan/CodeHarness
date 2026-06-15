@@ -45,7 +45,7 @@ This document tracks technical debt in the CodeHarness project, following OpenAI
 |----|----------|-------------|--------|--------|----------|
 | TD-004 | Code Quality | Missing unit tests for tools | Medium | In Progress | 2026-07-15 |
 | TD-005 | Documentation | Outdated architecture docs | Medium | Pending | 2026-07-30 |
-| TD-006 | Performance | Inefficient context loading | Medium | Pending | 2026-08-15 |
+| TD-006 | Performance | Inefficient context loading | Medium | Resolved (MVP) | 2026-08-15 |
 
 ### Low Priority (Nice to Have)
 
@@ -58,6 +58,8 @@ This document tracks technical debt in the CodeHarness project, following OpenAI
 ### Resolution Notes
 
 - **TD-003 (Resolved 2026-06-15, MVP):** The Permission module landed. `PermissionGate` is now consulted between `ResolveExecution` and `Execute` in `Loop.cpp` — `ToolExecution::requiresPermission` is live data instead of dead. Manual mode prompts via `ApprovalCallback`; Yolo allows all; Auto falls back to Manual. The safety hole (ungated Write/Edit/Bash) is closed. **Still deferred** to a future iteration of plan #11: the permission rules DSL (`PermissionRule`/`Policy`), true session-scoped Auto mode, audit logging of decisions, and the full HookEngine. TD-003's *must-fix* core is done; the *nice-to-have* policy layer remains tracked under exec plan #11.
+
+- **TD-006 (Resolved 2026-06-15, MVP):** The Context module landed. `Agent::history` is now a `ContextMemory` with a cached token estimate; before each turn, if history + the incoming prompt cross 75% of `GetCapability(model).maxContextTokens`, the Agent summarizes the prefix via a second `Generate` call and keeps the last 10 messages verbatim. `Loop.cpp`/`LoopTypes.h`/`LoopEvent`/providers are unchanged — the loop keeps receiving a plain (shorter) `std::vector<llm::Message>`. **Still deferred** to a future iteration of plan #06: the `InjectionManager` (plan/permission-mode injection), mid-turn compaction (between tool-call steps inside one turn, needs a wider `LoopHooks::beforeStep`), a real `CountTokens` provider virtual, and `ContextMessage` metadata. The *must-fix* core (unbounded history → context overflow) is done.
 
 ## Debt Reduction Strategy
 

@@ -100,6 +100,7 @@ Implement the context memory system to manage conversation history, token counti
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-15 | Partial | **Context MVP landed (Agent-layer, between-turn).** `ContextMemory` (history owner + cached token count), `TokenEstimate` (chars/4 heuristic), `Compactor` (`ShouldCompact` at 75% + `Compact` via a second `Generate`, keeps last 10) implemented in `Source/CodeHarness/Context/`. `Agent` now holds a `ContextMemory`; `Prompt()` resolves `maxContextTokens` from `GetCapability(provider->ModelName())` and compacts before building the turn history. `ConcatTextParts` exported from `MessageJson`. `ContextCompactingEvent` added to the `AgentEvent` variant. **Zero changes** to `Loop.cpp`/`LoopTypes.h`/`LoopEvent`/`ChatProvider`/providers — the loop sees a plain shorter vector. 15 ContextTest cases; full suite 279/279 green. Closes TD-006. **Still deferred:** `InjectionManager` (plan/permission-mode injection, needs wider `beforeStep`), mid-turn compaction, real `CountTokens` provider virtual, `ContextMessage` metadata. |
 
 ## Architecture Invariants
 
