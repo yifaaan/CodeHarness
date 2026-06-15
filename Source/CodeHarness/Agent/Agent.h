@@ -43,6 +43,7 @@ namespace codeharness::records
 namespace codeharness::skills
 {
 	class SkillManager;
+	class SkillRegistry;
 }
 
 namespace codeharness::agent
@@ -111,6 +112,15 @@ namespace codeharness::agent
 		hooks::HookEngine* hookEngine = nullptr;
 
 		skills::SkillManager* skillManager = nullptr;
+		skills::SkillRegistry* skillRegistry = nullptr;
+		// The user-supplied system prompt, captured at SetSkillManager time so
+		// the per-turn system prompt can be rebuilt from it without accumulating
+		// skill content across turns.
+		std::string baseSystemPrompt;
+		// Rendered `prompt`-type skill content queued for the next turn's system
+		// prompt. Drained each turn after it is folded in.
+		std::string pendingSystemSkillContent;
+		bool baseSystemPromptCaptured = false;
 
 		std::optional<std::stop_source> currentStopSource;
 		std::uint64_t nextTurnId = 1;

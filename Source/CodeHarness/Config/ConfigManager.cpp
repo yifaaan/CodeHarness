@@ -8,12 +8,16 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <optional>
 #include <regex>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include "Host/Host.h"
 #include "Hooks/HookTypes.h"
+#include "Mcp/McpTypes.h"
 
 namespace codeharness::config
 {
@@ -205,6 +209,58 @@ namespace codeharness::config
 				out += fmt::format("{}budget_tokens = {}\n", indent, *t->budgetTokens);
 		}
 
+		void SerializeStringArray(std::string& out, std::string_view key, const std::vector<std::string>& values)
+		{
+			if (values.empty())
+				return;
+			out += fmt::format("{} = [", key);
+			for (std::size_t i = 0; i < values.size(); ++i)
+			{
+				if (i != 0)
+					out += ", ";
+				out += fmt::format("\"{}\"", TomlEscape(values[i]));
+			}
+			out += "]\n";
+		}
+
+		std::optional<mcp::McpServerConfig> ParseMcpServerTable(const toml::table& table, std::string fallbackName = {})
+		{
+			mcp::McpServerConfig server;
+			server.name = std::move(fallbackName);
+			if (auto name = table["name"].value<std::string>())
+				server.name = *name;
+			if (auto command = table["command"].value<std::string>())
+				server.command = *command;
+			if (auto cwd = table["cwd"].value<std::string>())
+				server.cwd = *cwd;
+			if (auto enabled = table["enabled"].value<bool>())
+				server.enabled = *enabled;
+			if (const auto* args = table["args"].as_array())
+			{
+				for (const auto& entry : *args)
+				{
+					if (auto value = entry.value<std::string>())
+						server.args.push_back(*value);
+				}
+			}
+			if (const auto* env = table["env"].as_table())
+			{
+				for (const auto& [key, value] : *env)
+				{
+					if (auto str = value.value<std::string>())
+						server.env[std::string(key.str())] = ExpandEnv(*str);
+				}
+			}
+			if (server.name.empty())
+			{
+				spdlog::warn("config: MCP server missing 'name', skipping");
+				return std::nullopt;
+			}
+			if (server.command.empty())
+				spdlog::warn("config: MCP server '{}' has no command", server.name);
+			return server;
+		}
+
 		std::string SerializeConfig(const KimiConfig& config)
 		{
 			std::string out;
@@ -248,6 +304,24 @@ namespace codeharness::config
 				SerializeThinking(out, "", config.thinking);
 			}
 
+			for (const auto& server : config.mcpServers)
+			{
+				out += "\n[[mcp.servers]]\n";
+				out += fmt::format("name = \"{}\"\n", TomlEscape(server.name));
+				out += fmt::format("command = \"{}\"\n", TomlEscape(server.command));
+				SerializeStringArray(out, "args", server.args);
+				if (!server.cwd.empty())
+					out += fmt::format("cwd = \"{}\"\n", TomlEscape(server.cwd));
+				if (!server.enabled)
+					out += "enabled = false\n";
+				if (!server.env.empty())
+				{
+					out += "[mcp.servers.env]\n";
+					for (const auto& [k, v] : server.env)
+						out += fmt::format("{} = \"{}\"\n", TomlEscape(k), TomlEscape(v));
+				}
+			}
+
 			for (const auto& hook : config.hooks)
 			{
 				out += "\n[[hooks]]\n";
@@ -257,6 +331,25 @@ namespace codeharness::config
 					out += fmt::format("matcher = \"{}\"\n", TomlEscape(*hook.matcher));
 				if (hook.timeoutSeconds != 30)
 					out += fmt::format("timeout = {}\n", hook.timeoutSeconds);
+			}
+
+			// Only emit [skills] when non-default, to keep round-trips clean.
+			if (!config.skills.allowProjectSkills || !config.skills.extraSkillDirs.empty())
+			{
+				out += "\n[skills]\n";
+				if (!config.skills.allowProjectSkills)
+					out += fmt::format("allow_project_skills = {}\n", config.skills.allowProjectSkills ? "true" : "false");
+				if (!config.skills.extraSkillDirs.empty())
+				{
+					out += "extra_skill_dirs = [";
+					for (std::size_t i = 0; i < config.skills.extraSkillDirs.size(); ++i)
+					{
+						if (i != 0)
+							out += ", ";
+						out += fmt::format("\"{}\"", TomlEscape(config.skills.extraSkillDirs[i]));
+					}
+					out += "]\n";
+				}
 			}
 			return out;
 		}
@@ -378,6 +471,32 @@ namespace codeharness::config
 
 		config.thinking = ParseThinking(root["thinking"]);
 
+		if (const auto* mcpTable = root["mcp"].as_table())
+		{
+			if (const auto* serversArray = (*mcpTable)["servers"].as_array())
+			{
+				for (const auto& entry : *serversArray)
+				{
+					if (const auto* serverTable = entry.as_table())
+					{
+						if (auto server = ParseMcpServerTable(*serverTable))
+							config.mcpServers.push_back(std::move(*server));
+					}
+				}
+			}
+			else if (const auto* serversTable = (*mcpTable)["servers"].as_table())
+			{
+				for (const auto& [key, value] : *serversTable)
+				{
+					if (const auto* serverTable = value.as_table())
+					{
+						if (auto server = ParseMcpServerTable(*serverTable, std::string(key.str())))
+							config.mcpServers.push_back(std::move(*server));
+					}
+				}
+			}
+		}
+
 		// [[hooks]] — array of tables. Each entry: event, command, matcher?, timeout?
 		if (auto hooksArr = root["hooks"].as_array())
 		{
@@ -417,6 +536,21 @@ namespace codeharness::config
 			}
 		}
 
+		// [skills] — optional table controlling skill discovery.
+		if (const auto* skillsTable = root["skills"].as_table())
+		{
+			if (auto allow = (*skillsTable)["allow_project_skills"].value<bool>())
+				config.skills.allowProjectSkills = *allow;
+			if (const auto* dirs = (*skillsTable)["extra_skill_dirs"].as_array())
+			{
+				for (const auto& entry : *dirs)
+				{
+					if (auto s = entry.value<std::string>())
+						config.skills.extraSkillDirs.push_back(*s);
+				}
+			}
+		}
+
 		return config;
 	}
 
@@ -448,6 +582,12 @@ namespace codeharness::config
 			{
 				SPDLOG_WARN("provider '{}' has no credentials configured", name);
 			}
+		}
+
+		for (const auto& server : config.mcpServers)
+		{
+			if (server.enabled && server.command.empty())
+				SPDLOG_WARN("mcp server '{}' is enabled but has no command", server.name);
 		}
 
 		return absl::OkStatus();

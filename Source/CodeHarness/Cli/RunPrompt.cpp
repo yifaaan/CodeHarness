@@ -17,6 +17,8 @@
 #include "Llm/BeastHttpClient.h"
 #include "Llm/ChatProvider.h"
 #include "Llm/Types.h"
+#include "Mcp/McpConnectionManager.h"
+#include "Mcp/McpTypes.h"
 #include "Permission/PermissionTypes.h"
 #include "Session/Session.h"
 #include "Session/SessionStore.h"
@@ -59,15 +61,19 @@ namespace codeharness::cli
 			}
 		}
 
-		// Resolve skill roots: project-level and user-level directories.
-		std::vector<skills::SkillRoot> ResolveSkillRoots(host::Host* host)
+		// Resolve skill roots: project-level and user-level directories. The
+		// `[skills]` table gates the project root and contributes `Extra` roots.
+		std::vector<skills::SkillRoot> ResolveSkillRoots(host::Host* host, const config::SkillConfig& skillsCfg)
 		{
 			std::vector<skills::SkillRoot> roots;
 
-			auto cwd = host->GetCwd();
-			if (cwd.ok())
+			if (skillsCfg.allowProjectSkills)
 			{
-				roots.push_back({*cwd + "/.agents/skills", skills::SkillSource::Project});
+				auto cwd = host->GetCwd();
+				if (cwd.ok())
+				{
+					roots.push_back({*cwd + "/.agents/skills", skills::SkillSource::Project});
+				}
 			}
 
 			auto home = host->GetHome();
@@ -76,7 +82,42 @@ namespace codeharness::cli
 				roots.push_back({*home + "/.agents/skills", skills::SkillSource::User});
 			}
 
+			for (const auto& dir : skillsCfg.extraSkillDirs)
+			{
+				if (!dir.empty())
+				{
+					roots.push_back({dir, skills::SkillSource::Extra});
+				}
+			}
+
 			return roots;
+		}
+
+		// Resolve the provider from an already-loaded config. Split out from
+		// ResolveProviderFromConfig so Run() can load config once and share it
+		// with skill-root resolution instead of reading config.toml twice.
+		absl::StatusOr<std::pair<std::unique_ptr<llm::ChatProvider>, std::string>>
+		ResolveProviderWithConfig(config::KimiConfig cfg, llm::HttpClient* http, std::string_view modelOverride)
+		{
+			if (cfg.providers.empty())
+			{
+				return absl::FailedPreconditionError(
+					"no [providers] configured in config.toml. Add a provider and a [models] entry before running.");
+			}
+
+			std::string model = modelOverride.empty() ? cfg.defaultModel : std::string(modelOverride);
+			if (model.empty())
+			{
+				return absl::FailedPreconditionError("no model specified and config has no default_model");
+			}
+
+			config::ProviderManager pm(std::move(cfg), http);
+			auto resolved = pm.ResolveForModel(model);
+			if (!resolved.ok())
+			{
+				return resolved.status();
+			}
+			return std::make_pair(std::move(resolved->provider), std::move(resolved->modelName));
 		}
 
 		// Parse skill option: "name" or "name:args"
@@ -148,29 +189,7 @@ namespace codeharness::cli
 				fmt::format("failed to load config: {}. Create one at {} (see docs/guides/cli.md)",
 							cfgResult.status().message(), *cm.ConfigPath()));
 		}
-		auto cfg = *cfgResult;
-		if (cfg.providers.empty())
-		{
-			auto path = cm.ConfigPath();
-			return absl::FailedPreconditionError(fmt::format(
-				"no [providers] configured in {}. Add a provider and a [models] entry before running.",
-				path.ok() ? *path : std::string("<config>")));
-		}
-
-		std::string model = modelOverride.empty() ? cfg.defaultModel : std::string(modelOverride);
-		if (model.empty())
-		{
-			return absl::FailedPreconditionError("no model specified and config has no default_model");
-		}
-
-		config::ProviderManager pm(std::move(cfg), http);
-		auto resolved = pm.ResolveForModel(model);
-		if (!resolved.ok())
-		{
-			return resolved.status();
-		}
-		// The provider is owned by ResolvedRuntimeProvider; transfer it out.
-		return std::make_pair(std::move(resolved->provider), std::move(resolved->modelName));
+		return ResolveProviderWithConfig(std::move(*cfgResult), http, modelOverride);
 	}
 
 	absl::Status Run(const CliOptions& opts, RunDeps deps)
@@ -198,9 +217,13 @@ namespace codeharness::cli
 		}
 
 		// Resolve the provider: injected (test) or from config (production).
+		// On the production path config is loaded once and shared with skill
+		// discovery so config.toml is read a single time per run.
 		llm::ChatProvider* provider = nullptr;
 		std::string modelName;
 		std::unique_ptr<llm::ChatProvider> ownedProvider;
+		config::SkillConfig skillCfg; // defaults (project skills on) for the test path
+		std::vector<mcp::McpServerConfig> mcpServers;
 		if (deps.resolveProvider)
 		{
 			auto r = deps.resolveProvider();
@@ -211,7 +234,17 @@ namespace codeharness::cli
 		}
 		else
 		{
-			auto resolved = ResolveProviderFromConfig(deps.host, deps.http, opts.model);
+			config::ConfigManager cm(deps.host);
+			auto cfgResult = cm.Load();
+			if (!cfgResult.ok())
+			{
+				return absl::FailedPreconditionError(
+					fmt::format("failed to load config: {}. Create one at {} (see docs/guides/cli.md)",
+								cfgResult.status().message(), *cm.ConfigPath()));
+			}
+			skillCfg = cfgResult->skills;
+			mcpServers = cfgResult->mcpServers;
+			auto resolved = ResolveProviderWithConfig(std::move(*cfgResult), deps.http, opts.model);
 			if (!resolved.ok())
 				return resolved.status();
 			ownedProvider = std::move(resolved->first);
@@ -225,15 +258,19 @@ namespace codeharness::cli
 
 		// Build the skill registry and manager.
 		skills::SkillRegistry skillRegistry;
-		auto skillRoots = ResolveSkillRoots(deps.host);
+		auto skillRoots = ResolveSkillRoots(deps.host, skillCfg);
 		skillRegistry.LoadRoots(skillRoots, deps.host);
 		spdlog::info("cli: loaded {} skills from {} roots", skillRegistry.Size(), skillRoots.size());
 
 		skills::SkillManager skillManager(&skillRegistry);
 
-		// Build the tool set (skill tool only if skills are available).
+		// Build the tool set (skill tool only if skills are available), then add
+		// MCP tools best-effort. The manager is declared before ToolManager so it
+		// outlives the wrapper tools that hold client pointers.
+		mcp::McpConnectionManager mcpManager(deps.host, std::move(mcpServers));
 		tools::ToolManager tm;
 		RegisterBuiltInTools(tm, skillRegistry.Empty() ? nullptr : &skillManager);
+		(void)mcpManager.RegisterTools(tm);
 
 		// Create the session (wires Agent + Records at the computed wire path).
 		auto root = session::SessionStore::ResolveSessionsRoot(deps.host);
@@ -307,6 +344,7 @@ namespace codeharness::cli
 		{
 			spdlog::warn("cli: session close failed: {}", closeStatus.message());
 		}
+		(void)mcpManager.Shutdown();
 		return absl::OkStatus();
 	}
 

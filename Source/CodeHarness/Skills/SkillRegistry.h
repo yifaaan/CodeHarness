@@ -26,6 +26,13 @@ namespace codeharness::skills
 
 		std::string RenderSkillPrompt(const SkillDefinition& skill, std::string_view rawArgs, const std::string& sessionId) const;
 
+		// Render a catalog of model-invocable skills (those with
+		// `disable_model_invocation == false`) for injection into the system
+		// prompt so the model learns what skills exist and when to use them.
+		// Returns an empty string when no skills are invocable, so callers can
+		// unconditionally append the result without producing trailing noise.
+		std::string RenderSkillIndex() const;
+
 		void Clear();
 		std::size_t Size() const;
 		bool Empty() const;

@@ -5,6 +5,7 @@
 - **Priority**: Low
 - **Estimated Effort**: 1 week
 - **Owner**: Core Team
+- **State**: Completed (2026-06-15) — code review pending
 
 ## Objective
 
@@ -70,14 +71,14 @@ Implement the skill system for reusable markdown documents and slash commands.
 
 ## Success Criteria
 
-- [ ] Skill definition and parsing implemented
-- [ ] Skill discovery and registration working
-- [ ] Skill activation working
-- [ ] Slash command integration working
-- [ ] All unit tests passing
-- [ ] Documentation updated
+- [x] Skill definition and parsing implemented
+- [x] Skill discovery and registration working
+- [x] Skill activation working
+- [x] Slash command integration working (`--skill name[:args]`; interactive `/skill-name` deferred to plan #14)
+- [x] All unit tests passing
+- [x] Documentation updated
 - [ ] Code review completed
-- [ ] All linters passing
+- [x] All linters passing
 
 ## Risks and Mitigations
 
@@ -92,6 +93,8 @@ Implement the skill system for reusable markdown documents and slash commands.
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-12 | Implemented | SkillParser/SkillRegistry/SkillScanner/SkillManager/SkillTool landed in `cc225ed`; wired into Agent + Cli + ToolManager |
+| 2026-06-15 | Completed | Closed remaining gaps: `RenderSkillIndex` advertises invocable skills in the system prompt (consumes `whenToUse`/`disableModelInvocation`); `SkillType` prompt↔inline routing (prompt → system content, inline → user message); `[skills]` config (`allow_project_skills` + `extra_skill_dirs`); per-turn system-prompt rebuild with prompt-skill staging. Fixed pre-existing `SkillScanner::Scan` signature mismatch (header `std::span` vs cpp `std::vector`). Tests: RenderSkillIndex / prompt-inline routing / `[skills]` parsing. Docs: AGENTS.md module table + section, learning-guide chapter 12, customization guide reconciled. 352/352 tests green. Code review pending. |
 
 ## Architecture Invariants
 

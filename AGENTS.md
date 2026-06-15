@@ -18,6 +18,8 @@
 | **Cli** | `codeharness::cli` | `Source/CodeHarness/Cli/` | ✅ Implemented (MVP) |
 | **Context** | `codeharness::context` | `Source/CodeHarness/Context/` | ✅ Implemented (MVP) |
 | **Hooks** | `codeharness::hooks` | `Source/CodeHarness/Hooks/` | ✅ Implemented (MVP) |
+| **Skills** | `codeharness::skills` | `Source/CodeHarness/Skills/` | ✅ Implemented |
+| **MCP** | `codeharness::mcp` | `Source/CodeHarness/Mcp/` | ✅ Implemented (stdio MVP) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -79,7 +81,7 @@ The Tools module implements concrete `ExecutableTool` subclasses that let the ag
 - `BashTool` — shell execution with timeout + cancellation (two-phase kill)
 - `TruncateOutput` / `NumberLines` / `SplitLines` — output helpers (`tools/tool_output.h`)
 
-**Design:** Each tool implements the two-phase `ResolveExecution` (pure validation, sets `requiresPermission`) → `Execute` (side effects via `Host`). All I/O goes through `codeharness::host::Host`. Read-only tools (Read/Glob/Grep) set `requiresPermission = false` and always run; Write/Edit/Bash set `requiresPermission = true` and are now gated by the Permission module's `PermissionGate` inside `ExecuteToolCall`. Bash drains stdout/stderr deadlock-free via `HostProcess::Drain` (reproc poll, single-threaded). Active-set selection, MCP, and user-defined tools are deferred to the (future) Agent layer.
+**Design:** Each tool implements the two-phase `ResolveExecution` (pure validation, sets `requiresPermission`) → `Execute` (side effects via `Host`). All I/O goes through `codeharness::host::Host`. Read-only tools (Read/Glob/Grep) set `requiresPermission = false` and always run; Write/Edit/Bash set `requiresPermission = true` and are now gated by the Permission module's `PermissionGate` inside `ExecuteToolCall`. Bash drains stdout/stderr deadlock-free via `HostProcess::Drain` (reproc poll, single-threaded). MCP tools are registered by the MCP module as `ExecutableTool` wrappers; active-set selection and user-defined tools are deferred to a future Agent layer.
 
 **Engine host wiring:** `TurnInput.host` (`host::Host*`) is propagated into each tool's `ToolContext` by `RunTurn`.
 
@@ -93,7 +95,7 @@ The Agent layer provides the first user-facing composition layer over the statel
 - `AgentEvent` — turn lifecycle, status changes, errors, and forwarded loop events
 - `PromptResult` — turn id, stop reason, usage, and error summary
 
-**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history as a `ContextMemory` (so the context window can be budgeted), converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory` back into the `ContextMemory`. Before each turn it may run between-turn compaction (see Context module) when history exceeds the model's window. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into the `ContextMemory` (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks are opt-in via `SetHookEngine(...)`; the Agent fires its 3 events (UserPromptSubmit block + PreCompact/PostCompact) and threads the engine into each `TurnInput`. Skills and MCP remain deferred modules.
+**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history as a `ContextMemory` (so the context window can be budgeted), converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory` back into the `ContextMemory`. Before each turn it may run between-turn compaction (see Context module) when history exceeds the model's window. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into the `ContextMemory` (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks are opt-in via `SetHookEngine(...)`; the Agent fires its 3 events (UserPromptSubmit block + PreCompact/PostCompact) and threads the engine into each `TurnInput`. Skills are opt-in via `SetSkillManager(...)`; the Agent snapshots the base system prompt, installs two callbacks (inline skills → user message, prompt skills → staged system content), and rebuilds the per-turn system prompt as `base + skill catalog + staged prompt-skill content`, draining the stage each turn. MCP tools enter through the shared `ToolManager`, so Agent does not need MCP-specific branches.
 
 ### Records (Event Sourcing)
 
@@ -174,6 +176,32 @@ The Hooks module runs user-configured subprocess hooks on agent lifecycle events
 **Design (MVP scope):** Command-type hooks only (no `callback` type). 11 of the 13 events from the reference design — the 2 subagent events (`SubagentStart`/`SubagentStop`) are deferred until subagents exist. Configured in `config.toml` as a `[[hooks]]` array (`event`, `command`, `matcher?`, `timeout?`). The engine spawns each hook via `Host::ExecWithEnv` (argv-style, no shell), pipes a JSON payload to stdin, drains stdout/stderr with the per-hook timeout, and inspects the exit code. **Fail-open invariant (Architecture Invariant #2):** a hook that fails (non-zero exit, timeout, crash) is ALWAYS treated as `Allow`. The only way a hook blocks is by printing a JSON line `{"action":"block","reason":"..."}` on stdout, and only for the 2 blocking events (`PreToolUse`, `UserPromptSubmit`). The `matcher` is a `std::regex` against the event target (tool name for tool events, session id for session events). `TurnInput.hookEngine` is an optional pointer (null = hooks disabled, back-compat). Out of scope (deferred): `callback`-type hooks, the 2 subagent events, the Permission rules DSL, and `InjectionManager`.
 
 **Event wiring:** Loop fires 5 events (`PreToolUse` block + `PostToolUse`/`PostToolUseFailure`/`Stop`/`StopFailure`); Agent fires 3 (`UserPromptSubmit` block + `PreCompact`/`PostCompact`); Session fires 2 (`SessionStart`/`SessionEnd`); `Notification` is glue for callers. The Agent's hook engine is the shared instance within a session.
+
+### Skills (Reusable Prompt/Workflow Fragments)
+
+The Skills module loads markdown skills (with YAML frontmatter) and makes them invocable by the user (`--skill`) or by the model (`skill` tool). See [Source/CodeHarness/Skills/](Source/CodeHarness/Skills/) for source.
+
+**Key interfaces:**
+- `SkillParser` — `Parse(content, path, source)` → `SkillDefinition` (YAML frontmatter + markdown body, via `yaml-cpp`)
+- `SkillScanner` — `Scan(roots, host)` → recursive directory discovery of `SKILL.md` (folder form) and loose `*.md` (max depth 8, ignores dotfiles/`node_modules`)
+- `SkillRegistry` — in-memory store; `LoadRoots`, `Register` (first-registered-wins precedence), `GetSkill`, `ListInvocableSkills`, `RenderSkillPrompt`, `RenderSkillIndex`
+- `SkillManager` — `Activate(payload)`; depth-bounded (MAX_DEPTH=3); routes rendered content to the message callback (inline) or system callback (prompt)
+- `SkillTool` — `ExecutableTool` named `"skill"` (`{name, args}`); `requiresPermission = false`; activates via the manager with `origin = ModelTool`
+
+**Design:** Skills are discovered from four source roots with `project > user > extra` precedence (first-registered wins): `<cwd>/.agents/skills` (Project, gated by `[skills].allow_project_skills`), `~/.agents/skills` (User), and any `[skills].extra_skill_dirs` entries (Extra). Variable expansion in `RenderSkillPrompt` supports `$ARGUMENTS`, positional `$0..$n`, named `$<arg>` (from `metadata.arguments`), `${KIMI_SKILL_DIR}`, `${KIMI_SESSION_ID}`. Two invocation paths converge on `SkillManager::Activate`: the user path (`Agent::ActivateSkill` / `--skill name[:args]`, `origin = UserSlash`) and the model path (`SkillTool`, `origin = ModelTool`). The Agent advertises the invocable-skill catalog (`RenderSkillIndex`) in the per-turn system prompt so the model learns what skills exist and when to use them — consuming `disableModelInvocation` (filters the catalog) and `whenToUse` (per-skill hint). `SkillType` distinguishes activation target: `Inline` (default) renders as a user message; `Prompt` renders into the turn's system prompt. Out of scope (deferred): `SkillType::Flow` multi-step workflows (parsed/stored, falls back to inline with a warning), nested-skill chaining (`SkillOrigin::NestedSkill` + depth increment), `SkillSource::Builtin`/bundled skills, an interactive TUI `/skill-name` slash surface (only `--skill` today), and MCP ownership. Closes exec-plan #12.
+
+### MCP (Model Context Protocol Client)
+
+The MCP module connects configured stdio MCP servers and exposes their discovered tools through the existing Engine tool interface. See [Source/CodeHarness/Mcp/](Source/CodeHarness/Mcp/) for source.
+
+**Key interfaces:**
+- `McpServerConfig` — config value (`name`, `command`, `args`, `env`, `cwd`, `enabled`) parsed from `[[mcp.servers]]`
+- `McpClient` — abstract client (`Initialize`, `ListTools`, `CallTool`, `Shutdown`)
+- `StdioMcpClient` — JSON-RPC line protocol over `Host::ExecWithEnv`
+- `McpExecutableTool` — wraps one remote MCP tool as an `engine::ExecutableTool`
+- `McpConnectionManager` — best-effort server startup, discovery, registration, and shutdown
+
+**Design (stdio MVP scope):** Config supports both `[[mcp.servers]]` and `[mcp.servers.<name>]`. CLI owns one `McpConnectionManager`, registers built-ins/skills first, then registers discovered MCP tools into the same `ToolManager`. Tool names are qualified as `mcp__<server>__<tool>` and duplicates are skipped with a warning. MCP tools default to `requiresPermission = true`, so the existing Permission module gates external tool calls. Server failures, malformed JSON, and exits are fail-open at registration time: the harness continues without that server's tools. Out of scope: HTTP transport, OAuth/synthetic authenticate tools, user-facing MCP config UI, and advanced server compatibility.
 
 ## Core Principles
 

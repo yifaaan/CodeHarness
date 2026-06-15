@@ -8,6 +8,7 @@
 #include "Config/ConfigTypes.h"
 #include "Hooks/HookTypes.h"
 #include "Llm/Types.h"
+#include "Mcp/McpTypes.h"
 
 namespace codeharness::config
 {
@@ -43,6 +44,16 @@ namespace codeharness::config
 		std::string model;	  // model name as the provider knows it
 	};
 
+	// The optional `[skills]` table controlling skill discovery.
+	struct SkillConfig
+	{
+		// Whether `<cwd>/.agents/skills` is scanned for project-level skills.
+		bool allowProjectSkills = true;
+		// Extra directories scanned for skills (source = Extra). Each path is
+		// used verbatim (no environment expansion beyond what toml++ does).
+		std::vector<std::string> extraSkillDirs;
+	};
+
 	// Root config object produced by `ConfigManager`.
 	struct KimiConfig
 	{
@@ -53,6 +64,8 @@ namespace codeharness::config
 		std::map<std::string, ModelAlias> models;
 		std::optional<ThinkingConfig> thinking;
 		std::vector<hooks::HookDef> hooks; // [[hooks]] entries; empty by default
+		SkillConfig skills;				// [skills] entries; defaults enabled
+		std::vector<mcp::McpServerConfig> mcpServers; // [[mcp.servers]] entries; empty by default
 	};
 
 } // namespace codeharness::config

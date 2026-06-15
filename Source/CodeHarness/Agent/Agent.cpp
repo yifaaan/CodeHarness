@@ -133,6 +133,28 @@ namespace codeharness::agent
 		std::vector<llm::Message> turnHistory = history.Messages();
 		turnHistory.push_back(userMessage);
 
+		// Build the effective system prompt: the user's base prompt plus (when
+		// skills are wired) the model-invocable skill catalog and any prompt-
+		// type skill content queued since the last turn. The pending buffer is
+		// drained so a prompt-skill does not leak into subsequent turns.
+		//
+		// When skills are wired, `baseSystemPrompt` is the immutable base
+		// (snapshotted at SetSkillManager / SetSystemPrompt time); otherwise
+		// `config.systemPrompt` is used directly.
+		std::string effectiveSystemPrompt = (skillRegistry != nullptr && baseSystemPromptCaptured)
+												? baseSystemPrompt
+												: config.systemPrompt;
+		if (skillRegistry != nullptr)
+		{
+			effectiveSystemPrompt += skillRegistry->RenderSkillIndex();
+			if (!pendingSystemSkillContent.empty())
+			{
+				effectiveSystemPrompt += "\n\n";
+				effectiveSystemPrompt += pendingSystemSkillContent;
+				pendingSystemSkillContent.clear();
+			}
+		}
+
 		auto turnId = NextTurnId();
 		currentStopSource.emplace();
 		SetStatus(AgentStatus::Running);
@@ -159,7 +181,7 @@ namespace codeharness::agent
 			.provider = provider,
 			.tools = std::move(*loopTools),
 			.host = host,
-			.systemPrompt = config.systemPrompt,
+			.systemPrompt = effectiveSystemPrompt,
 			.history = std::move(turnHistory),
 			.dispatchEvent = [this](const engine::LoopEvent& event) {
 				if (records != nullptr && !records->IsRestoring())
@@ -228,6 +250,10 @@ namespace codeharness::agent
 	void Agent::SetSystemPrompt(std::string systemPrompt)
 	{
 		config.systemPrompt = std::move(systemPrompt);
+		// When skills are wired, config.systemPrompt is rebuilt per turn from
+		// this base. Keep them in sync.
+		baseSystemPrompt = config.systemPrompt;
+		baseSystemPromptCaptured = true;
 	}
 
 	absl::Status Agent::SetActiveTools(std::vector<std::string> tools)
@@ -319,10 +345,22 @@ namespace codeharness::agent
 		skillManager = manager;
 		if (skillManager != nullptr)
 		{
-			skillManager->SetAppendMessageCallback([this](const std::string& content) -> absl::Status {
+			skillRegistry = skillManager->GetRegistry();
+
+			// Snapshot the current system prompt as the immutable base. From
+			// here on, config.systemPrompt is rebuilt per turn from this base +
+			// the skill catalog + any queued prompt-skill content.
+			if (!baseSystemPromptCaptured)
+			{
+				baseSystemPrompt = config.systemPrompt;
+				baseSystemPromptCaptured = true;
+			}
+
+			// inline skills: rendered content becomes a user message.
+			skillManager->SetAppendMessageCallback([this](std::span<const char> content) -> absl::Status {
 				llm::Message msg;
 				msg.role = llm::Role::User;
-				msg.content.push_back(llm::TextPart{content});
+				msg.content.push_back(llm::TextPart{std::string(content.data(), content.size())});
 				history.Append(msg);
 
 				if (records != nullptr && !records->IsRestoring())
@@ -334,6 +372,15 @@ namespace codeharness::agent
 						spdlog::warn("records: failed to log skill message: {}", s.message());
 				}
 
+				return absl::OkStatus();
+			});
+
+			// prompt skills: rendered content is staged for the next turn's
+			// system prompt rather than emitted as a user message.
+			skillManager->SetAppendSystemCallback([this](std::string_view content) -> absl::Status {
+				if (!pendingSystemSkillContent.empty())
+					pendingSystemSkillContent += "\n\n";
+				pendingSystemSkillContent += content;
 				return absl::OkStatus();
 			});
 		}

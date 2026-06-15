@@ -229,4 +229,60 @@ TEST_SUITE("SkillRegistry")
 		CHECK(registry.Empty());
 	}
 
+	TEST_CASE("RenderSkillIndex is empty when no skills are registered")
+	{
+		SkillRegistry registry;
+		CHECK_EQ(registry.RenderSkillIndex(), "");
+	}
+
+	TEST_CASE("RenderSkillIndex is empty when all skills are non-invocable")
+	{
+		SkillRegistry registry;
+
+		SkillDefinition def;
+		def.name = "user-only";
+		def.metadata.disableModelInvocation = true;
+		registry.Register(def);
+
+		CHECK_EQ(registry.RenderSkillIndex(), "");
+	}
+
+	TEST_CASE("RenderSkillIndex lists invocable skills with description and whenToUse")
+	{
+		SkillRegistry registry;
+
+		SkillDefinition a;
+		a.name = "review";
+		a.description = "Review code changes";
+		a.metadata.whenToUse = "When the user asks for a code review";
+		registry.Register(a);
+
+		SkillDefinition b;
+		b.name = "hidden";
+		b.metadata.disableModelInvocation = true; // filtered out
+		registry.Register(b);
+
+		auto rendered = registry.RenderSkillIndex();
+		CHECK_FALSE(rendered.empty());
+		CHECK(rendered.find("review") != std::string::npos);
+		CHECK(rendered.find("Review code changes") != std::string::npos);
+		CHECK(rendered.find("When the user asks for a code review") != std::string::npos);
+		// The disabled skill must not appear.
+		CHECK(rendered.find("hidden") == std::string::npos);
+	}
+
+	TEST_CASE("RenderSkillIndex includes the skill type")
+	{
+		SkillRegistry registry;
+
+		SkillDefinition def;
+		def.name = "inline-skill";
+		def.metadata.type = SkillType::Inline;
+		registry.Register(def);
+
+		auto rendered = registry.RenderSkillIndex();
+		CHECK_FALSE(rendered.empty());
+		CHECK(rendered.find("inline") != std::string::npos);
+	}
+
 }
