@@ -16,7 +16,7 @@ namespace codeharness::tools
 	namespace
 	{
 
-		constexpr int kMaxResults = 1000;
+		constexpr int MaxResults = 1000;
 
 		bool IsTooBroad(std::string_view pattern)
 		{
@@ -74,9 +74,9 @@ namespace codeharness::tools
 		if (!matches.ok())
 			return std::move(matches).status();
 
-		if (static_cast<int>(matches->size()) > kMaxResults)
+		if (static_cast<int>(matches->size()) > MaxResults)
 		{
-			matches->resize(kMaxResults);
+			matches->resize(MaxResults);
 		}
 
 		std::string out;

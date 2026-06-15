@@ -20,7 +20,7 @@ namespace codeharness::context
 	namespace
 	{
 
-		constexpr std::string_view kSummaryPrefix = "# Conversation summary\n\n";
+		constexpr std::string_view SummaryPrefix = "# Conversation summary\n\n";
 
 		// Prompt the model to produce a concise summary of the conversation so
 		// far. Kept deliberately generic; tuned for "preserve the facts the next
@@ -31,7 +31,7 @@ namespace codeharness::context
 			for (const auto& msg : prefix)
 			{
 				std::string_view role = msg.role == llm::Role::User ? "User" : msg.role == llm::Role::Assistant ? "Assistant"
-																												 : "Tool";
+																												: "Tool";
 				transcript += fmt::format("[{}]: {}\n", role, llm::ConcatTextParts(msg.content));
 			}
 			return fmt::format(
@@ -65,7 +65,7 @@ namespace codeharness::context
 		{
 			llm::Message summaryMsg;
 			summaryMsg.role = llm::Role::User;
-			summaryMsg.content.push_back(llm::TextPart{fmt::format("{}{}", kSummaryPrefix, summary)});
+			summaryMsg.content.push_back(llm::TextPart{fmt::format("{}{}", SummaryPrefix, summary)});
 			out.push_back(std::move(summaryMsg));
 		}
 

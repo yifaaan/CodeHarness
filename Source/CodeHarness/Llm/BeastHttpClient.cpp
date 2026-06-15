@@ -31,9 +31,9 @@ namespace codeharness::llm
 	namespace
 	{
 
-		constexpr auto kConnectTimeout = std::chrono::seconds(30);
-		constexpr auto kReadTimeout = std::chrono::seconds(120);
-		constexpr auto kShutdownTimeout = std::chrono::seconds(5);
+		constexpr auto ConnectTimeout = std::chrono::seconds(30);
+		constexpr auto ReadTimeout = std::chrono::seconds(120);
+		constexpr auto ShutdownTimeout = std::chrono::seconds(5);
 
 		absl::Status ErrorCodeToStatus(beast::error_code ec, std::string_view context)
 		{
@@ -67,7 +67,7 @@ namespace codeharness::llm
 			httpReq.body() = req.body;
 			httpReq.prepare_payload();
 
-			beast::get_lowest_layer(stream).expires_after(kConnectTimeout);
+			beast::get_lowest_layer(stream).expires_after(ConnectTimeout);
 			http::write(stream, httpReq, ec);
 			if (ec)
 				return ErrorCodeToStatus(ec, "failed to write request");
@@ -77,7 +77,7 @@ namespace codeharness::llm
 			parser.body_limit(boost::none);
 			parser.header_limit(16 * 1024);
 
-			beast::get_lowest_layer(stream).expires_after(kReadTimeout);
+			beast::get_lowest_layer(stream).expires_after(ReadTimeout);
 			http::read_header(stream, buffer, parser, ec);
 			if (ec)
 				return ErrorCodeToStatus(ec, "failed to read response headers");
@@ -142,7 +142,7 @@ namespace codeharness::llm
 					return ErrorCodeToStatus(readEc, "read error");
 			}
 
-			beast::get_lowest_layer(stream).expires_after(kShutdownTimeout);
+			beast::get_lowest_layer(stream).expires_after(ShutdownTimeout);
 			beast::error_code shutdownEc;
 			stream.shutdown(shutdownEc);
 			if (shutdownEc && shutdownEc != ssl::error::stream_truncated && shutdownEc != beast::errc::not_connected)
@@ -200,14 +200,14 @@ namespace codeharness::llm
 			return ErrorCodeToStatus(ec, fmt::format("failed to resolve '{}'", req.host));
 		}
 
-		beast::get_lowest_layer(stream).expires_after(kConnectTimeout);
+		beast::get_lowest_layer(stream).expires_after(ConnectTimeout);
 		beast::get_lowest_layer(stream).connect(endpoints, ec);
 		if (ec)
 		{
 			return ErrorCodeToStatus(ec, fmt::format("failed to connect to '{}:{}'", req.host, req.port));
 		}
 
-		beast::get_lowest_layer(stream).expires_after(kConnectTimeout);
+		beast::get_lowest_layer(stream).expires_after(ConnectTimeout);
 		stream.handshake(ssl::stream_base::client, ec);
 		if (ec)
 		{

@@ -16,7 +16,7 @@ namespace codeharness::tools
 	namespace
 	{
 
-		constexpr int kMaxReadLines = 1000;
+		constexpr int MaxReadLines = 1000;
 
 	} // namespace
 
@@ -59,8 +59,8 @@ namespace codeharness::tools
 
 		int lineOffset = args.value("line_offset", 0);
 		int nLines = args.value("n_lines", 0);
-		if (nLines > kMaxReadLines)
-			nLines = kMaxReadLines;
+		if (nLines > MaxReadLines)
+			nLines = MaxReadLines;
 
 		auto text = ctx.host->ReadText(path);
 		if (!text.ok())

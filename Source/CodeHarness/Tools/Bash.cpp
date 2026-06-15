@@ -15,15 +15,15 @@ namespace codeharness::tools
 	namespace
 	{
 
-		constexpr int kDefaultTimeoutMs = 60000;
-		constexpr int kMaxTimeoutMs = 300000;
+		constexpr int DefaultTimeoutMs = 60000;
+		constexpr int MaxTimeoutMs = 300000;
 
 		int ClampTimeout(int requested)
 		{
 			if (requested <= 0)
-				return kDefaultTimeoutMs;
-			if (requested > kMaxTimeoutMs)
-				return kMaxTimeoutMs;
+				return DefaultTimeoutMs;
+			if (requested > MaxTimeoutMs)
+				return MaxTimeoutMs;
 			return requested;
 		}
 
@@ -45,7 +45,7 @@ namespace codeharness::tools
 			  {"cwd", {{"type", "string"}, {"description", "Working directory for the command. Defaults to the host cwd."}}},
 			  {"timeout_ms",
 			   {{"type", "integer"},
-				{"default", kDefaultTimeoutMs},
+				{"default", DefaultTimeoutMs},
 				{"description", "Timeout in milliseconds (max 300000)."}}}}},
 			{"required", nlohmann::json::array({"command"})},
 		};
@@ -68,7 +68,7 @@ namespace codeharness::tools
 			return absl::InvalidArgumentError("'command' is required");
 
 		std::string cwd = args.value("cwd", std::string{});
-		int timeoutMs = ClampTimeout(args.value("timeout_ms", kDefaultTimeoutMs));
+		int timeoutMs = ClampTimeout(args.value("timeout_ms", DefaultTimeoutMs));
 
 		auto proc = ctx.host->Exec(command, cwd);
 		if (!proc.ok())

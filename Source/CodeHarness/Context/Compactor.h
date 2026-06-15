@@ -34,7 +34,7 @@ namespace codeharness::context
 	{
 		std::string summary;
 		int64_t newTokenCount = 0; // estimated tokens of the compacted history
-		int removedCount = 0;		 // number of messages summarized away
+		int removedCount = 0;	   // number of messages summarized away
 	};
 
 	// True if `usedTokens` crosses the configured threshold and compaction

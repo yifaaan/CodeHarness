@@ -176,7 +176,7 @@ namespace codeharness::host
 			absl::StatusOr<DrainResult> Drain(int timeoutMs, std::stop_token stopToken) override
 			{
 				DrainResult result;
-				constexpr int kSliceMs = 50;
+				constexpr int SliceMs = 50;
 				constexpr std::size_t kMaxPerStream = 1024 * 1024; // 1 MB per stream
 				std::array<uint8_t, 4096> buffer{};
 
@@ -218,7 +218,7 @@ namespace codeharness::host
 					if (!exited)
 						interests |= reproc::event::exit;
 
-					auto [events, ec] = proc.poll(interests, reproc::milliseconds(kSliceMs));
+					auto [events, ec] = proc.poll(interests, reproc::milliseconds(SliceMs));
 					if (ec && ec != std::errc::timed_out)
 					{
 						return absl::InternalError(fmt::format("poll failed: {}", ec.message()));

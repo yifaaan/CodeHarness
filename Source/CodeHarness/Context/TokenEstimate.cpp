@@ -14,17 +14,17 @@ namespace codeharness::context
 	{
 
 		// ~4 chars per token is the conventional English/code heuristic.
-		constexpr int64_t kCharsPerToken = 4;
+		constexpr int64_t CharsPerToken = 4;
 		// Small fixed overhead per message (role tags, separators) and per
 		// tool call (the JSON envelope). Both bias the estimate upward.
-		constexpr int64_t kPerMessageOverhead = 4;
-		constexpr int64_t kPerToolCallOverhead = 8;
+		constexpr int64_t PerMessageOverhead = 4;
+		constexpr int64_t PerToolCallOverhead = 8;
 
 		int64_t EstimateToolCallTokens(const llm::ToolCall& tc)
 		{
 			// id + name + arguments, roughly serialized length / chars-per-token.
 			auto len = tc.id.size() + tc.name.size() + tc.arguments.size();
-			return static_cast<int64_t>(len) / kCharsPerToken + kPerToolCallOverhead;
+			return static_cast<int64_t>(len) / CharsPerToken + PerToolCallOverhead;
 		}
 
 	} // namespace
@@ -33,14 +33,14 @@ namespace codeharness::context
 	{
 		if (text.empty())
 			return 0;
-		// (size + kCharsPerToken - 1) / kCharsPerToken rounds up so a 5-char
+		// (size + CharsPerToken - 1) / CharsPerToken rounds up so a 5-char
 		// word counts as 2 tokens, not 1.
-		return (static_cast<int64_t>(text.size()) + kCharsPerToken - 1) / kCharsPerToken;
+		return (static_cast<int64_t>(text.size()) + CharsPerToken - 1) / CharsPerToken;
 	}
 
 	int64_t EstimateTokens(const llm::Message& msg)
 	{
-		int64_t total = kPerMessageOverhead + EstimateTokens(llm::ConcatTextParts(msg.content));
+		int64_t total = PerMessageOverhead + EstimateTokens(llm::ConcatTextParts(msg.content));
 		for (const auto& tc : msg.toolCalls)
 		{
 			total += EstimateToolCallTokens(tc);
