@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <string>
+
 #include "Skills/SkillManager.h"
 #include "Skills/SkillRegistry.h"
 
@@ -180,6 +182,97 @@ TEST_SUITE("SkillManager")
 
 		auto status = manager.Activate(payload);
 		CHECK_FALSE(status.ok());
+	}
+
+	TEST_CASE("Inline skill routes to the message callback")
+	{
+		SkillRegistry registry;
+
+		SkillDefinition def;
+		def.name = "inline-skill";
+		def.content = "Inline body";
+		def.metadata.type = SkillType::Inline;
+		registry.Register(def);
+
+		SkillManager manager(&registry);
+
+		std::string messageSink;
+		std::string systemSink;
+		manager.SetAppendMessageCallback([&](std::span<const char> c) -> absl::Status {
+			messageSink.assign(c.data(), c.size());
+			return absl::OkStatus();
+		});
+		manager.SetAppendSystemCallback([&](std::span<const char> c) -> absl::Status {
+			systemSink.assign(c.data(), c.size());
+			return absl::OkStatus();
+		});
+
+		SkillActivationPayload payload;
+		payload.name = "inline-skill";
+
+		auto status = manager.Activate(payload);
+		CHECK(status.ok());
+		CHECK_EQ(messageSink, "Inline body");
+		CHECK(systemSink.empty());
+	}
+
+	TEST_CASE("Prompt skill routes to the system callback")
+	{
+		SkillRegistry registry;
+
+		SkillDefinition def;
+		def.name = "prompt-skill";
+		def.content = "Prompt body";
+		def.metadata.type = SkillType::Prompt;
+		registry.Register(def);
+
+		SkillManager manager(&registry);
+
+		std::string messageSink;
+		std::string systemSink;
+		manager.SetAppendMessageCallback([&](std::span<const char> c) -> absl::Status {
+			messageSink.assign(c.data(), c.size());
+			return absl::OkStatus();
+		});
+		manager.SetAppendSystemCallback([&](std::span<const char> c) -> absl::Status {
+			systemSink.assign(c.data(), c.size());
+			return absl::OkStatus();
+		});
+
+		SkillActivationPayload payload;
+		payload.name = "prompt-skill";
+
+		auto status = manager.Activate(payload);
+		CHECK(status.ok());
+		CHECK_EQ(systemSink, "Prompt body");
+		CHECK(messageSink.empty());
+	}
+
+	TEST_CASE("Prompt skill without system callback falls back to message callback")
+	{
+		SkillRegistry registry;
+
+		SkillDefinition def;
+		def.name = "prompt-no-system";
+		def.content = "Fallback body";
+		def.metadata.type = SkillType::Prompt;
+		registry.Register(def);
+
+		SkillManager manager(&registry);
+
+		std::string messageSink;
+		manager.SetAppendMessageCallback([&](std::span<const char> c) -> absl::Status {
+			messageSink.assign(c.data(), c.size());
+			return absl::OkStatus();
+		});
+		// No system callback installed.
+
+		SkillActivationPayload payload;
+		payload.name = "prompt-no-system";
+
+		auto status = manager.Activate(payload);
+		CHECK(status.ok());
+		CHECK_EQ(messageSink, "Fallback body");
 	}
 
 }

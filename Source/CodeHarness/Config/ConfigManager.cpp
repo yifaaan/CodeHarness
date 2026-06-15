@@ -258,6 +258,25 @@ namespace codeharness::config
 				if (hook.timeoutSeconds != 30)
 					out += fmt::format("timeout = {}\n", hook.timeoutSeconds);
 			}
+
+			// Only emit [skills] when non-default, to keep round-trips clean.
+			if (!config.skills.allowProjectSkills || !config.skills.extraSkillDirs.empty())
+			{
+				out += "\n[skills]\n";
+				if (!config.skills.allowProjectSkills)
+					out += fmt::format("allow_project_skills = {}\n", config.skills.allowProjectSkills ? "true" : "false");
+				if (!config.skills.extraSkillDirs.empty())
+				{
+					out += "extra_skill_dirs = [";
+					for (std::size_t i = 0; i < config.skills.extraSkillDirs.size(); ++i)
+					{
+						if (i != 0)
+							out += ", ";
+						out += fmt::format("\"{}\"", TomlEscape(config.skills.extraSkillDirs[i]));
+					}
+					out += "]\n";
+				}
+			}
 			return out;
 		}
 
@@ -414,6 +433,21 @@ namespace codeharness::config
 				if (auto t = (*htable)["timeout"].value<int64_t>())
 					hook.timeoutSeconds = static_cast<int>(std::clamp(*t, int64_t{1}, int64_t{600}));
 				config.hooks.push_back(std::move(hook));
+			}
+		}
+
+		// [skills] — optional table controlling skill discovery.
+		if (const auto* skillsTable = root["skills"].as_table())
+		{
+			if (auto allow = (*skillsTable)["allow_project_skills"].value<bool>())
+				config.skills.allowProjectSkills = *allow;
+			if (const auto* dirs = (*skillsTable)["extra_skill_dirs"].as_array())
+			{
+				for (const auto& entry : *dirs)
+				{
+					if (auto s = entry.value<std::string>())
+						config.skills.extraSkillDirs.push_back(*s);
+				}
 			}
 		}
 

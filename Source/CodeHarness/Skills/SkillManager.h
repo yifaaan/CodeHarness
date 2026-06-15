@@ -16,6 +16,7 @@ namespace codeharness::skills
 {
 
 	using AppendMessageCallback = std::function<absl::Status(std::span<const char>)>;
+	using AppendSystemCallback = std::function<absl::Status(std::span<const char>)>;
 
 	class SkillManager
 	{
@@ -24,9 +25,15 @@ namespace codeharness::skills
 
 		void SetSessionId(std::string sessionId);
 
-		// Set the callback invoked after a skill is rendered.
+		// Set the callback invoked after an *inline* skill is rendered — the
+		// rendered content becomes a user-role message in the conversation.
 		// Called with the rendered (variable-expanded) skill content.
 		void SetAppendMessageCallback(AppendMessageCallback callback);
+
+		// Set the callback invoked after a *prompt* skill is rendered — the
+		// rendered content is appended to the system prompt for the turn.
+		// Called with the rendered (variable-expanded) skill content.
+		void SetAppendSystemCallback(AppendSystemCallback callback);
 
 		absl::Status Activate(const SkillActivationPayload& payload);
 
@@ -37,6 +44,7 @@ namespace codeharness::skills
 	private:
 		SkillRegistry* registry;
 		AppendMessageCallback appendMessage;
+		AppendSystemCallback appendSystem;
 		std::string sessionId;
 	};
 

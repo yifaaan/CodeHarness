@@ -2,6 +2,7 @@
 
 #include "Skills/SkillRegistry.h"
 #include "absl/status/status.h"
+#include "spdlog/spdlog.h"
 
 namespace codeharness::skills
 {
@@ -21,6 +22,11 @@ namespace codeharness::skills
 		appendMessage = std::move(callback);
 	}
 
+	void SkillManager::SetAppendSystemCallback(AppendSystemCallback callback)
+	{
+		appendSystem = std::move(callback);
+	}
+
 	absl::Status SkillManager::Activate(const SkillActivationPayload& payload)
 	{
 		if (!registry)
@@ -35,9 +41,21 @@ namespace codeharness::skills
 
 		auto renderedContent = registry->RenderSkillPrompt(*skill, payload.args, sessionId);
 
-		if (appendMessage)
+		// `prompt` skills inject as system content (turn-scoped guidance);
+		// `inline` skills inject as a user message (the default model-invocation
+		// path). `flow` is parsed but not yet implemented — fall back to inline
+		// and warn so activation is still observable rather than a silent no-op.
+		const auto* sink = (skill->metadata.type == SkillType::Prompt && appendSystem)
+							   ? &appendSystem
+							   : &appendMessage;
+		if (skill->metadata.type == SkillType::Flow)
 		{
-			return appendMessage(std::span<const char>(renderedContent.data(), renderedContent.size()));
+			spdlog::warn("skills: 'flow' type is not fully implemented; activating '{}' as inline", payload.name);
+		}
+
+		if (sink && *sink)
+		{
+			return (*sink)(std::span<const char>(renderedContent.data(), renderedContent.size()));
 		}
 
 		return absl::OkStatus();

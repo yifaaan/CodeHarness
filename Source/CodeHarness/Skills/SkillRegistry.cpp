@@ -127,6 +127,44 @@ namespace codeharness::skills
 		return ExpandVariables(skill.content, skill, rawArgs, sessionId);
 	}
 
+	std::string SkillRegistry::RenderSkillIndex() const
+	{
+		// Only model-invocable skills are advertised (disable_model_invocation
+		// filters out user-only skills). Each entry surfaces name, type, a
+		// one-line description, and — when provided — the explicit when_to_use
+		// hint so the model can decide whether to invoke the `skill` tool.
+		auto invocable = ListInvocableSkills();
+		if (invocable.empty())
+			return {};
+
+		std::string out;
+		out += "\n\n## Available skills\n";
+		out += "The following skills are available. Invoke one with the `skill` tool ";
+		out += "(`{\"name\": \"...\", \"args\": \"...\"}`) when its description matches ";
+		out += "the user's request.\n";
+
+		for (const auto* skill : invocable)
+		{
+			out += "\n- **";
+			out += skill->name;
+			out += "** (";
+			out += std::string(SkillTypeToString(skill->metadata.type));
+			out += ")";
+			if (!skill->description.empty())
+			{
+				out += ": ";
+				out += skill->description;
+			}
+			if (skill->metadata.whenToUse && !skill->metadata.whenToUse->empty())
+			{
+				out += "\n  When to use: ";
+				out += *skill->metadata.whenToUse;
+			}
+		}
+
+		return out;
+	}
+
 	void SkillRegistry::Clear()
 	{
 		skills_.clear();

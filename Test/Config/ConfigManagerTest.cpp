@@ -323,3 +323,31 @@ TEST_CASE("ConfigManager: malformed TOML returns InvalidArgument")
 	CHECK_FALSE(cfg.ok());
 	CHECK(cfg.status().code() == absl::StatusCode::kInvalidArgument);
 }
+
+TEST_CASE("ConfigManager: parses [skills] table")
+{
+	host::LocalHost host;
+	config::ConfigManager mgr(&host);
+
+	auto cfg = mgr.LoadFromString(R"(
+[skills]
+allow_project_skills = false
+extra_skill_dirs = ["/opt/shared-skills", "/home/me/skills"]
+)");
+	REQUIRE(cfg.ok());
+	CHECK_FALSE(cfg->skills.allowProjectSkills);
+	REQUIRE(cfg->skills.extraSkillDirs.size() == 2);
+	CHECK_EQ(cfg->skills.extraSkillDirs[0], "/opt/shared-skills");
+	CHECK_EQ(cfg->skills.extraSkillDirs[1], "/home/me/skills");
+}
+
+TEST_CASE("ConfigManager: skills config defaults when absent")
+{
+	host::LocalHost host;
+	config::ConfigManager mgr(&host);
+
+	auto cfg = mgr.LoadFromString(R"(default_model = "x")");
+	REQUIRE(cfg.ok());
+	CHECK(cfg->skills.allowProjectSkills);
+	CHECK(cfg->skills.extraSkillDirs.empty());
+}

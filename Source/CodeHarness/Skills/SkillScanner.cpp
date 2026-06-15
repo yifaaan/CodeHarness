@@ -114,18 +114,18 @@ namespace codeharness::skills
 		}
 	}
 
-	std::vector<SkillDefinition> SkillScanner::Scan(const std::vector<SkillRoot>& roots, host::Host* host)
+std::vector<SkillDefinition> SkillScanner::Scan(std::span<const SkillRoot> roots, host::Host* host)
+{
+	std::vector<SkillDefinition> allSkills;
+
+	for (const auto& root : roots)
 	{
-		std::vector<SkillDefinition> allSkills;
-
-		for (const auto& root : roots)
-		{
-			auto rootSkills = ScanRoot(root, host);
-			allSkills.insert(allSkills.end(), rootSkills.begin(), rootSkills.end());
-		}
-
-		return allSkills;
+		auto rootSkills = ScanRoot(root, host);
+		allSkills.insert(allSkills.end(), rootSkills.begin(), rootSkills.end());
 	}
+
+	return allSkills;
+}
 
 	std::vector<SkillDefinition> SkillScanner::ScanRoot(const SkillRoot& root, host::Host* host)
 	{
