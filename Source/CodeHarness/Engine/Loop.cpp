@@ -25,51 +25,51 @@ namespace codeharness::engine
 			}
 		}
 
-	ToolResult ExecuteToolCall(ExecutableTool& tool, const llm::ToolCall& tc, const ToolContext& ctx, const TurnInput& input)
-	{
-		nlohmann::json args;
-		if (!tc.arguments.empty())
+		ToolResult ExecuteToolCall(ExecutableTool& tool, const llm::ToolCall& tc, const ToolContext& ctx, const TurnInput& input)
 		{
-			try
+			nlohmann::json args;
+			if (!tc.arguments.empty())
 			{
-				args = nlohmann::json::parse(tc.arguments);
+				try
+				{
+					args = nlohmann::json::parse(tc.arguments);
+				}
+				catch (const nlohmann::json::parse_error& e)
+				{
+					return {.content = fmt::format("invalid tool arguments: {}", e.what()), .isError = true};
+				}
 			}
-			catch (const nlohmann::json::parse_error& e)
+
+			auto resolution = tool.ResolveExecution(args);
+			if (!resolution.ok())
 			{
-				return {.content = fmt::format("invalid tool arguments: {}", e.what()), .isError = true};
+				return {.content = std::string(resolution.status().message()), .isError = true};
 			}
-		}
 
-		auto resolution = tool.ResolveExecution(args);
-		if (!resolution.ok())
-		{
-			return {.content = std::string(resolution.status().message()), .isError = true};
-		}
-
-		// Permission gate: the single point where requiresPermission becomes
-		// live. Read-only tools (requiresPermission == false) always pass. When
-		// no gate is wired the call is allowed, preserving the legacy behavior.
-		const auto& exec = *resolution;
-		if (input.permissionGate != nullptr && exec.requiresPermission)
-		{
-			Dispatch(input, PermissionRequestedEvent{tc.name, args, exec.description});
-			if (!input.permissionGate->ShouldRun(true, tc.name, args, exec.description))
+			// Permission gate: the single point where requiresPermission becomes
+			// live. Read-only tools (requiresPermission == false) always pass. When
+			// no gate is wired the call is allowed, preserving the legacy behavior.
+			const auto& exec = *resolution;
+			if (input.permissionGate != nullptr && exec.requiresPermission)
 			{
-				Dispatch(input, PermissionDeniedEvent{tc.name, exec.description});
-				return {.content = fmt::format("permission denied for tool '{}'", tc.name), .isError = true};
+				Dispatch(input, PermissionRequestedEvent{tc.name, args, exec.description});
+				if (!input.permissionGate->ShouldRun(true, tc.name, args, exec.description))
+				{
+					Dispatch(input, PermissionDeniedEvent{tc.name, exec.description});
+					return {.content = fmt::format("permission denied for tool '{}'", tc.name), .isError = true};
+				}
 			}
+
+			auto result = tool.Execute(args, ctx);
+			if (!result.ok())
+			{
+				return {.content = std::string(result.status().message()), .isError = true};
+			}
+
+			return std::move(*result);
 		}
 
-		auto result = tool.Execute(args, ctx);
-		if (!result.ok())
-		{
-			return {.content = std::string(result.status().message()), .isError = true};
-		}
-
-		return std::move(*result);
-	}
-
-		ExecutableTool* FindTool(std::vector<ExecutableTool*>& tools, std::string_view name)
+		ExecutableTool* FindTool(std::span<ExecutableTool*> tools, std::string_view name)
 		{
 			for (auto* t : tools)
 			{
@@ -142,7 +142,7 @@ namespace codeharness::engine
 			};
 
 			auto status =
-				input.provider->Generate(input.systemPrompt, std::span<const llm::Tool>(toolDefs), std::span<const llm::Message>(result.updatedHistory), callbacks, input.stopToken);
+				input.provider->Generate(input.systemPrompt, toolDefs, result.updatedHistory, callbacks, input.stopToken);
 
 			if (!status.ok())
 			{
