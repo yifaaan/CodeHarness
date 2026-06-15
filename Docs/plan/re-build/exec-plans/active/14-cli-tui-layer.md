@@ -126,6 +126,7 @@ Implement the CLI entry point and terminal UI for user interaction.
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-15 | Partial | **Non-interactive CLI landed (Weeks 1–2).** `Source/CodeHarness/Cli/` with CLI11-based `ParseArgs`, `CliOptions`, and `Run(opts, RunDeps)` wiring the full chain: ConfigManager → ProviderManager → Session::Create → agent event dispatcher (stdout streaming) → Agent::Prompt → Session::Close. `Main.cpp` owns `LocalHost` + synchronous `BeastHttpClient` and injects via `RunDeps`. The `codeharness_cli` executable is always built; CLI11 is now a library dependency (CliParser.cpp/RunPrompt.cpp live in the lib so tests link them). `-y/--yolo` selects Yolo mode; default is Manual with a stdin y/n approval callback. 11 CliTest cases (parser + a Run smoke test with an injected MockChatProvider); full suite 264/264 green. `docs/guides/cli.md` quickstart added. **Still TODO (Week 3):** the TUI/`shell` mode, reverse-RPC approval panel, REPL/multi-turn, `--continue`/`--session`, `--output-format stream-json`, and a config auto-creation wizard. |
 
 ## Architecture Invariants
 

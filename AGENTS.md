@@ -15,6 +15,7 @@
 | **Records** | `codeharness::records` | `src/codeharness/records/` | ✅ Implemented |
 | **Permission** | `codeharness::permission` | `Source/CodeHarness/Permission/` | ✅ Implemented (MVP) |
 | **Session** | `codeharness::session` | `Source/CodeHarness/Session/` | ✅ Implemented (MVP) |
+| **Cli** | `codeharness::cli` | `Source/CodeHarness/Cli/` | ✅ Implemented (MVP) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -129,6 +130,21 @@ The Session module owns the on-disk session layout and ties a directory to a liv
 **Design (MVP scope):** Directory layout `<root>/<workdir-key>/<sessionId>/{state.json, agents/<agentId>/wire.jsonl}` with `<root>` resolved exactly like config: `$CODEHARNESS_HOME/sessions` if set, else `$HOME/.codeharness/sessions`. `Session::Create` allocates the dir via the store, then wires `FilePersistence(host, <dir>/agents/main/wire.jsonl)` → `AgentRecords` → `Agent`, calling `Agent::SetRecords`. `Session::Resume` wires the same then calls `Agent::Resume()` which replays the wire stream into in-memory history (Records' `restoring_` guard prevents re-recording). `Close()` flushes records and writes updated `state.json` (atomic). `SessionStore::WriteMeta` is atomic via write-tmp + `Host::Rename`. Out of scope (deferred to plan #09): the RPC protocol (CoreAPI/AgentAPI), `fork`/`export`, subagents (only `'main'` this iteration), and skill/MCP/hook ownership.
 
 **Host additions:** `Host::Remove` (`RemoveOptions{recursive, existOk}`) and `Host::Rename(from, to)` were added to the `Host` interface (and implemented on `LocalHost`) to unblock `SessionStore::Remove` and atomic `state.json` writes — these methods were previously absent.
+
+### Cli (Non-Interactive Entry Point)
+
+The Cli module is the first executable target — turns the library into a runnable program. See [Source/CodeHarness/Cli/](Source/CodeHarness/Cli/) for source.
+
+**Key interfaces:**
+- `ParseArgs(argc, argv)` → `StatusOr<CliOptions>` — CLI11-based flag parser
+- `CliOptions` — `{prompt, model, workdir, yolo, help, version}`
+- `Run(opts, RunDeps)` → `Status` — the end-to-end wiring chain
+- `RunDeps` — test seam: `{host*, http*, resolveProvider}`, letting tests inject a mock provider without touching the network
+- `ResolveProviderFromConfig(host, http, modelOverride)` — ConfigManager → ProviderManager → live `ChatProvider`
+
+**Design (MVP scope):** One-shot `--prompt` mode only. `Run` wires the full chain: load `config.toml` → resolve provider → register built-in tools → `Session::Create` → wire the agent's event dispatcher (stream `AssistantDeltaEvent` text to stdout) → set permission mode (`Yolo` for `--yolo`, else `Manual` with a synchronous stdin y/n approval callback) → `Agent::Prompt` → `Session::Close`. `Main.cpp` owns the `LocalHost` + `BeastHttpClient` (synchronous, no threading) lifetimes and injects them via `RunDeps`. The `codeharness_cli` executable is always built (not gated on `CODEHARNESS_BUILD_TESTS`). Out of scope (deferred to plan #14): the TUI/`shell` mode, reverse-RPC approval panel, REPL/multi-turn, `--continue`/`--session` resume flags, `--output-format stream-json`, and a config auto-creation wizard.
+
+**Build:** `cmake --build` produces `codeharness_cli.exe` alongside `codeharness_tests.exe`. `CliParser.cpp`/`RunPrompt.cpp` live in the `codeharness` library (so tests link them); only `Main.cpp` is exclusive to the executable. CLI11 is now a library dependency.
 
 ## Core Principles
 
