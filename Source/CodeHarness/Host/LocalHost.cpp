@@ -592,6 +592,71 @@ namespace codeharness::host
 		return absl::OkStatus();
 	}
 
+	absl::Status LocalHost::Remove(std::string_view path, const RemoveOptions& options)
+	{
+		auto p = ResolvePath(path);
+		std::error_code ec;
+
+		// std::filesystem::remove returns false (no error) when the path is
+		// missing; remove_all returns 0. Distinguish "didn't exist" from
+		// "removed" so existOk can be honored.
+		const bool existed = std::filesystem::exists(p, ec);
+		if (ec)
+		{
+			return absl::InternalError(fmt::format("failed to stat for removal: {}: {}", p.string(), ec.message()));
+		}
+
+		if (!existed)
+		{
+			if (options.existOk)
+			{
+				return absl::OkStatus();
+			}
+			return absl::NotFoundError(fmt::format("path does not exist: {}", p.string()));
+		}
+
+		bool removed = false;
+		if (options.recursive)
+		{
+			auto removedCount = std::filesystem::remove_all(p, ec);
+			removed = removedCount > 0;
+		}
+		else
+		{
+			removed = std::filesystem::remove(p, ec);
+		}
+
+		if (ec)
+		{
+			return absl::InternalError(fmt::format("failed to remove: {}: {}", p.string(), ec.message()));
+		}
+		if (!removed)
+		{
+			// Existed but nothing removed — happens for non-recursive remove on
+			// a non-empty directory. Surface as InvalidArgument to mirror the
+			// underlying errno (ENOTEMPTY-ish).
+			return absl::InvalidArgumentError(fmt::format("path not removed (non-recursive remove on non-empty directory?): {}", p.string()));
+		}
+		return absl::OkStatus();
+	}
+
+	absl::Status LocalHost::Rename(std::string_view from, std::string_view to)
+	{
+		auto src = ResolvePath(from);
+		auto dst = ResolvePath(to);
+		std::error_code ec;
+		// std::filesystem::rename atomically replaces the destination on the
+		// same filesystem (POSIX rename(2) semantics). On Windows, C++17
+		// filesystem::rename also replaces an existing target. This is the
+		// atomic-replace primitive used for state.json writes.
+		std::filesystem::rename(src, dst, ec);
+		if (ec)
+		{
+			return absl::InternalError(fmt::format("failed to rename '{}' -> '{}': {}", src.string(), dst.string(), ec.message()));
+		}
+		return absl::OkStatus();
+	}
+
 	absl::StatusOr<std::unique_ptr<HostProcess>> LocalHost::Exec(std::string_view command, std::string_view cwd)
 	{
 		std::string workDirStr;

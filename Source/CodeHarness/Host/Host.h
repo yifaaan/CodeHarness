@@ -37,6 +37,8 @@ namespace codeharness::host
 		virtual absl::Status WriteText(std::string_view path, std::string_view data) = 0;
 		virtual absl::Status AppendText(std::string_view path, std::string_view data) = 0;
 		virtual absl::Status Mkdir(std::string_view path, const MkdirOptions& options = {}) = 0;
+		virtual absl::Status Remove(std::string_view path, const RemoveOptions& options = {}) = 0;
+		virtual absl::Status Rename(std::string_view from, std::string_view to) = 0;
 
 		virtual absl::StatusOr<std::unique_ptr<HostProcess>> Exec(std::string_view command, std::string_view cwd = "") = 0;
 

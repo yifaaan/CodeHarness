@@ -297,6 +297,90 @@ TEST_CASE("LocalHost::mkdir - recursive")
 	CHECK(f.host.Stat("a/b/c").ok());
 }
 
+TEST_CASE("LocalHost::remove - file")
+{
+	LocalHostFixture f;
+	CHECK(f.host.Stat("hello.txt").ok());
+	CHECK_OK(f.host.Remove("hello.txt"));
+	CHECK(absl::IsNotFound(f.host.Stat("hello.txt").status()));
+}
+
+TEST_CASE("LocalHost::remove - empty directory non-recursive")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.Remove("empty_dir")); // default existOk=true, recursive=false
+	CHECK(absl::IsNotFound(f.host.Stat("empty_dir").status()));
+}
+
+TEST_CASE("LocalHost::remove - recursive removes non-empty directory tree")
+{
+	LocalHostFixture f;
+	CHECK(f.host.Stat("subdir").ok());
+	host::RemoveOptions opts;
+	opts.recursive = true;
+	CHECK_OK(f.host.Remove("subdir", opts));
+	// The directory itself must be gone.
+	CHECK_FALSE(f.host.Stat("subdir").ok());
+	// A child path under the removed tree must also report absent. On Windows,
+	// Stat may surface InternalError (not NotFound) when an intermediate
+	// directory is missing, so treat any non-OK as "absent".
+	CHECK_FALSE(f.host.Stat("subdir/nested/deep.txt").ok());
+}
+
+TEST_CASE("LocalHost::remove - non-recursive on non-empty dir fails")
+{
+	LocalHostFixture f;
+	// subdir has children; non-recursive remove should fail.
+	auto status = f.host.Remove("subdir");
+	CHECK_FALSE(status.ok());
+	// Directory must still exist (nothing removed).
+	CHECK(f.host.Stat("subdir").ok());
+}
+
+TEST_CASE("LocalHost::remove - missing path: existOk=true is no-op success")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.Remove("does_not_exist"));
+}
+
+TEST_CASE("LocalHost::remove - missing path: existOk=false yields NotFound")
+{
+	LocalHostFixture f;
+	host::RemoveOptions opts;
+	opts.existOk = false;
+	auto status = f.host.Remove("does_not_exist", opts);
+	CHECK_FALSE(status.ok());
+	CHECK(absl::IsNotFound(status));
+}
+
+TEST_CASE("LocalHost::rename - moves file to new path")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.Rename("hello.txt", "moved.txt"));
+	CHECK(absl::IsNotFound(f.host.Stat("hello.txt").status()));
+	auto content = f.host.ReadText("moved.txt");
+	CHECK(content.ok());
+}
+
+TEST_CASE("LocalHost::rename - overwrites existing target atomically")
+{
+	LocalHostFixture f;
+	// readme.md exists; rename hello.txt over it.
+	CHECK_OK(f.host.Rename("hello.txt", "readme.md"));
+	CHECK(absl::IsNotFound(f.host.Stat("hello.txt").status()));
+	auto content = f.host.ReadText("readme.md");
+	REQUIRE(content.ok());
+	CHECK(*content == "Hello, World!\n"); // content is now hello.txt's
+}
+
+TEST_CASE("LocalHost::rename - into nested target path requires parent dir")
+{
+	LocalHostFixture f;
+	CHECK_OK(f.host.Rename("hello.txt", "subdir/renamed.txt"));
+	CHECK(absl::IsNotFound(f.host.Stat("hello.txt").status()));
+	CHECK(f.host.Stat("subdir/renamed.txt").ok());
+}
+
 TEST_CASE("LocalHost::glob - all txt files")
 {
 	LocalHostFixture f;

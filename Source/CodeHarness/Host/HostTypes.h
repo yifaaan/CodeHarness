@@ -35,4 +35,10 @@ namespace codeharness::host
 		bool recursive = false;
 	};
 
+	struct RemoveOptions
+	{
+		bool recursive = false; // when true, remove non-empty directories (rm -r)
+		bool existOk = true;	// when false, a missing path yields NotFound
+	};
+
 } // namespace codeharness::host

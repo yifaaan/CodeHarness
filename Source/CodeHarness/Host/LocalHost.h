@@ -38,6 +38,8 @@ namespace codeharness::host
 		absl::Status WriteText(std::string_view path, std::string_view data) override;
 		absl::Status AppendText(std::string_view path, std::string_view data) override;
 		absl::Status Mkdir(std::string_view path, const MkdirOptions& options = {}) override;
+		absl::Status Remove(std::string_view path, const RemoveOptions& options = {}) override;
+		absl::Status Rename(std::string_view from, std::string_view to) override;
 
 		absl::StatusOr<std::unique_ptr<HostProcess>> Exec(std::string_view command, std::string_view cwd = "") override;
 
