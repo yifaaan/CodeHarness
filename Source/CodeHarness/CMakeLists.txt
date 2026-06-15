@@ -9,6 +9,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(Boost CONFIG REQUIRED COMPONENTS beast)
 find_package(OpenSSL CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
+find_package(CLI11 CONFIG REQUIRED)
 
 add_library(codeharness
   Host/HostPath.cpp
@@ -39,6 +40,8 @@ add_library(codeharness
   Session/WorkdirKey.cpp
   Session/SessionStore.cpp
   Session/Session.cpp
+  Cli/CliParser.cpp
+  Cli/RunPrompt.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -55,9 +58,19 @@ target_link_libraries(codeharness PUBLIC
   Boost::beast
   OpenSSL::SSL
   tomlplusplus::tomlplusplus
+  CLI11::CLI11
 )
 
 if(CODEHARNESS_BUILD_TESTS)
   enable_testing()
   add_subdirectory(${CMAKE_SOURCE_DIR}/Test ${CMAKE_BINARY_DIR}/Test)
 endif()
+
+# Non-interactive CLI executable. Always built (a default build should produce a
+# runnable program). The TUI/shell mode is deferred; this is one-shot --prompt.
+# CliParser.cpp and RunPrompt.cpp live in the codeharness library (so tests can
+# link them); only Main.cpp is exclusive to the executable.
+add_executable(codeharness_cli
+  Cli/Main.cpp
+)
+target_link_libraries(codeharness_cli PRIVATE codeharness)
