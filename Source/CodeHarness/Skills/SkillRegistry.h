@@ -1,0 +1,39 @@
+#pragma once
+
+#include <cstddef>
+#include <map>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "Host/Host.h"
+#include "Skills/SkillTypes.h"
+
+namespace codeharness::skills
+{
+
+	class SkillRegistry
+	{
+	public:
+		SkillRegistry() = default;
+
+		void LoadRoots(const std::vector<SkillRoot>& roots, host::Host* host);
+		void Register(SkillDefinition skill);
+
+		const SkillDefinition* GetSkill(std::string_view name) const;
+		std::vector<const SkillDefinition*> ListSkills() const;
+		std::vector<const SkillDefinition*> ListInvocableSkills() const;
+
+		std::string RenderSkillPrompt(const SkillDefinition& skill, std::string_view rawArgs, const std::string& sessionId) const;
+
+		void Clear();
+		std::size_t Size() const;
+		bool Empty() const;
+
+	private:
+		static std::string ExpandVariables(const std::string& content, const SkillDefinition& skill, std::string_view rawArgs, const std::string& sessionId);
+
+		std::map<std::string, SkillDefinition> skills_;
+	};
+
+} // namespace codeharness::skills

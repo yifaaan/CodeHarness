@@ -40,6 +40,11 @@ namespace codeharness::records
 	class AgentRecords;
 }
 
+namespace codeharness::skills
+{
+	class SkillManager;
+}
+
 namespace codeharness::agent
 {
 
@@ -64,38 +69,22 @@ namespace codeharness::agent
 
 		void SetEventDispatcher(EventDispatcher dispatcher);
 
-		// Set the permission mode for this agent. When a mode is set the Agent
-		// owns a PermissionGate and threads it into every turn; mutating tools
-		// are then gated. Calling this rebuilds the gate, preserving any
-		// approval callback previously installed via SetApprovalCallback.
-		// Passing nullopt disables gating (allow-all) — the agent's default.
 		void SetPermissionMode(config::PermissionMode mode);
-
-		// Install the approval callback used by the gate in Manual mode. No-op
-		// when no mode is set. Without a callback, Manual mode denies mutating
-		// tools (safe default) until a UI wires a real approval flow.
 		void SetApprovalCallback(permission::ApprovalCallback callback);
-
-		// Override the compaction config (context-window budget, threshold,
-		// retain-tail). By default the Agent resolves maxContextTokens from the
-		// provider's model on first Prompt; calling this wins. Set
-		// maxContextTokens=0 to disable compaction.
 		void SetCompactionConfig(context::CompactionConfig cfg);
-
-		// Set a non-owning hook engine. When set, the Agent fires the 3
-		// Agent-resident events (UserPromptSubmit block, PreCompact/PostCompact)
-		// and threads the engine into each TurnInput so the loop fires its 5
-		// events. Null = hooks disabled.
 		void SetHookEngine(hooks::HookEngine* engine);
-
-		// Wire an event-sourcing sink. Non-owning; must outlive the agent.
-		// When set, Prompt() records turn.prompt + context.append_message +
-		// context.append_loop_event, and Cancel() records turn.cancel.
 		void SetRecords(records::AgentRecords* records);
 
-		// Replay every record from the sink into in-memory state.
-		// Idempotent if the sink is empty. Returns the sink's status on error.
 		absl::Status Resume();
+
+		// Set a skill manager for skill activation. Non-owning; must outlive the
+		// agent. When set, ActivateSkill delegates to the manager which appends
+		// the rendered skill content as a user message.
+		void SetSkillManager(skills::SkillManager* manager);
+
+		// Activate a skill by name with optional arguments. Returns an error if
+		// no SkillManager is set or the skill is not found.
+		absl::Status ActivateSkill(std::string_view name, std::string_view args = {});
 
 	private:
 		absl::StatusOr<std::vector<engine::ExecutableTool*>> BuildLoopTools() const;
@@ -107,12 +96,7 @@ namespace codeharness::agent
 		host::Host* host = nullptr;
 		tools::ToolManager* toolManager = nullptr;
 		AgentConfig config;
-		// Conversation history, owned here as a ContextMemory so the Agent can
-		// answer "how full is the context?" in O(1) and compact between turns.
 		context::ContextMemory history;
-		// Compaction config. maxContextTokens=0 means disabled; the Agent sets
-		// it from GetCapability(provider->ModelName()) on first Prompt unless
-		// SetCompactionConfig was called first.
 		context::CompactionConfig compactionConfig;
 		bool compactionConfigOverridden = false;
 		std::vector<std::string> activeTools;
@@ -120,19 +104,14 @@ namespace codeharness::agent
 		EventDispatcher dispatchEvent;
 		records::AgentRecords* records = nullptr;
 
-		// Owned permission gate; present only when SetPermissionMode is called.
-		// When null, TurnInput.permissionGate stays null and tools run ungated.
 		std::unique_ptr<permission::PermissionGate> permissionGate;
 		permission::ApprovalCallback approvalCallback;
 		std::optional<config::PermissionMode> permissionMode;
 
-		// Non-owning hook engine. When set, the Agent fires the 3 Agent-resident
-		// events (UserPromptSubmit block, PreCompact/PostCompact) and threads the
-		// engine into each TurnInput so the loop fires its 5 events. Owned by the
-		// caller (CLI), must outlive the Agent.
 		hooks::HookEngine* hookEngine = nullptr;
 
-		// Valid only while a synchronous turn is active; Cancel() signals this source.
+		skills::SkillManager* skillManager = nullptr;
+
 		std::optional<std::stop_source> currentStopSource;
 		std::uint64_t nextTurnId = 1;
 	};

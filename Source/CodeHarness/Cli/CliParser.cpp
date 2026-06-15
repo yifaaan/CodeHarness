@@ -22,6 +22,7 @@ namespace codeharness::cli
 		app.add_option("-p,--prompt", prompt, "The prompt to send to the model (one-shot).");
 		app.add_option("-m,--model", opts.model, "Model alias; defaults to config's default_model.");
 		app.add_option("--workdir", opts.workdir, "Working directory; defaults to the current directory.");
+		app.add_option("-s,--skill", opts.skill, "Activate a skill before the prompt (format: name[:args]).");
 		app.add_flag("-y,--yolo", opts.yolo, "Allow all tool actions without prompting (Yolo permission mode).");
 		app.add_flag("-V,--version", opts.version, "Print version and exit.");
 		// Note: -h/--help is provided by CLI11's built-in help flag; setting it

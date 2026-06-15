@@ -13,6 +13,7 @@ namespace codeharness::cli
 		std::string prompt; // -p/--prompt (required for v1)
 		std::string model;	// -m/--model; empty → config defaultModel
 		std::string workdir; // --workdir; empty → process cwd
+		std::string skill;	 // -s/--skill: activate skill before prompt (format: name[:args])
 		bool yolo = false;	// -y/--yolo: allow-all permission mode
 		bool help = false;	// -h/--help
 		bool version = false; // -V/--version

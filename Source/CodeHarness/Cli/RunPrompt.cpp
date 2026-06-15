@@ -20,6 +20,11 @@
 #include "Permission/PermissionTypes.h"
 #include "Session/Session.h"
 #include "Session/SessionStore.h"
+#include "Skills/SkillManager.h"
+#include "Skills/SkillRegistry.h"
+#include "Skills/SkillScanner.h"
+#include "Skills/SkillTool.h"
+#include "Skills/SkillTypes.h"
 #include "Tools/Bash.h"
 #include "Tools/EditFile.h"
 #include "Tools/Glob.h"
@@ -40,7 +45,7 @@ namespace codeharness::cli
 
 		// Register the full built-in tool set. Permission gating decides which
 		// actually run; we register all so the model can choose.
-		void RegisterBuiltInTools(tools::ToolManager& tm)
+		void RegisterBuiltInTools(tools::ToolManager& tm, skills::SkillManager* skillManager = nullptr)
 		{
 			tm.Register(std::make_unique<tools::ReadFileTool>());
 			tm.Register(std::make_unique<tools::WriteFileTool>());
@@ -48,6 +53,41 @@ namespace codeharness::cli
 			tm.Register(std::make_unique<tools::GlobTool>());
 			tm.Register(std::make_unique<tools::GrepTool>());
 			tm.Register(std::make_unique<tools::BashTool>());
+			if (skillManager != nullptr)
+			{
+				tm.Register(std::make_unique<tools::SkillTool>(skillManager));
+			}
+		}
+
+		// Resolve skill roots: project-level and user-level directories.
+		std::vector<skills::SkillRoot> ResolveSkillRoots(host::Host* host)
+		{
+			std::vector<skills::SkillRoot> roots;
+
+			auto cwd = host->GetCwd();
+			if (cwd.ok())
+			{
+				roots.push_back({*cwd + "/.agents/skills", skills::SkillSource::Project});
+			}
+
+			auto home = host->GetHome();
+			if (home.ok())
+			{
+				roots.push_back({*home + "/.agents/skills", skills::SkillSource::User});
+			}
+
+			return roots;
+		}
+
+		// Parse skill option: "name" or "name:args"
+		std::pair<std::string, std::string> ParseSkillOption(const std::string& skill)
+		{
+			auto pos = skill.find(':');
+			if (pos == std::string::npos)
+			{
+				return {skill, ""};
+			}
+			return {skill.substr(0, pos), skill.substr(pos + 1)};
 		}
 
 		// Synchronous stdin y/n approval. The only "UI" for v1 non-interactive
@@ -183,9 +223,17 @@ namespace codeharness::cli
 			return absl::InternalError("provider resolution returned null");
 		}
 
-		// Build the tool set.
+		// Build the skill registry and manager.
+		skills::SkillRegistry skillRegistry;
+		auto skillRoots = ResolveSkillRoots(deps.host);
+		skillRegistry.LoadRoots(skillRoots, deps.host);
+		spdlog::info("cli: loaded {} skills from {} roots", skillRegistry.Size(), skillRoots.size());
+
+		skills::SkillManager skillManager(&skillRegistry);
+
+		// Build the tool set (skill tool only if skills are available).
 		tools::ToolManager tm;
-		RegisterBuiltInTools(tm);
+		RegisterBuiltInTools(tm, skillRegistry.Empty() ? nullptr : &skillManager);
 
 		// Create the session (wires Agent + Records at the computed wire path).
 		auto root = session::SessionStore::ResolveSessionsRoot(deps.host);
@@ -215,6 +263,10 @@ namespace codeharness::cli
 
 		WireStreaming(*agent);
 
+		// Wire the skill manager into the agent.
+		agent->SetSkillManager(&skillManager);
+		skillManager.SetSessionId((*sess)->Id());
+
 		// Permission mode.
 		if (opts.yolo)
 		{
@@ -224,6 +276,18 @@ namespace codeharness::cli
 		{
 			agent->SetPermissionMode(config::PermissionMode::Manual);
 			agent->SetApprovalCallback(MakeStdinApprovalCallback());
+		}
+
+		// Activate skill if --skill option is provided.
+		if (!opts.skill.empty())
+		{
+			auto [name, args] = ParseSkillOption(opts.skill);
+			spdlog::info("cli: activating skill '{}' with args '{}'", name, args);
+			auto skillStatus = agent->ActivateSkill(name, args);
+			if (!skillStatus.ok())
+			{
+				spdlog::warn("cli: skill activation failed: {}", skillStatus.message());
+			}
 		}
 
 		spdlog::info("cli: prompting model '{}' in '{}'", modelName, workdir);

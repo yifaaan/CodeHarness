@@ -10,6 +10,7 @@ find_package(Boost CONFIG REQUIRED COMPONENTS beast)
 find_package(OpenSSL CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
+find_package(yaml-cpp CONFIG REQUIRED)
 
 add_library(codeharness
   Host/HostPath.cpp
@@ -46,6 +47,12 @@ add_library(codeharness
   Context/ContextMemory.cpp
   Context/Compactor.cpp
   Hooks/HookEngine.cpp
+  Skills/SkillTypes.cpp
+  Skills/SkillParser.cpp
+  Skills/SkillScanner.cpp
+  Skills/SkillRegistry.cpp
+  Skills/SkillManager.cpp
+  Skills/SkillTool.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -63,6 +70,7 @@ target_link_libraries(codeharness PUBLIC
   OpenSSL::SSL
   tomlplusplus::tomlplusplus
   CLI11::CLI11
+  yaml-cpp::yaml-cpp
 )
 
 if(CODEHARNESS_BUILD_TESTS)

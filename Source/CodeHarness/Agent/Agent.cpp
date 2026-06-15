@@ -14,6 +14,8 @@
 #include "Permission/PermissionGate.h"
 #include "Records/AgentRecords.h"
 #include "Records/RecordTypes.h"
+#include "Skills/SkillManager.h"
+#include "Skills/SkillRegistry.h"
 #include "Tools/ToolManager.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
@@ -310,6 +312,56 @@ namespace codeharness::agent
 	void Agent::SetHookEngine(hooks::HookEngine* engine)
 	{
 		hookEngine = engine;
+	}
+
+	void Agent::SetSkillManager(skills::SkillManager* manager)
+	{
+		skillManager = manager;
+		if (skillManager != nullptr)
+		{
+			skillManager->SetAppendMessageCallback([this](const std::string& content) -> absl::Status {
+				llm::Message msg;
+				msg.role = llm::Role::User;
+				msg.content.push_back(llm::TextPart{content});
+				history.Append(msg);
+
+				if (records != nullptr && !records->IsRestoring())
+				{
+					records::ContextAppendMessageRecord msgRec;
+					msgRec.message = msg;
+					auto s = records->Log(std::move(msgRec));
+					if (!s.ok())
+						spdlog::warn("records: failed to log skill message: {}", s.message());
+				}
+
+				return absl::OkStatus();
+			});
+		}
+	}
+
+	absl::Status Agent::ActivateSkill(std::string_view name, std::string_view args)
+	{
+		if (skillManager == nullptr)
+		{
+			return absl::FailedPreconditionError("Agent has no skill manager");
+		}
+
+		skills::SkillActivationPayload payload;
+		payload.name = std::string(name);
+		payload.args = std::string(args);
+		payload.origin = skills::SkillOrigin::UserSlash;
+		payload.depth = 0;
+
+		auto status = skillManager->Activate(payload);
+		if (status.ok())
+		{
+			Dispatch(SkillInvokedEvent{
+				.skillName = std::string(name),
+				.args = std::string(args),
+				.content = {},
+			});
+		}
+		return status;
 	}
 
 	absl::Status Agent::Resume()
