@@ -101,6 +101,7 @@ Implement the session management system and RPC layer for communication between 
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-15 | Partial | **Session MVP landed.** `SessionStore` (create/get/list/find/remove/rename + atomic `state.json` via `Host::Rename` + append-only `session_index.jsonl`) and `Session` (single `'main'` agent create/resume/close, wiring `Agent` + `AgentRecords` at the computed `wire.jsonl` path) implemented in `Source/CodeHarness/Session/`. `EncodeWorkdirKey` (sanitized prefix + FNV-1a-64) added. `Host::Remove`/`Host::Rename` added to unblock deletion + atomic writes. Sessions root resolves via `CODEHARNESS_HOME` (mirrors `ConfigManager`). 253/253 tests pass, including an end-to-end create→prompt→close→resume round-trip that proves persistence + replay. **Still TODO in this plan:** RPC protocol (CoreAPI/AgentAPI), `fork`/`export`, subagents (only `'main'` this iteration), skill/MCP/hook ownership. |
 
 ## Architecture Invariants
 

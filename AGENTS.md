@@ -14,6 +14,7 @@
 | **Agent** | `codeharness::agent` | `src/codeharness/agent/` | ✅ Implemented |
 | **Records** | `codeharness::records` | `src/codeharness/records/` | ✅ Implemented |
 | **Permission** | `codeharness::permission` | `Source/CodeHarness/Permission/` | ✅ Implemented (MVP) |
+| **Session** | `codeharness::session` | `Source/CodeHarness/Session/` | ✅ Implemented (MVP) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -89,7 +90,7 @@ The Agent layer provides the first user-facing composition layer over the statel
 - `AgentEvent` — turn lifecycle, status changes, errors, and forwarded loop events
 - `PromptResult` — turn id, stop reason, usage, and error summary
 
-**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history, converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory`. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into in-memory history. Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Session/RPC, hooks, compaction, skills, and MCP remain deferred modules.
+**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history, converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory`. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into in-memory history (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks, compaction, skills, and MCP remain deferred modules.
 
 ### Records (Event Sourcing)
 
@@ -102,7 +103,7 @@ The Records module implements append-only event sourcing over a Host-backed `wir
 - `RecordTypes.h` — `AgentRecord` variant + 4 record kinds (minimal set): `TurnPromptRecord`, `TurnCancelRecord`, `ContextAppendMessageRecord`, `ContextAppendLoopEventRecord`
 - `RecordJson.h` — `WireRecordToJson` / `ParseWireRecord` + per-payload helpers (`MessageToJson`, `LoopEventToJson`, `ContentPartToJson`)
 
-**Design:** All I/O goes through `Host*` (testable, no direct disk). The minimal 4-kind set covers `turn.prompt`, `turn.cancel`, `context.append_message`, `context.append_loop_event`. Wire format is one JSON object per line with `{"type","...","ts":<ms>,"protocol":"1.0",...}`. `AgentRecords::Replay` toggles `restoring_` for the duration of the apply loop; `Log()` short-circuits to `OkStatus` when `restoring_` is set, so replay never re-records. Session will own directory layout (`~/.codeharness/sessions/<workdir-key>/<session-id>/agents/<agent-id>/wire.jsonl`); Records currently takes an explicit `basePath`. The `LoopEventToJson`/`LoopEventFromJson` helpers now cover `PermissionRequestedEvent` and `PermissionDeniedEvent` so the new loop events round-trip through the wire stream. Additional record kinds (compaction/plan_mode/tools/usage) deferred until the corresponding modules come online. `Host::AppendText` was added to the `Host` interface to enable atomic append semantics without read-rewrite.
+**Design:** All I/O goes through `Host*` (testable, no direct disk). The minimal 4-kind set covers `turn.prompt`, `turn.cancel`, `context.append_message`, `context.append_loop_event`. Wire format is one JSON object per line with `{"type","...","ts":<ms>,"protocol":"1.0",...}`. `AgentRecords::Replay` toggles `restoring_` for the duration of the apply loop; `Log()` short-circuits to `OkStatus` when `restoring_` is set, so replay never re-records. **Session now owns the directory layout** (`<root>/<workdir-key>/<sessionId>/agents/<agentId>/wire.jsonl`); Records constructs `FilePersistence` at a path computed by the Session layer. The `LoopEventToJson`/`LoopEventFromJson` helpers now cover `PermissionRequestedEvent` and `PermissionDeniedEvent` so the new loop events round-trip through the wire stream. Additional record kinds (compaction/plan_mode/tools/usage) deferred until the corresponding modules come online. `Host::AppendText` enables atomic append semantics without read-rewrite.
 
 ### Permission (Tool Approval Gate)
 
@@ -114,6 +115,20 @@ The Permission module gates tool execution — the single consumer of `ToolExecu
 - `PermissionRequestedEvent` / `PermissionDeniedEvent` — new `LoopEvent` kinds dispatched around the approval flow
 
 **Design (MVP scope):** Two effective modes. **Yolo** short-circuits and allows every tool without invoking the callback. **Manual** allows read-only tools (`requiresPermission == false`) automatically and invokes the `ApprovalCallback` for mutating tools, running them only on `Allow`. **Auto** is parsed from config but not yet implemented — it falls back to Manual behavior with a one-shot warning (true session-scoped Auto needs the Session module). A missing callback in Manual mode denies mutating tools (safe default) until a UI wires a real approval flow. The gate holds no per-session state and is owned by the Agent (`SetPermissionMode`/`SetApprovalCallback`). Out of scope (deferred to plan #11): the permission rules DSL, `PermissionRule`/`Policy` types, real Auto mode, audit logging of decisions, and the full 13-event HookEngine. Closes tech-debt TD-003.
+
+### Session (Persistence + Lifecycle)
+
+The Session module owns the on-disk session layout and ties a directory to a live Agent + its Records sink. See [Source/CodeHarness/Session/](Source/CodeHarness/Session/) for source.
+
+**Key interfaces:**
+- `SessionStore` — directory-layout owner: `Create`/`Get`/`List`/`Find`/`Remove`/`RenameTitle`, plus `ReadMeta`/`WriteMeta` (atomic `state.json` via `Host::Rename`) and `AppendIndex` (`session_index.jsonl`)
+- `Session` — lifecycle facade: `Create(store, cfg)` / `Resume(store, cfg, sessionId)` / `Close()`; owns the `'main'` `Agent` + its `AgentRecords`
+- `SessionConfig` / `SessionMeta` / `SessionDir` / `SessionInfo` — value types
+- `EncodeWorkdirKey(absoluteWorkdir)` — sanitized-prefix + FNV-1a-64-hex path encoder (no new dependency)
+
+**Design (MVP scope):** Directory layout `<root>/<workdir-key>/<sessionId>/{state.json, agents/<agentId>/wire.jsonl}` with `<root>` resolved exactly like config: `$CODEHARNESS_HOME/sessions` if set, else `$HOME/.codeharness/sessions`. `Session::Create` allocates the dir via the store, then wires `FilePersistence(host, <dir>/agents/main/wire.jsonl)` → `AgentRecords` → `Agent`, calling `Agent::SetRecords`. `Session::Resume` wires the same then calls `Agent::Resume()` which replays the wire stream into in-memory history (Records' `restoring_` guard prevents re-recording). `Close()` flushes records and writes updated `state.json` (atomic). `SessionStore::WriteMeta` is atomic via write-tmp + `Host::Rename`. Out of scope (deferred to plan #09): the RPC protocol (CoreAPI/AgentAPI), `fork`/`export`, subagents (only `'main'` this iteration), and skill/MCP/hook ownership.
+
+**Host additions:** `Host::Remove` (`RemoveOptions{recursive, existOk}`) and `Host::Rename(from, to)` were added to the `Host` interface (and implemented on `LocalHost`) to unblock `SessionStore::Remove` and atomic `state.json` writes — these methods were previously absent.
 
 ## Core Principles
 
