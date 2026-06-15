@@ -40,9 +40,9 @@ namespace codeharness::records
 		// Read every record from the persistence backend.
 		absl::StatusOr<std::vector<WireRecord>> ReadAll();
 
-		// Replay: load all records, set restoring_ while invoking `apply` for
+		// Replay: load all records, set restoring while invoking `apply` for
 		// each. `apply` must not fail silently — return non-Ok to abort replay.
-		// restoring_ is reset to false on exit (even on error).
+		// restoring is reset to false on exit (even on error).
 		absl::Status Replay(const std::function<absl::Status(const AgentRecord&)>& apply);
 
 		// True between the start and end of a Replay pass.
@@ -52,8 +52,8 @@ namespace codeharness::records
 		void Close();
 
 	private:
-		std::unique_ptr<RecordPersistence> persistence_;
-		bool restoring_ = false;
+		std::unique_ptr<RecordPersistence> persistence;
+		bool restoring = false;
 	};
 
 } // namespace codeharness::records

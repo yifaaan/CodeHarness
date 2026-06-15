@@ -13,17 +13,17 @@ namespace codeharness::records
 {
 
 	FilePersistence::FilePersistence(host::Host* host, std::string path)
-		: host_(host), path_(std::move(path))
+		: host(host), path(std::move(path))
 	{
 	}
 
 	absl::Status FilePersistence::Append(const WireRecord& record)
 	{
-		if (closed_)
+		if (closed)
 		{
 			return absl::FailedPreconditionError("FilePersistence is closed");
 		}
-		if (host_ == nullptr)
+		if (host == nullptr)
 		{
 			return absl::FailedPreconditionError("FilePersistence has no host");
 		}
@@ -32,7 +32,7 @@ namespace codeharness::records
 		std::string line = json.dump();
 		line.push_back('\n');
 
-		auto status = host_->AppendText(path_, line);
+		auto status = host->AppendText(path, line);
 		if (!status.ok())
 		{
 			spdlog::warn("FilePersistence::Append failed: {}", status.message());
@@ -42,16 +42,16 @@ namespace codeharness::records
 
 	absl::StatusOr<std::vector<WireRecord>> FilePersistence::Read()
 	{
-		if (closed_)
+		if (closed)
 		{
 			return absl::FailedPreconditionError("FilePersistence is closed");
 		}
-		if (host_ == nullptr)
+		if (host == nullptr)
 		{
 			return absl::FailedPreconditionError("FilePersistence has no host");
 		}
 
-		auto linesResult = host_->ReadLines(path_);
+		auto linesResult = host->ReadLines(path);
 		if (!linesResult.ok())
 		{
 			// Missing wire.jsonl is treated as empty history (fresh session).
@@ -92,13 +92,13 @@ namespace codeharness::records
 
 	absl::Status FilePersistence::Close()
 	{
-		closed_ = true;
+		closed = true;
 		return absl::OkStatus();
 	}
 
 	const std::string& FilePersistence::Path() const noexcept
 	{
-		return path_;
+		return path;
 	}
 
 } // namespace codeharness::records

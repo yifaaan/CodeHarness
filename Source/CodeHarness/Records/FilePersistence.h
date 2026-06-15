@@ -28,9 +28,9 @@ namespace codeharness::records
 		const std::string& Path() const noexcept;
 
 	private:
-		host::Host* host_ = nullptr;
-		std::string path_;
-		bool closed_ = false;
+		host::Host* host = nullptr;
+		std::string path;
+		bool closed = false;
 	};
 
 } // namespace codeharness::records

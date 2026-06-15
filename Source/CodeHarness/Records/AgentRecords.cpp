@@ -27,9 +27,9 @@ namespace codeharness::records
 	} // namespace
 
 	AgentRecords::AgentRecords(std::unique_ptr<RecordPersistence> persistence)
-		: persistence_(std::move(persistence))
+		: persistence(std::move(persistence))
 	{
-		if (persistence_ == nullptr)
+		if (persistence == nullptr)
 		{
 			spdlog::warn("AgentRecords constructed with null persistence; Log() will fail");
 		}
@@ -37,19 +37,19 @@ namespace codeharness::records
 
 	AgentRecords::~AgentRecords()
 	{
-		if (persistence_ != nullptr)
+		if (persistence != nullptr)
 		{
-			(void)persistence_->Close();
+			(void)persistence->Close();
 		}
 	}
 
 	absl::Status AgentRecords::Log(AgentRecord record)
 	{
-		if (restoring_)
+		if (restoring)
 		{
 			return absl::OkStatus(); // replay short-circuit
 		}
-		if (persistence_ == nullptr)
+		if (persistence == nullptr)
 		{
 			return absl::FailedPreconditionError("AgentRecords has no persistence");
 		}
@@ -57,52 +57,52 @@ namespace codeharness::records
 		WireRecord wire;
 		wire.meta.ts = NowMs();
 		wire.record = std::move(record);
-		return persistence_->Append(wire);
+		return persistence->Append(wire);
 	}
 
 	absl::StatusOr<std::vector<WireRecord>> AgentRecords::ReadAll()
 	{
-		if (persistence_ == nullptr)
+		if (persistence == nullptr)
 		{
 			return absl::FailedPreconditionError("AgentRecords has no persistence");
 		}
-		return persistence_->Read();
+		return persistence->Read();
 	}
 
 	bool AgentRecords::IsRestoring() const noexcept
 	{
-		return restoring_;
+		return restoring;
 	}
 
 	absl::Status AgentRecords::Flush()
 	{
-		if (persistence_ == nullptr)
+		if (persistence == nullptr)
 			return absl::OkStatus();
-		return persistence_->Flush();
+		return persistence->Flush();
 	}
 
 	void AgentRecords::Close()
 	{
-		if (persistence_ != nullptr)
+		if (persistence != nullptr)
 		{
-			(void)persistence_->Close();
+			(void)persistence->Close();
 		}
 	}
 
 	absl::Status AgentRecords::Replay(const std::function<absl::Status(const AgentRecord&)>& apply)
 	{
-		if (persistence_ == nullptr)
+		if (persistence == nullptr)
 		{
 			return absl::FailedPreconditionError("AgentRecords has no persistence");
 		}
 
-		auto readResult = persistence_->Read();
+		auto readResult = persistence->Read();
 		if (!readResult.ok())
 		{
 			return readResult.status();
 		}
 
-		restoring_ = true;
+		restoring = true;
 		absl::Status lastStatus = absl::OkStatus();
 		for (auto& wire : *readResult)
 		{
@@ -113,7 +113,7 @@ namespace codeharness::records
 				break;
 			}
 		}
-		restoring_ = false;
+		restoring = false;
 		return lastStatus;
 	}
 
