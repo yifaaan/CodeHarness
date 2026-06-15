@@ -73,11 +73,11 @@ namespace codeharness::session
 		Session& operator=(const Session&) = delete;
 
 		// Non-owning access to the main Agent. Valid until Close(); nullptr after.
-		agent::Agent* MainAgent() const { return agent_.get(); }
+		agent::Agent* MainAgent() const { return agent.get(); }
 
-		const std::string& Id() const { return sessionId_; }
-		const SessionMeta& Meta() const { return meta_; }
-		bool IsClosed() const { return closed_; }
+		const std::string& Id() const { return sessionId; }
+		const SessionMeta& Meta() const { return meta; }
+		bool IsClosed() const { return closed; }
 
 		// Flush records and write the updated state.json (updatedAt=now).
 		// Idempotent.
@@ -90,14 +90,14 @@ namespace codeharness::session
 		// together. `replay` controls whether Agent::Resume() is invoked.
 		absl::Status WireMainAgent(SessionConfig cfg, bool replay);
 
-		SessionStore* store_;
-		std::string sessionId_;
-		std::string sessionPath_;
-		SessionMeta meta_;
+		SessionStore* store;
+		std::string sessionId;
+		std::string sessionPath;
+		SessionMeta meta;
 
-		std::unique_ptr<records::AgentRecords> records_;
-		std::unique_ptr<agent::Agent> agent_;
-		bool closed_ = false;
+		std::unique_ptr<records::AgentRecords> records;
+		std::unique_ptr<agent::Agent> agent;
+		bool closed = false;
 	};
 
 } // namespace codeharness::session

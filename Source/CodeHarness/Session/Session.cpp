@@ -33,13 +33,13 @@ namespace codeharness::session
 	} // namespace
 
 	Session::Session(SessionStore* store, std::string sessionId, std::string sessionPath, SessionMeta meta)
-		: store_(store), sessionId_(std::move(sessionId)), sessionPath_(std::move(sessionPath)), meta_(std::move(meta))
+		: store(store), sessionId(std::move(sessionId)), sessionPath(std::move(sessionPath)), meta(std::move(meta))
 	{
 	}
 
 	Session::~Session()
 	{
-		if (!closed_)
+		if (!closed)
 		{
 			auto s = Close();
 			if (!s.ok())
@@ -51,22 +51,22 @@ namespace codeharness::session
 
 	absl::Status Session::WireMainAgent(SessionConfig cfg, bool replay)
 	{
-		auto wirePath = fmt::format("{}/agents/{}/wire.jsonl", sessionPath_, kMainAgent);
+		auto wirePath = fmt::format("{}/agents/{}/wire.jsonl", sessionPath, kMainAgent);
 
 		// Records owns its persistence backend; Session owns Records.
 		auto persistence = std::make_unique<records::FilePersistence>(cfg.host, wirePath);
-		records_ = std::make_unique<records::AgentRecords>(std::move(persistence));
+		records = std::make_unique<records::AgentRecords>(std::move(persistence));
 
-		agent_ = std::make_unique<agent::Agent>(cfg.provider, cfg.host, cfg.toolManager, agent::AgentConfig{});
+		agent = std::make_unique<agent::Agent>(cfg.provider, cfg.host, cfg.toolManager, agent::AgentConfig{});
 		// Wire Records as the live event sink for subsequent turns.
-		agent_->SetRecords(records_.get());
+		agent->SetRecords(records.get());
 
 		if (replay)
 		{
 			// Agent::Resume reads the wire stream (via Records) and rebuilds
 			// in-memory history. Records' restoring_ guard prevents re-recording
 			// the events being replayed.
-			auto s = agent_->Resume();
+			auto s = agent->Resume();
 			if (!s.ok())
 			{
 				return absl::InternalError(fmt::format("session: resume replay failed: {}", s.message()));
@@ -145,15 +145,15 @@ namespace codeharness::session
 
 	absl::Status Session::Close()
 	{
-		if (closed_)
+		if (closed)
 		{
 			return absl::OkStatus();
 		}
-		closed_ = true;
+		closed = true;
 
-		if (records_)
+		if (records)
 		{
-			auto s = records_->Flush();
+			auto s = records->Flush();
 			if (!s.ok())
 			{
 				spdlog::warn("session: records flush on close failed: {}", s.message());
@@ -161,10 +161,10 @@ namespace codeharness::session
 		}
 
 		// Persist updated metadata (updatedAt). Best-effort.
-		meta_.updatedAt = NowMs();
-		if (store_)
+		meta.updatedAt = NowMs();
+		if (store)
 		{
-			auto s = store_->WriteMeta(sessionPath_, meta_);
+			auto s = store->WriteMeta(sessionPath, meta);
 			if (!s.ok())
 			{
 				spdlog::warn("session: state.json write on close failed: {}", s.message());
