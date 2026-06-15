@@ -28,6 +28,7 @@ add_executable(codeharness_tests
   Cli/CliTest.cpp
   Context/ContextTest.cpp
   Hooks/HooksTest.cpp
+  Mcp/McpTest.cpp
   Skills/SkillTypesTest.cpp
   Skills/SkillParserTest.cpp
   Skills/SkillRegistryTest.cpp

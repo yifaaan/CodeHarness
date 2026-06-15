@@ -35,7 +35,7 @@ This document tracks technical debt in the CodeHarness project, following OpenAI
 
 | ID | Category | Description | Impact | Status | Due Date |
 |----|----------|-------------|--------|--------|----------|
-| TD-001 | Architecture | Missing Kaos abstraction layer | High | In Progress | 2026-07-01 |
+| TD-001 | Architecture | Missing Kaos abstraction layer | High | Resolved (MVP) | 2026-07-01 |
 | TD-002 | Architecture | No ToolScheduler for concurrent execution | High | Pending | 2026-07-15 |
 | TD-003 | Security | Incomplete permission checking | High | Resolved (MVP) | 2026-07-01 |
 
@@ -56,6 +56,8 @@ This document tracks technical debt in the CodeHarness project, following OpenAI
 | TD-009 | Performance | Unoptimized string operations | Low | Pending | 2026-09-30 |
 
 ### Resolution Notes
+
+- **TD-001 (Resolved 2026-06-15, MVP):** The original Kaos abstraction plan has landed under the C++ `Host` naming: `Host`, `LocalHost`, `HostPath`, and `CurrentHost` now provide filesystem, path, and process abstraction. Tools, Session, Config, CLI, Hooks, Skills, and MCP all perform world I/O through `Host*`. The deferred portion is remote/SSH execution, not the local abstraction layer.
 
 - **TD-003 (Resolved 2026-06-15, MVP):** The Permission module landed. `PermissionGate` is now consulted between `ResolveExecution` and `Execute` in `Loop.cpp` — `ToolExecution::requiresPermission` is live data instead of dead. Manual mode prompts via `ApprovalCallback`; Yolo allows all; Auto falls back to Manual. The safety hole (ungated Write/Edit/Bash) is closed. **Still deferred** to a future iteration of plan #11: the permission rules DSL (`PermissionRule`/`Policy`), true session-scoped Auto mode, audit logging of decisions, and the full HookEngine. TD-003's *must-fix* core is done; the *nice-to-have* policy layer remains tracked under exec plan #11.
 

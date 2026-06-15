@@ -377,10 +377,10 @@ namespace codeharness::agent
 
 			// prompt skills: rendered content is staged for the next turn's
 			// system prompt rather than emitted as a user message.
-			skillManager->SetAppendSystemCallback([this](std::span<const char> content) -> absl::Status {
+			skillManager->SetAppendSystemCallback([this](std::string_view content) -> absl::Status {
 				if (!pendingSystemSkillContent.empty())
 					pendingSystemSkillContent += "\n\n";
-				pendingSystemSkillContent.append(content.data(), content.size());
+				pendingSystemSkillContent += content;
 				return absl::OkStatus();
 			});
 		}

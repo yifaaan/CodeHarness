@@ -17,6 +17,8 @@
 #include "Llm/BeastHttpClient.h"
 #include "Llm/ChatProvider.h"
 #include "Llm/Types.h"
+#include "Mcp/McpConnectionManager.h"
+#include "Mcp/McpTypes.h"
 #include "Permission/PermissionTypes.h"
 #include "Session/Session.h"
 #include "Session/SessionStore.h"
@@ -221,6 +223,7 @@ namespace codeharness::cli
 		std::string modelName;
 		std::unique_ptr<llm::ChatProvider> ownedProvider;
 		config::SkillConfig skillCfg; // defaults (project skills on) for the test path
+		std::vector<mcp::McpServerConfig> mcpServers;
 		if (deps.resolveProvider)
 		{
 			auto r = deps.resolveProvider();
@@ -240,6 +243,7 @@ namespace codeharness::cli
 								cfgResult.status().message(), *cm.ConfigPath()));
 			}
 			skillCfg = cfgResult->skills;
+			mcpServers = cfgResult->mcpServers;
 			auto resolved = ResolveProviderWithConfig(std::move(*cfgResult), deps.http, opts.model);
 			if (!resolved.ok())
 				return resolved.status();
@@ -260,9 +264,13 @@ namespace codeharness::cli
 
 		skills::SkillManager skillManager(&skillRegistry);
 
-		// Build the tool set (skill tool only if skills are available).
+		// Build the tool set (skill tool only if skills are available), then add
+		// MCP tools best-effort. The manager is declared before ToolManager so it
+		// outlives the wrapper tools that hold client pointers.
+		mcp::McpConnectionManager mcpManager(deps.host, std::move(mcpServers));
 		tools::ToolManager tm;
 		RegisterBuiltInTools(tm, skillRegistry.Empty() ? nullptr : &skillManager);
+		(void)mcpManager.RegisterTools(tm);
 
 		// Create the session (wires Agent + Records at the computed wire path).
 		auto root = session::SessionStore::ResolveSessionsRoot(deps.host);
@@ -336,6 +344,7 @@ namespace codeharness::cli
 		{
 			spdlog::warn("cli: session close failed: {}", closeStatus.message());
 		}
+		(void)mcpManager.Shutdown();
 		return absl::OkStatus();
 	}
 

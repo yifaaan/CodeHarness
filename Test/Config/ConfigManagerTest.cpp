@@ -9,6 +9,7 @@
 #include <system_error>
 
 #include "Host/LocalHost.h"
+#include "Mcp/McpTypes.h"
 
 namespace config = codeharness::config;
 namespace host = codeharness::host;
@@ -295,6 +296,13 @@ TEST_CASE("ConfigManager: Save then Load round-trips")
 	auto original = SampleConfig();
 	original.providers["openai"].baseUrl = "https://proxy.example.com/v1";
 	original.providers["openai"].maxTokens = 4096;
+	codeharness::mcp::McpServerConfig server;
+	server.name = "filesystem";
+	server.command = "mcp-filesystem";
+	server.args = {"--root", "."};
+	server.env["MCP_TOKEN"] = "secret";
+	server.cwd = "tools";
+	original.mcpServers.push_back(server);
 
 	auto saveStatus = mgr.Save(original);
 	REQUIRE(saveStatus.ok());
@@ -310,6 +318,13 @@ TEST_CASE("ConfigManager: Save then Load round-trips")
 	REQUIRE(loaded->providers["openai"].maxTokens.has_value());
 	CHECK(*loaded->providers["openai"].maxTokens == 4096);
 	REQUIRE(loaded->models.count("gpt-4o") == 1);
+	REQUIRE(loaded->mcpServers.size() == 1);
+	CHECK(loaded->mcpServers[0].name == "filesystem");
+	CHECK(loaded->mcpServers[0].command == "mcp-filesystem");
+	REQUIRE(loaded->mcpServers[0].args.size() == 2);
+	CHECK(loaded->mcpServers[0].args[0] == "--root");
+	CHECK(loaded->mcpServers[0].env["MCP_TOKEN"] == "secret");
+	CHECK(loaded->mcpServers[0].cwd == "tools");
 
 	std::filesystem::remove_all(tmp, ec);
 }
@@ -350,4 +365,51 @@ TEST_CASE("ConfigManager: skills config defaults when absent")
 	REQUIRE(cfg.ok());
 	CHECK(cfg->skills.allowProjectSkills);
 	CHECK(cfg->skills.extraSkillDirs.empty());
+}
+
+TEST_CASE("ConfigManager: parses MCP server array")
+{
+	ScopedEnv guard("CODEHARNESS_MCP_TOKEN", "expanded-token");
+	host::LocalHost host;
+	config::ConfigManager mgr(&host);
+
+	auto cfg = mgr.LoadFromString(R"(
+[[mcp.servers]]
+name = "fs"
+command = "node"
+args = ["server.js", "--root", "."]
+cwd = "tools"
+enabled = false
+
+[mcp.servers.env]
+MCP_TOKEN = "$CODEHARNESS_MCP_TOKEN"
+)");
+	REQUIRE(cfg.ok());
+	REQUIRE(cfg->mcpServers.size() == 1);
+	CHECK(cfg->mcpServers[0].name == "fs");
+	CHECK(cfg->mcpServers[0].command == "node");
+	REQUIRE(cfg->mcpServers[0].args.size() == 3);
+	CHECK(cfg->mcpServers[0].args[1] == "--root");
+	CHECK(cfg->mcpServers[0].cwd == "tools");
+	CHECK_FALSE(cfg->mcpServers[0].enabled);
+	CHECK(cfg->mcpServers[0].env["MCP_TOKEN"] == "expanded-token");
+}
+
+TEST_CASE("ConfigManager: parses MCP server table")
+{
+	host::LocalHost host;
+	config::ConfigManager mgr(&host);
+
+	auto cfg = mgr.LoadFromString(R"(
+[mcp.servers.github]
+command = "github-mcp"
+args = ["stdio"]
+)");
+	REQUIRE(cfg.ok());
+	REQUIRE(cfg->mcpServers.size() == 1);
+	CHECK(cfg->mcpServers[0].name == "github");
+	CHECK(cfg->mcpServers[0].command == "github-mcp");
+	REQUIRE(cfg->mcpServers[0].args.size() == 1);
+	CHECK(cfg->mcpServers[0].args[0] == "stdio");
+	CHECK(cfg->mcpServers[0].enabled);
 }

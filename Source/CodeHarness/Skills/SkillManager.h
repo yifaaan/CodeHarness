@@ -3,6 +3,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "Skills/SkillTypes.h"
 #include "absl/status/status.h"
@@ -16,7 +17,7 @@ namespace codeharness::skills
 {
 
 	using AppendMessageCallback = std::function<absl::Status(std::span<const char>)>;
-	using AppendSystemCallback = std::function<absl::Status(std::span<const char>)>;
+	using AppendSystemCallback = std::function<absl::Status(std::string_view)>;
 
 	class SkillManager
 	{

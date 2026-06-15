@@ -14,13 +14,13 @@ Implement the Model Context Protocol (MCP) client for connecting to external too
 
 ### In Scope
 - Implement MCP client interface
-- Implement stdio and HTTP transports
+- Implement stdio transport
 - Implement tool discovery and registration
-- Add OAuth support for MCP servers
 - Add unit tests
 
 ### Out of Scope
 - MCP server implementation (future phase)
+- HTTP transport and OAuth support (future phase)
 - Advanced MCP features (future phase)
 - Performance optimization (future phase)
 
@@ -108,6 +108,7 @@ Implement the Model Context Protocol (MCP) client for connecting to external too
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-15 | Partial | **MCP stdio MVP landed.** Added `Source/CodeHarness/Mcp/` with `McpServerConfig`, `McpClient`, `StdioMcpClient`, `McpExecutableTool`, and `McpConnectionManager`. Config now parses/saves `[[mcp.servers]]` plus `[mcp.servers.<name>]`; CLI registers discovered MCP tools into the existing `ToolManager` best-effort. MCP tools use `mcp__<server>__<tool>` names and default to `requiresPermission = true`, so the existing PermissionGate and Hook flow applies. Fake stdio tests cover initialize/list/call, malformed JSON, server exit, registration, and loop permission gating; full suite 362/362 green. **Still TODO:** HTTP transport, OAuth/authenticate flow, richer server compatibility, and user-facing configuration UI. |
 
 ## Architecture Invariants
 

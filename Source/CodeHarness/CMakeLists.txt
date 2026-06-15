@@ -47,6 +47,9 @@ add_library(codeharness
   Context/ContextMemory.cpp
   Context/Compactor.cpp
   Hooks/HookEngine.cpp
+  Mcp/StdioMcpClient.cpp
+  Mcp/McpExecutableTool.cpp
+  Mcp/McpConnectionManager.cpp
   Skills/SkillTypes.cpp
   Skills/SkillParser.cpp
   Skills/SkillScanner.cpp

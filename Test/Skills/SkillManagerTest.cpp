@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <string>
+#include <string_view>
 
 #include "Skills/SkillManager.h"
 #include "Skills/SkillRegistry.h"
@@ -202,7 +203,7 @@ TEST_SUITE("SkillManager")
 			messageSink.assign(c.data(), c.size());
 			return absl::OkStatus();
 		});
-		manager.SetAppendSystemCallback([&](std::span<const char> c) -> absl::Status {
+		manager.SetAppendSystemCallback([&](std::string_view c) -> absl::Status {
 			systemSink.assign(c.data(), c.size());
 			return absl::OkStatus();
 		});
@@ -234,7 +235,7 @@ TEST_SUITE("SkillManager")
 			messageSink.assign(c.data(), c.size());
 			return absl::OkStatus();
 		});
-		manager.SetAppendSystemCallback([&](std::span<const char> c) -> absl::Status {
+		manager.SetAppendSystemCallback([&](std::string_view c) -> absl::Status {
 			systemSink.assign(c.data(), c.size());
 			return absl::OkStatus();
 		});

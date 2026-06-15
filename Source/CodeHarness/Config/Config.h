@@ -8,6 +8,7 @@
 #include "Config/ConfigTypes.h"
 #include "Hooks/HookTypes.h"
 #include "Llm/Types.h"
+#include "Mcp/McpTypes.h"
 
 namespace codeharness::config
 {
@@ -64,6 +65,7 @@ namespace codeharness::config
 		std::optional<ThinkingConfig> thinking;
 		std::vector<hooks::HookDef> hooks; // [[hooks]] entries; empty by default
 		SkillConfig skills;				// [skills] entries; defaults enabled
+		std::vector<mcp::McpServerConfig> mcpServers; // [[mcp.servers]] entries; empty by default
 	};
 
 } // namespace codeharness::config

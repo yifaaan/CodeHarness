@@ -45,17 +45,19 @@ namespace codeharness::skills
 		// `inline` skills inject as a user message (the default model-invocation
 		// path). `flow` is parsed but not yet implemented — fall back to inline
 		// and warn so activation is still observable rather than a silent no-op.
-		const auto* sink = (skill->metadata.type == SkillType::Prompt && appendSystem)
-							   ? &appendSystem
-							   : &appendMessage;
 		if (skill->metadata.type == SkillType::Flow)
 		{
 			spdlog::warn("skills: 'flow' type is not fully implemented; activating '{}' as inline", payload.name);
 		}
 
-		if (sink && *sink)
+		if (skill->metadata.type == SkillType::Prompt && appendSystem)
 		{
-			return (*sink)(std::span<const char>(renderedContent.data(), renderedContent.size()));
+			return appendSystem(std::string_view(renderedContent));
+		}
+
+		if (appendMessage)
+		{
+			return appendMessage(std::span<const char>(renderedContent.data(), renderedContent.size()));
 		}
 
 		return absl::OkStatus();
