@@ -10,6 +10,8 @@
 
 #include "Agent/AgentTypes.h"
 #include "Config/ConfigTypes.h"
+#include "Context/Compactor.h"
+#include "Context/ContextMemory.h"
 #include "Engine/Tool.h"
 #include "Llm/Types.h"
 #include "Permission/PermissionGate.h"
@@ -73,6 +75,12 @@ namespace codeharness::agent
 		// tools (safe default) until a UI wires a real approval flow.
 		void SetApprovalCallback(permission::ApprovalCallback callback);
 
+		// Override the compaction config (context-window budget, threshold,
+		// retain-tail). By default the Agent resolves maxContextTokens from the
+		// provider's model on first Prompt; calling this wins. Set
+		// maxContextTokens=0 to disable compaction.
+		void SetCompactionConfig(context::CompactionConfig cfg);
+
 		// Wire an event-sourcing sink. Non-owning; must outlive the agent.
 		// When set, Prompt() records turn.prompt + context.append_message +
 		// context.append_loop_event, and Cancel() records turn.cancel.
@@ -92,7 +100,14 @@ namespace codeharness::agent
 		host::Host* host = nullptr;
 		tools::ToolManager* toolManager = nullptr;
 		AgentConfig config;
-		std::vector<llm::Message> history;
+		// Conversation history, owned here as a ContextMemory so the Agent can
+		// answer "how full is the context?" in O(1) and compact between turns.
+		context::ContextMemory history;
+		// Compaction config. maxContextTokens=0 means disabled; the Agent sets
+		// it from GetCapability(provider->ModelName()) on first Prompt unless
+		// SetCompactionConfig was called first.
+		context::CompactionConfig compactionConfig;
+		bool compactionConfigOverridden = false;
 		std::vector<std::string> activeTools;
 		AgentStatus status = AgentStatus::Idle;
 		EventDispatcher dispatchEvent;

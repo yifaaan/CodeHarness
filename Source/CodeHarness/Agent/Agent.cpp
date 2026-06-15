@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <utility>
 
+#include "Context/Compactor.h"
+#include "Context/ContextMemory.h"
+#include "Context/TokenEstimate.h"
 #include "Engine/Loop.h"
+#include "Llm/Capability.h"
 #include "Llm/ChatProvider.h"
 #include "Permission/PermissionGate.h"
 #include "Records/AgentRecords.h"
@@ -48,10 +52,46 @@ namespace codeharness::agent
 			return loopTools.status();
 		}
 
-		std::vector<llm::Message> turnHistory = history;
+		// Resolve the context-window budget from the model capability on first
+		// use, unless the caller overrode it via SetCompactionConfig.
+		if (!compactionConfigOverridden && compactionConfig.maxContextTokens == 0)
+		{
+			auto cap = llm::GetCapability(provider->ModelName());
+			compactionConfig.maxContextTokens = cap.maxContextTokens;
+		}
+
 		llm::Message userMessage;
 		userMessage.role = llm::Role::User;
 		userMessage.content.push_back(llm::TextPart{std::string(text)});
+
+		// Between-turn compaction: if history + the incoming prompt would cross
+		// the threshold, summarize the prefix and keep the tail verbatim. This
+		// runs before turnHistory is built, so the loop sees a normal (shorter)
+		// std::vector<llm::Message> — no Loop/provider changes needed.
+		if (compactionConfig.maxContextTokens > 0 && !history.Empty())
+		{
+			int64_t used = history.TokenCount() + context::EstimateTokens(userMessage);
+			if (context::ShouldCompact(used, compactionConfig))
+			{
+				Dispatch(ContextCompactingEvent{static_cast<int>(history.Size())});
+				auto r = context::Compact(provider, history.Messages(), compactionConfig);
+				if (!r.ok())
+				{
+					spdlog::warn("agent: compaction failed: {}", r.status().message());
+					// Non-fatal: proceed with the un-compacted history.
+				}
+				else if (*r)
+				{
+					auto compacted = context::BuildCompactedHistory(
+						(*r)->summary, history.Messages(), compactionConfig.retainTail);
+					spdlog::info("agent: compacted {} messages -> {} (est. {} -> {} tokens)",
+								 history.Size(), compacted.size(), history.TokenCount(), (*r)->newTokenCount);
+					history.ReplaceAll(std::move(compacted));
+				}
+			}
+		}
+
+		std::vector<llm::Message> turnHistory = history.Messages();
 		turnHistory.push_back(userMessage);
 
 		auto turnId = NextTurnId();
@@ -99,7 +139,7 @@ namespace codeharness::agent
 		};
 
 		auto turnResult = engine::RunTurn(std::move(input));
-		history = std::move(turnResult.updatedHistory);
+		history.ReplaceAll(std::move(turnResult.updatedHistory));
 
 		PromptResult result{
 			.turnId = turnId,
@@ -142,7 +182,7 @@ namespace codeharness::agent
 
 	void Agent::ClearContext()
 	{
-		history.clear();
+		history.Clear();
 	}
 
 	void Agent::SetSystemPrompt(std::string systemPrompt)
@@ -180,7 +220,7 @@ namespace codeharness::agent
 
 	const std::vector<llm::Message>& Agent::GetHistory() const
 	{
-		return history;
+		return history.Messages();
 	}
 
 	AgentStatus Agent::GetStatus() const
@@ -223,6 +263,12 @@ namespace codeharness::agent
 		}
 	}
 
+	void Agent::SetCompactionConfig(context::CompactionConfig cfg)
+	{
+		compactionConfig = std::move(cfg);
+		compactionConfigOverridden = true;
+	}
+
 	absl::Status Agent::Resume()
 	{
 		if (records == nullptr)
@@ -230,12 +276,14 @@ namespace codeharness::agent
 			return absl::FailedPreconditionError("Agent has no records sink");
 		}
 
-		history.clear();
+		history.Clear();
 
 		auto status = records->Replay([this](const records::AgentRecord& record) -> absl::Status {
 			if (auto* msg = std::get_if<records::ContextAppendMessageRecord>(&record))
 			{
-				history.push_back(msg->message);
+				// Append through ContextMemory so the cached token count stays
+				// consistent for subsequent compaction checks.
+				history.Append(msg->message);
 				return absl::OkStatus();
 			}
 			// turn.prompt / turn.cancel / context.append_loop_event are

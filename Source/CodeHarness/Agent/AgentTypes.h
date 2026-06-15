@@ -72,7 +72,15 @@ namespace codeharness::agent
 		std::string message;
 	};
 
-	using AgentEvent = std::variant<TurnStartedEvent, LoopEvent, TurnEndedEvent, StatusChangedEvent, ErrorEvent>;
+	// Fired when the Agent runs a between-turn context compaction pass, before
+	// the summarization Generate call. Lets observers/Records log that the
+	// history was compacted. `messageCount` is the pre-compaction size.
+	struct ContextCompactingEvent
+	{
+		int messageCount = 0;
+	};
+
+	using AgentEvent = std::variant<TurnStartedEvent, LoopEvent, TurnEndedEvent, StatusChangedEvent, ErrorEvent, ContextCompactingEvent>;
 	using EventDispatcher = std::function<void(const AgentEvent&)>;
 
 } // namespace codeharness::agent

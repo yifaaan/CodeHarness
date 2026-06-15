@@ -11,22 +11,26 @@ namespace codeharness::llm
 	namespace
 	{
 
-		std::string ConcatTextParts(const std::vector<ContentPart>& parts)
-		{
-			std::string result;
-			for (const auto& part : parts)
-			{
-				if (auto* text = std::get_if<TextPart>(&part))
-				{
-					if (!result.empty())
-						result += '\n';
-					result += text->text;
-				}
-			}
-			return result;
-		}
+		// (ConcatTextParts is now defined as a public function below; the
+		// anonymous namespace here is reserved for helpers that are truly
+		// file-local.)
 
 	} // namespace
+
+	std::string ConcatTextParts(const std::vector<ContentPart>& parts)
+	{
+		std::string result;
+		for (const auto& part : parts)
+		{
+			if (auto* text = std::get_if<TextPart>(&part))
+			{
+				if (!result.empty())
+					result += '\n';
+				result += text->text;
+			}
+		}
+		return result;
+	}
 
 	nlohmann::json MessagesToJson(std::string_view systemPrompt, std::span<const Message> messages)
 	{

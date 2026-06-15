@@ -17,6 +17,11 @@ namespace codeharness::llm
 
 	nlohmann::json ToolsToJson(std::span<const Tool> tools);
 
+	// Flatten a message's content parts into a single string, joining TextParts
+	// with newlines. Non-text parts (e.g. ThinkPart) are skipped. Exported so the
+	// Context module can estimate token counts from message text.
+	std::string ConcatTextParts(const std::vector<ContentPart>& parts);
+
 	struct StreamChunk
 	{
 		std::optional<std::string> content;

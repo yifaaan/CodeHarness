@@ -42,6 +42,9 @@ add_library(codeharness
   Session/Session.cpp
   Cli/CliParser.cpp
   Cli/RunPrompt.cpp
+  Context/TokenEstimate.cpp
+  Context/ContextMemory.cpp
+  Context/Compactor.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

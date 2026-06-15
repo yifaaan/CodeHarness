@@ -26,6 +26,7 @@ add_executable(codeharness_tests
   Permission/PermissionTest.cpp
   Session/SessionTest.cpp
   Cli/CliTest.cpp
+  Context/ContextTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE
