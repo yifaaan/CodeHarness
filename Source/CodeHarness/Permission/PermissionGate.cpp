@@ -8,7 +8,7 @@ namespace codeharness::permission
 {
 
 	PermissionGate::PermissionGate(config::PermissionMode mode, ApprovalCallback callback)
-		: mode_(mode), callback_(std::move(callback))
+		: mode(mode), callback(std::move(callback))
 	{
 	}
 
@@ -21,17 +21,17 @@ namespace codeharness::permission
 			return true;
 		}
 
-		config::PermissionMode effective = mode_;
+		config::PermissionMode effective = mode;
 
 		// Auto mode is not yet implemented (needs session-scoped state). Fall
 		// back to Manual once, with a warning, so users who set `auto` in config
 		// still get safe prompting instead of silent allow.
 		if (effective == config::PermissionMode::Auto)
 		{
-			if (!autoWarned_)
+			if (!autoWarned)
 			{
 				spdlog::warn("permission: Auto mode not implemented yet, treating as Manual for now");
-				autoWarned_ = true;
+				autoWarned = true;
 			}
 			effective = config::PermissionMode::Manual;
 		}
@@ -43,13 +43,13 @@ namespace codeharness::permission
 
 		// Manual: ask the callback. A missing callback is treated as Deny so the
 		// safe default holds until a UI wires a real approval flow.
-		if (!callback_)
+		if (!callback)
 		{
 			spdlog::warn("permission: Manual mode with no approval callback, denying mutating tool '{}'", toolName);
 			return false;
 		}
 
-		return callback_(toolName, args, description) == PermissionDecision::Allow;
+		return callback(toolName, args, description) == PermissionDecision::Allow;
 	}
 
 } // namespace codeharness::permission

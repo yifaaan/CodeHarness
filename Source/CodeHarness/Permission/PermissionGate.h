@@ -30,12 +30,12 @@ namespace codeharness::permission
 		// When `requiresPermission` is false this always returns true.
 		bool ShouldRun(bool requiresPermission, std::string_view toolName, const nlohmann::json& args, std::string_view description);
 
-		config::PermissionMode Mode() const { return mode_; }
+		config::PermissionMode Mode() const { return mode; }
 
 	private:
-		config::PermissionMode mode_;
-		ApprovalCallback callback_;
-		bool autoWarned_ = false;
+		config::PermissionMode mode;
+		ApprovalCallback callback;
+		bool autoWarned = false;
 	};
 
 } // namespace codeharness::permission
