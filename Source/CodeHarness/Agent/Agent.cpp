@@ -5,6 +5,7 @@
 
 #include "Engine/Loop.h"
 #include "Llm/ChatProvider.h"
+#include "Permission/PermissionGate.h"
 #include "Records/AgentRecords.h"
 #include "Records/RecordTypes.h"
 #include "Tools/ToolManager.h"
@@ -94,6 +95,7 @@ namespace codeharness::agent
 			},
 			.stopToken = currentStopSource->get_token(),
 			.maxSteps = config.maxSteps,
+			.permissionGate = permissionGate.get(),
 		};
 
 		auto turnResult = engine::RunTurn(std::move(input));
@@ -199,6 +201,26 @@ namespace codeharness::agent
 	void Agent::SetRecords(records::AgentRecords* r)
 	{
 		records = r;
+	}
+
+	void Agent::SetPermissionMode(config::PermissionMode mode)
+	{
+		permissionMode = mode;
+		// Rebuild the gate, preserving the currently installed callback. If a
+		// callback was never set, Manual mode will safely deny mutating tools.
+		permissionGate = std::make_unique<permission::PermissionGate>(mode, approvalCallback);
+	}
+
+	void Agent::SetApprovalCallback(permission::ApprovalCallback callback)
+	{
+		approvalCallback = callback;
+		// If a gate already exists, swap its callback in-place by rebuilding it
+		// with the same mode; this keeps the gate's warned-once state fresh per
+		// callback change, which is the safe choice.
+		if (permissionMode.has_value())
+		{
+			permissionGate = std::make_unique<permission::PermissionGate>(*permissionMode, approvalCallback);
+		}
 	}
 
 	absl::Status Agent::Resume()

@@ -13,6 +13,7 @@
 | **Tools** | `codeharness::tools` | `src/codeharness/tools/` | ✅ Implemented |
 | **Agent** | `codeharness::agent` | `src/codeharness/agent/` | ✅ Implemented |
 | **Records** | `codeharness::records` | `src/codeharness/records/` | ✅ Implemented |
+| **Permission** | `codeharness::permission` | `Source/CodeHarness/Permission/` | ✅ Implemented (MVP) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -49,7 +50,7 @@ The Config layer loads `config.toml`, validates it, and resolves model aliases t
 - `ProviderManager` — factory: model alias → `[providers]` config → credentials → `OpenAiProvider`
 - `ProviderType` / `PermissionMode` / `ResolvedProviderConfig` — enums + static capability view
 
-**Design:** All file I/O goes through `Host*` (testable, no direct disk). TOML parsed with `toml++`. Credentials resolve from `api_key` field → `[providers.<n>.env]` sub-table → (OpenAiProvider's own `OPENAI_API_KEY` fallback); `api_key` values support `$VAR`/`${VAR}` expansion against the process environment. Only the OpenAI-compatible family (`openai`, `kimi`, `openai_responses`) is constructible today; `anthropic`/`google-genai`/`vertexai` parse and validate but return `UnimplementedError`. OAuth, permission-rule evaluation, and hooks are deferred.
+**Design:** All file I/O goes through `Host*` (testable, no direct disk). TOML parsed with `toml++`. Credentials resolve from `api_key` field → `[providers.<n>.env]` sub-table → (OpenAiProvider's own `OPENAI_API_KEY` fallback); `api_key` values support `$VAR`/`${VAR}` expansion against the process environment. Only the OpenAI-compatible family (`openai`, `kimi`, `openai_responses`) is constructible today; `anthropic`/`google-genai`/`vertexai` parse and validate but return `UnimplementedError`. The `PermissionMode` enum (`Manual`/`Auto`/`Yolo`) defined here is parsed from `default_permission_mode` and now consumed by the Permission module. OAuth, the permission rules DSL, and hooks remain deferred.
 
 ### Engine (Turn Execution Loop)
 
@@ -61,7 +62,7 @@ The Engine module implements the stateless turn execution loop — the agent's "
 - `LoopEvent` — variant of all event types (StepStarted, AssistantDelta, ToolResult, etc.)
 - `LoopHooks` — optional extension points (beforeStep, afterStep, shouldContinueAfterStop)
 
-**Design:** `RunTurn` is fully stateless — all dependencies injected via `TurnInput`. The loop calls `ChatProvider::Generate`, accumulates tool calls, executes them via `ExecutableTool`, and repeats until completion. Tests use `MockChatProvider` + `MockTool` — no real LLM or network needed.
+**Design:** `RunTurn` is fully stateless — all dependencies injected via `TurnInput`. The loop calls `ChatProvider::Generate`, accumulates tool calls, executes them via `ExecutableTool`, and repeats until completion. The permission gate is consulted between `ResolveExecution` and `Execute` (see Permission module); a null gate means allow-all (back-compat). Tests use `MockChatProvider` + `MockTool` — no real LLM or network needed.
 
 ### Tools (Built-in Actions)
 
@@ -74,7 +75,7 @@ The Tools module implements concrete `ExecutableTool` subclasses that let the ag
 - `BashTool` — shell execution with timeout + cancellation (two-phase kill)
 - `TruncateOutput` / `NumberLines` / `SplitLines` — output helpers (`tools/tool_output.h`)
 
-**Design:** Each tool implements the two-phase `ResolveExecution` (pure validation, sets `requires_permission`) → `Execute` (side effects via `Host`). All I/O goes through `codeharness::host::Host`. Read-only tools (Read/Glob/Grep) are auto-allow; Write/Edit/Bash require permission. Bash drains stdout/stderr deadlock-free via `HostProcess::Drain` (reproc poll, single-threaded). Active-set selection, MCP, and user-defined tools are deferred to the (future) Agent layer.
+**Design:** Each tool implements the two-phase `ResolveExecution` (pure validation, sets `requiresPermission`) → `Execute` (side effects via `Host`). All I/O goes through `codeharness::host::Host`. Read-only tools (Read/Glob/Grep) set `requiresPermission = false` and always run; Write/Edit/Bash set `requiresPermission = true` and are now gated by the Permission module's `PermissionGate` inside `ExecuteToolCall`. Bash drains stdout/stderr deadlock-free via `HostProcess::Drain` (reproc poll, single-threaded). Active-set selection, MCP, and user-defined tools are deferred to the (future) Agent layer.
 
 **Engine host wiring:** `TurnInput.host` (`host::Host*`) is propagated into each tool's `ToolContext` by `RunTurn`.
 
@@ -88,7 +89,7 @@ The Agent layer provides the first user-facing composition layer over the statel
 - `AgentEvent` — turn lifecycle, status changes, errors, and forwarded loop events
 - `PromptResult` — turn id, stop reason, usage, and error summary
 
-**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history, converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory`. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into in-memory history. Session/RPC, permissions, hooks, compaction, skills, and MCP remain deferred modules.
+**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history, converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory`. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into in-memory history. Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Session/RPC, hooks, compaction, skills, and MCP remain deferred modules.
 
 ### Records (Event Sourcing)
 
@@ -101,7 +102,18 @@ The Records module implements append-only event sourcing over a Host-backed `wir
 - `RecordTypes.h` — `AgentRecord` variant + 4 record kinds (minimal set): `TurnPromptRecord`, `TurnCancelRecord`, `ContextAppendMessageRecord`, `ContextAppendLoopEventRecord`
 - `RecordJson.h` — `WireRecordToJson` / `ParseWireRecord` + per-payload helpers (`MessageToJson`, `LoopEventToJson`, `ContentPartToJson`)
 
-**Design:** All I/O goes through `Host*` (testable, no direct disk). The minimal 4-kind set covers `turn.prompt`, `turn.cancel`, `context.append_message`, `context.append_loop_event`. Wire format is one JSON object per line with `{"type","...","ts":<ms>,"protocol":"1.0",...}`. `AgentRecords::Replay` toggles `restoring_` for the duration of the apply loop; `Log()` short-circuits to `OkStatus` when `restoring_` is set, so replay never re-records. Session will own directory layout (`~/.codeharness/sessions/<workdir-key>/<session-id>/agents/<agent-id>/wire.jsonl`); Records currently takes an explicit `basePath`. Additional record kinds (permission/compaction/plan_mode/tools/usage) deferred until the corresponding modules come online. `Host::AppendText` was added to the `Host` interface to enable atomic append semantics without read-rewrite.
+**Design:** All I/O goes through `Host*` (testable, no direct disk). The minimal 4-kind set covers `turn.prompt`, `turn.cancel`, `context.append_message`, `context.append_loop_event`. Wire format is one JSON object per line with `{"type","...","ts":<ms>,"protocol":"1.0",...}`. `AgentRecords::Replay` toggles `restoring_` for the duration of the apply loop; `Log()` short-circuits to `OkStatus` when `restoring_` is set, so replay never re-records. Session will own directory layout (`~/.codeharness/sessions/<workdir-key>/<session-id>/agents/<agent-id>/wire.jsonl`); Records currently takes an explicit `basePath`. The `LoopEventToJson`/`LoopEventFromJson` helpers now cover `PermissionRequestedEvent` and `PermissionDeniedEvent` so the new loop events round-trip through the wire stream. Additional record kinds (compaction/plan_mode/tools/usage) deferred until the corresponding modules come online. `Host::AppendText` was added to the `Host` interface to enable atomic append semantics without read-rewrite.
+
+### Permission (Tool Approval Gate)
+
+The Permission module gates tool execution — the single consumer of `ToolExecution::requiresPermission` in the loop. See [Source/CodeHarness/Permission/](Source/CodeHarness/Permission/) for source.
+
+**Key interfaces:**
+- `PermissionGate` — decides whether a resolved tool may run; constructed with a `config::PermissionMode` + `ApprovalCallback`
+- `PermissionTypes.h` — `PermissionDecision` (`Allow`/`Deny`) and the `ApprovalCallback` signature
+- `PermissionRequestedEvent` / `PermissionDeniedEvent` — new `LoopEvent` kinds dispatched around the approval flow
+
+**Design (MVP scope):** Two effective modes. **Yolo** short-circuits and allows every tool without invoking the callback. **Manual** allows read-only tools (`requiresPermission == false`) automatically and invokes the `ApprovalCallback` for mutating tools, running them only on `Allow`. **Auto** is parsed from config but not yet implemented — it falls back to Manual behavior with a one-shot warning (true session-scoped Auto needs the Session module). A missing callback in Manual mode denies mutating tools (safe default) until a UI wires a real approval flow. The gate holds no per-session state and is owned by the Agent (`SetPermissionMode`/`SetApprovalCallback`). Out of scope (deferred to plan #11): the permission rules DSL, `PermissionRule`/`Policy` types, real Auto mode, audit logging of decisions, and the full 13-event HookEngine. Closes tech-debt TD-003.
 
 ## Core Principles
 

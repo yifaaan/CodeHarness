@@ -20,6 +20,11 @@ namespace codeharness::llm
 	class ChatProvider;
 }
 
+namespace codeharness::permission
+{
+	class PermissionGate;
+}
+
 namespace codeharness::engine
 {
 
@@ -60,12 +65,30 @@ namespace codeharness::engine
 		ToolResult result;
 	};
 
+	// Fired immediately before the approval callback is invoked for a mutating
+	// tool, so a UI/TUI can surface the prompt. The decision still arrives via
+	// the synchronous ApprovalCallback; this event is informational only.
+	struct PermissionRequestedEvent
+	{
+		std::string toolName;
+		nlohmann::json args;
+		std::string description;
+	};
+
+	// Fired after a tool is blocked by the gate, before the (error) ToolResult.
+	// Lets observers distinguish permission denials from ordinary tool errors.
+	struct PermissionDeniedEvent
+	{
+		std::string toolName;
+		std::string description;
+	};
+
 	struct ErrorEvent
 	{
 		std::string message;
 	};
 
-	using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent, ToolCallStartedEvent, ToolResultEvent, ErrorEvent>;
+	using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent, ToolCallStartedEvent, ToolResultEvent, PermissionRequestedEvent, PermissionDeniedEvent, ErrorEvent>;
 
 	using EventDispatcher = std::function<void(const LoopEvent&)>;
 
@@ -79,6 +102,9 @@ namespace codeharness::engine
 		EventDispatcher dispatchEvent;
 		std::stop_token stopToken;
 		int maxSteps = 1000;
+		// Optional permission gate. When null, all tools are allowed (preserves
+		// the pre-permission loop behavior and keeps existing tests green).
+		permission::PermissionGate* permissionGate = nullptr;
 	};
 
 	struct TurnResult

@@ -180,6 +180,16 @@ namespace codeharness::records
 					inner["result"] = {{"isError", e.result.isError}, {"content", e.result.content}};
 					obj["ToolResult"] = std::move(inner);
 				}
+				else if constexpr (std::is_same_v<T, engine::PermissionRequestedEvent>)
+				{
+					nlohmann::json inner = {{"name", e.toolName}, {"description", e.description}};
+					inner["args"] = e.args;
+					obj["PermissionRequested"] = std::move(inner);
+				}
+				else if constexpr (std::is_same_v<T, engine::PermissionDeniedEvent>)
+				{
+					obj["PermissionDenied"] = {{"name", e.toolName}, {"description", e.description}};
+				}
 				else if constexpr (std::is_same_v<T, engine::ErrorEvent>)
 					obj["Error"] = {{"message", e.message}};
 			},
@@ -236,6 +246,22 @@ namespace codeharness::records
 					e.result.isError = inner["result"].value("isError", false);
 					e.result.content = inner["result"].value("content", "");
 				}
+				return e;
+			}
+			if (key == "PermissionRequested")
+			{
+				engine::PermissionRequestedEvent e;
+				e.toolName = inner.value("name", "");
+				e.description = inner.value("description", "");
+				if (inner.contains("args"))
+					e.args = inner["args"];
+				return e;
+			}
+			if (key == "PermissionDenied")
+			{
+				engine::PermissionDeniedEvent e;
+				e.toolName = inner.value("name", "");
+				e.description = inner.value("description", "");
 				return e;
 			}
 			if (key == "Error")

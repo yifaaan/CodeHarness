@@ -17,6 +17,9 @@
 #include "Engine/Tool.h"
 #include "Llm/ChatProvider.h"
 #include "Llm/Types.h"
+#include "Permission/PermissionGate.h"
+
+#include "Config/ConfigTypes.h"
 
 namespace eng = codeharness::engine;
 namespace llm = codeharness::llm;
@@ -187,6 +190,35 @@ namespace
 	{
 		return {idx, std::move(id), std::move(name), std::move(args)};
 	}
+
+	// Variant of MockTool whose ResolveExecution sets requiresPermission, so
+	// permission-gated loop tests can exercise the mutating-tool path.
+	class GatedTool : public eng::ExecutableTool
+	{
+	public:
+		std::string toolName;
+		std::string toolDesc;
+		bool requiresPermission = true;
+		bool executeCalled = false;
+		std::function<eng::ToolResult(const json&)> handler;
+
+		std::string Name() const override { return toolName; }
+		std::string Description() const override { return toolDesc; }
+		json Parameters() const override { return json::object(); }
+
+		absl::StatusOr<eng::ToolExecution> ResolveExecution(const json&) override
+		{
+			return eng::ToolExecution{.description = fmt::format("execute {}", toolName), .requiresPermission = requiresPermission};
+		}
+
+		absl::StatusOr<eng::ToolResult> Execute(const json& args, const eng::ToolContext&) override
+		{
+			executeCalled = true;
+			if (handler)
+				return handler(args);
+			return eng::ToolResult{.content = "ok", .isError = false};
+		}
+	};
 
 } // namespace
 
@@ -542,4 +574,177 @@ TEST_CASE("Loop: no tools means single-step text response")
 	CHECK(result.stepsExecuted == 1);
 	CHECK(result.stopReason == eng::StopReason::Completed);
 	CHECK(log.CountAssistantDeltas() == 1);
+}
+
+TEST_CASE("Loop: null permission gate allows mutating tools (back-compat)")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "write_file", "{}")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "done", .finish = llm::FinishReason::Completed},
+	};
+
+	GatedTool write;
+	write.toolName = "write_file";
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&write},
+		.dispatchEvent = log.MakeDispatcher(),
+		// permissionGate left null — legacy allow-all behavior
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK(write.executeCalled); // the tool actually ran
+	CHECK(log.CountToolResults() == 1);
+	auto tr = log.LastToolResult();
+	REQUIRE(tr.has_value());
+	CHECK_FALSE(tr->result.isError);
+}
+
+TEST_CASE("Loop: gate in Manual mode denies mutating tool, Execute is not called")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "write_file", R"({"path":"a.txt"})")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "recovered", .finish = llm::FinishReason::Completed},
+	};
+
+	GatedTool write;
+	write.toolName = "write_file";
+
+	// Callback returns Deny for everything.
+	codeharness::permission::PermissionGate gate(
+		codeharness::config::PermissionMode::Manual,
+		[](std::string_view, const json&, std::string_view) {
+			return codeharness::permission::PermissionDecision::Deny;
+		});
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&write},
+		.dispatchEvent = log.MakeDispatcher(),
+		.permissionGate = &gate,
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	// The turn continues (loop recovers from the denied tool), but the tool
+	// itself never executed.
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK_FALSE(write.executeCalled);
+
+	auto tr = log.LastToolResult();
+	REQUIRE(tr.has_value());
+	CHECK(tr->result.isError);
+	CHECK(tr->result.content.find("permission denied") != std::string::npos);
+}
+
+TEST_CASE("Loop: gate in Manual mode allows mutating tool when callback approves")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "bash", "{}")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "ok", .finish = llm::FinishReason::Completed},
+	};
+
+	GatedTool bash;
+	bash.toolName = "bash";
+
+	int approvals = 0;
+	codeharness::permission::PermissionGate gate(
+		codeharness::config::PermissionMode::Manual,
+		[&approvals](std::string_view, const json&, std::string_view) {
+			++approvals;
+			return codeharness::permission::PermissionDecision::Allow;
+		});
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&bash},
+		.dispatchEvent = log.MakeDispatcher(),
+		.permissionGate = &gate,
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK(bash.executeCalled);
+	CHECK(approvals == 1);
+}
+
+TEST_CASE("Loop: gate in Yolo mode allows mutating tool without invoking callback")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "write_file", "{}")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "done", .finish = llm::FinishReason::Completed},
+	};
+
+	GatedTool write;
+	write.toolName = "write_file";
+
+	int callbacks = 0;
+	codeharness::permission::PermissionGate gate(
+		codeharness::config::PermissionMode::Yolo,
+		[&callbacks](std::string_view, const json&, std::string_view) {
+			++callbacks;
+			return codeharness::permission::PermissionDecision::Allow;
+		});
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&write},
+		.dispatchEvent = log.MakeDispatcher(),
+		.permissionGate = &gate,
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK(write.executeCalled);
+	CHECK(callbacks == 0); // Yolo never consults the callback
+}
+
+TEST_CASE("Loop: read-only tools run even with a denying gate")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "read", "{}")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "done", .finish = llm::FinishReason::Completed},
+	};
+
+	GatedTool read;
+	read.toolName = "read";
+	read.requiresPermission = false; // read-only
+
+	codeharness::permission::PermissionGate gate(
+		codeharness::config::PermissionMode::Manual,
+		[](std::string_view, const json&, std::string_view) {
+			return codeharness::permission::PermissionDecision::Deny;
+		});
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&read},
+		.dispatchEvent = log.MakeDispatcher(),
+		.permissionGate = &gate,
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK(read.executeCalled); // read-only tools bypass the gate entirely
 }

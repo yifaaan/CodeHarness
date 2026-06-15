@@ -101,6 +101,7 @@ Implement the permission system for access control and the hook system for exten
 | Date | Status | Notes |
 |------|--------|-------|
 | 2026-06-12 | Planned | Initial plan created |
+| 2026-06-15 | Partial | **Permission MVP landed.** `PermissionGate` + `ApprovalCallback` implemented (`Source/CodeHarness/Permission/`); loop now consults the gate between `ResolveExecution` and `Execute`, closing the safety hole (TD-003 core). Modes: Manual (callback) + Yolo (allow-all); Auto falls back to Manual. Two new loop events (`PermissionRequestedEvent`/`PermissionDeniedEvent`) round-trip through Records. Agent wires it via `SetPermissionMode`/`SetApprovalCallback`. 12 new tests pass (7 unit + 5 loop). **Still TODO in this plan:** PermissionManager rules DSL + `PermissionRule`/`Policy`, true Auto mode, audit logging, and the full HookEngine (13 events). |
 
 ## Architecture Invariants
 

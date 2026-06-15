@@ -23,6 +23,7 @@ add_executable(codeharness_tests
   Tools/SearchToolsTest.cpp
   Tools/BashTest.cpp
   Records/RecordsTest.cpp
+  Permission/PermissionTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE

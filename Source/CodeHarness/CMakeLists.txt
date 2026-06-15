@@ -35,6 +35,7 @@ add_library(codeharness
   Records/RecordJson.cpp
   Records/FilePersistence.cpp
   Records/AgentRecords.cpp
+  Permission/PermissionGate.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
