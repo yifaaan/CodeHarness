@@ -28,6 +28,10 @@ namespace codeharness::records
 {
 	class AgentRecords;
 }
+namespace codeharness::hooks
+{
+	class HookEngine;
+}
 
 namespace codeharness::session
 {
@@ -44,6 +48,9 @@ namespace codeharness::session
 		tools::ToolManager* toolManager = nullptr;
 		std::string workdir; // absolute cwd the session is bound to (Create only)
 		std::string title;	  // human-readable; written to state.json (Create only)
+		// Optional hook engine. When set, Session fires SessionStart/SessionEnd
+		// and hands the engine to the Agent for its 8 events. Non-owning.
+		hooks::HookEngine* hookEngine = nullptr;
 	};
 
 	// Session ties together a directory on disk (via SessionStore), a main
@@ -90,6 +97,9 @@ namespace codeharness::session
 		// together. `replay` controls whether Agent::Resume() is invoked.
 		absl::Status WireMainAgent(SessionConfig cfg, bool replay);
 
+		// Fire the SessionStart hook (no-op when hookEngine is null).
+		void FireSessionStart();
+
 		SessionStore* store;
 		std::string sessionId;
 		std::string sessionPath;
@@ -97,6 +107,7 @@ namespace codeharness::session
 
 		std::unique_ptr<records::AgentRecords> records;
 		std::unique_ptr<agent::Agent> agent;
+		hooks::HookEngine* hookEngine = nullptr; // non-owning; for SessionStart/SessionEnd
 		bool closed = false;
 	};
 

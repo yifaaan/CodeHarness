@@ -13,6 +13,7 @@
 #include "Context/Compactor.h"
 #include "Context/ContextMemory.h"
 #include "Engine/Tool.h"
+#include "Hooks/HookEngine.h"
 #include "Llm/Types.h"
 #include "Permission/PermissionGate.h"
 #include "Permission/PermissionTypes.h"
@@ -81,6 +82,12 @@ namespace codeharness::agent
 		// maxContextTokens=0 to disable compaction.
 		void SetCompactionConfig(context::CompactionConfig cfg);
 
+		// Set a non-owning hook engine. When set, the Agent fires the 3
+		// Agent-resident events (UserPromptSubmit block, PreCompact/PostCompact)
+		// and threads the engine into each TurnInput so the loop fires its 5
+		// events. Null = hooks disabled.
+		void SetHookEngine(hooks::HookEngine* engine);
+
 		// Wire an event-sourcing sink. Non-owning; must outlive the agent.
 		// When set, Prompt() records turn.prompt + context.append_message +
 		// context.append_loop_event, and Cancel() records turn.cancel.
@@ -118,6 +125,12 @@ namespace codeharness::agent
 		std::unique_ptr<permission::PermissionGate> permissionGate;
 		permission::ApprovalCallback approvalCallback;
 		std::optional<config::PermissionMode> permissionMode;
+
+		// Non-owning hook engine. When set, the Agent fires the 3 Agent-resident
+		// events (UserPromptSubmit block, PreCompact/PostCompact) and threads the
+		// engine into each TurnInput so the loop fires its 5 events. Owned by the
+		// caller (CLI), must outlive the Agent.
+		hooks::HookEngine* hookEngine = nullptr;
 
 		// Valid only while a synchronous turn is active; Cancel() signals this source.
 		std::optional<std::stop_source> currentStopSource;

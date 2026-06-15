@@ -25,6 +25,11 @@ namespace codeharness::permission
 	class PermissionGate;
 }
 
+namespace codeharness::hooks
+{
+	class HookEngine;
+}
+
 namespace codeharness::engine
 {
 
@@ -105,6 +110,10 @@ namespace codeharness::engine
 		// Optional permission gate. When null, all tools are allowed (preserves
 		// the pre-permission loop behavior and keeps existing tests green).
 		permission::PermissionGate* permissionGate = nullptr;
+		// Optional hook engine for the 5 loop-resident events (PreToolUse block,
+		// PostToolUse/PostToolUseFailure/Stop/StopFailure informational). When
+		// null, hooks are disabled (back-compat; existing tests stay green).
+		hooks::HookEngine* hookEngine = nullptr;
 	};
 
 	struct TurnResult

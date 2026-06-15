@@ -6,6 +6,8 @@
 #include "Agent/Agent.h"
 #include "Agent/AgentTypes.h"
 #include "Host/Host.h"
+#include "Hooks/HookEngine.h"
+#include "Hooks/HookTypes.h"
 #include "Llm/ChatProvider.h"
 #include "Records/AgentRecords.h"
 #include "Records/FilePersistence.h"
@@ -60,6 +62,13 @@ namespace codeharness::session
 		agent = std::make_unique<agent::Agent>(cfg.provider, cfg.host, cfg.toolManager, agent::AgentConfig{});
 		// Wire Records as the live event sink for subsequent turns.
 		agent->SetRecords(records.get());
+		// Thread the non-owning hook engine into the Agent (fires UserPromptSubmit
+		// block + PreCompact/PostCompact, and the loop's 5 events via TurnInput).
+		if (cfg.hookEngine != nullptr)
+		{
+			agent->SetHookEngine(cfg.hookEngine);
+			hookEngine = cfg.hookEngine; // Session fires SessionStart/SessionEnd itself
+		}
 
 		if (replay)
 		{
@@ -74,6 +83,18 @@ namespace codeharness::session
 		}
 
 		return absl::OkStatus();
+	}
+
+	void Session::FireSessionStart()
+	{
+		if (hookEngine == nullptr || hookEngine->Empty())
+			return;
+		hooks::HookContext hctx{
+			.event = hooks::HookEvent::SessionStart,
+			.target = sessionId,
+			.payload = {{"session", {{"id", sessionId}, {"title", meta.title}}}},
+		};
+		(void)hookEngine->Trigger(hooks::HookEvent::SessionStart, hctx);
 	}
 
 	absl::StatusOr<std::unique_ptr<Session>> Session::Create(SessionStore* store, SessionConfig cfg)
@@ -106,6 +127,7 @@ namespace codeharness::session
 		{
 			return s;
 		}
+		session->FireSessionStart();
 		return session;
 	}
 
@@ -140,6 +162,7 @@ namespace codeharness::session
 		{
 			return s;
 		}
+		session->FireSessionStart();
 		return session;
 	}
 
@@ -150,6 +173,17 @@ namespace codeharness::session
 			return absl::OkStatus();
 		}
 		closed = true;
+
+		// Fire SessionEnd before tearing down (records flush, state.json write).
+		if (hookEngine != nullptr && !hookEngine->Empty())
+		{
+			hooks::HookContext hctx{
+				.event = hooks::HookEvent::SessionEnd,
+				.target = sessionId,
+				.payload = {{"session", {{"id", sessionId}, {"title", meta.title}}}},
+			};
+			(void)hookEngine->Trigger(hooks::HookEvent::SessionEnd, hctx);
+		}
 
 		if (records)
 		{

@@ -6,6 +6,8 @@
 #include <utility>
 
 #include "Llm/ChatProvider.h"
+#include "Hooks/HookEngine.h"
+#include "Hooks/HookTypes.h"
 #include "Permission/PermissionGate.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
@@ -57,6 +59,23 @@ namespace codeharness::engine
 				{
 					Dispatch(input, PermissionDeniedEvent{tc.name, exec.description});
 					return {.content = fmt::format("permission denied for tool '{}'", tc.name), .isError = true};
+				}
+			}
+
+			// PreToolUse hook (blocking). Composes with the permission gate above:
+			// the tool runs only if both allow. Fail-open on any hook error.
+			if (input.hookEngine != nullptr)
+			{
+				hooks::HookContext hctx{
+					.event = hooks::HookEvent::PreToolUse,
+					.target = tc.name,
+					.payload = {{"toolCall", {{"name", tc.name}, {"args", args}, {"toolCallId", tc.id}}}},
+				};
+				auto block = input.hookEngine->TriggerBlock(hooks::HookEvent::PreToolUse, hctx, ctx.stopToken);
+				if (block.has_value() && block->action == hooks::HookAction::Block)
+				{
+					auto reason = block->reason.empty() ? std::string{"blocked by hook"} : block->reason;
+					return {.content = fmt::format("blocked by hook: {}", reason), .isError = true};
 				}
 			}
 
@@ -149,6 +168,15 @@ namespace codeharness::engine
 				result.stopReason = StopReason::Error;
 				result.errorMessage = std::string(status.message());
 				Dispatch(input, ErrorEvent{result.errorMessage});
+				if (input.hookEngine != nullptr)
+				{
+					hooks::HookContext hctx{
+						.event = hooks::HookEvent::StopFailure,
+						.target = {},
+						.payload = {{"error", result.errorMessage}},
+					};
+					(void)input.hookEngine->Trigger(hooks::HookEvent::StopFailure, hctx, input.stopToken);
+				}
 				return result;
 			}
 
@@ -189,6 +217,15 @@ namespace codeharness::engine
 					}
 				}
 				result.stopReason = StopReason::Completed;
+				if (input.hookEngine != nullptr)
+				{
+					hooks::HookContext hctx{
+						.event = hooks::HookEvent::Stop,
+						.target = {},
+						.payload = {{"steps", result.stepsExecuted}},
+					};
+					(void)input.hookEngine->Trigger(hooks::HookEvent::Stop, hctx, input.stopToken);
+				}
 				return result;
 			}
 
@@ -231,6 +268,19 @@ namespace codeharness::engine
 				}
 
 				Dispatch(input, ToolResultEvent{tc.id, tc.name, toolResult});
+
+				// PostToolUse (success) / PostToolUseFailure (error). Best-effort fan-out.
+				if (input.hookEngine != nullptr)
+				{
+					auto ev = toolResult.isError ? hooks::HookEvent::PostToolUseFailure : hooks::HookEvent::PostToolUse;
+					hooks::HookContext hctx{
+						.event = ev,
+						.target = tc.name,
+						.payload = {{"toolCall", {{"name", tc.name}, {"toolCallId", tc.id}}},
+									{"result", {{"isError", toolResult.isError}, {"content", toolResult.content}}}},
+					};
+					(void)input.hookEngine->Trigger(ev, hctx, input.stopToken);
+				}
 
 				llm::Message toolMsg;
 				toolMsg.role = llm::Role::Tool;

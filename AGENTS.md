@@ -17,6 +17,7 @@
 | **Session** | `codeharness::session` | `Source/CodeHarness/Session/` | ✅ Implemented (MVP) |
 | **Cli** | `codeharness::cli` | `Source/CodeHarness/Cli/` | ✅ Implemented (MVP) |
 | **Context** | `codeharness::context` | `Source/CodeHarness/Context/` | ✅ Implemented (MVP) |
+| **Hooks** | `codeharness::hooks` | `Source/CodeHarness/Hooks/` | ✅ Implemented (MVP) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -53,7 +54,7 @@ The Config layer loads `config.toml`, validates it, and resolves model aliases t
 - `ProviderManager` — factory: model alias → `[providers]` config → credentials → `OpenAiProvider`
 - `ProviderType` / `PermissionMode` / `ResolvedProviderConfig` — enums + static capability view
 
-**Design:** All file I/O goes through `Host*` (testable, no direct disk). TOML parsed with `toml++`. Credentials resolve from `api_key` field → `[providers.<n>.env]` sub-table → (OpenAiProvider's own `OPENAI_API_KEY` fallback); `api_key` values support `$VAR`/`${VAR}` expansion against the process environment. Only the OpenAI-compatible family (`openai`, `kimi`, `openai_responses`) is constructible today; `anthropic`/`google-genai`/`vertexai` parse and validate but return `UnimplementedError`. The `PermissionMode` enum (`Manual`/`Auto`/`Yolo`) defined here is parsed from `default_permission_mode` and now consumed by the Permission module. OAuth, the permission rules DSL, and hooks remain deferred.
+**Design:** All file I/O goes through `Host*` (testable, no direct disk). TOML parsed with `toml++`. Credentials resolve from `api_key` field → `[providers.<n>.env]` sub-table → (OpenAiProvider's own `OPENAI_API_KEY` fallback); `api_key` values support `$VAR`/`${VAR}` expansion against the process environment. Only the OpenAI-compatible family (`openai`, `kimi`, `openai_responses`) is constructible today; `anthropic`/`google-genai`/`vertexai` parse and validate but return `UnimplementedError`. The `PermissionMode` enum (`Manual`/`Auto`/`Yolo`) defined here is parsed from `default_permission_mode` and consumed by the Permission module. The `[[hooks]]` array is parsed here into `std::vector<hooks::HookDef>` and consumed by the Hooks module. OAuth and the permission rules DSL remain deferred.
 
 ### Engine (Turn Execution Loop)
 
@@ -92,7 +93,7 @@ The Agent layer provides the first user-facing composition layer over the statel
 - `AgentEvent` — turn lifecycle, status changes, errors, and forwarded loop events
 - `PromptResult` — turn id, stop reason, usage, and error summary
 
-**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history as a `ContextMemory` (so the context window can be budgeted), converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory` back into the `ContextMemory`. Before each turn it may run between-turn compaction (see Context module) when history exceeds the model's window. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into the `ContextMemory` (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks, skills, and MCP remain deferred modules.
+**Design:** `Agent` receives non-owning `ChatProvider*`, `Host*`, and `ToolManager*` dependencies. It keeps in-memory conversation history as a `ContextMemory` (so the context window can be budgeted), converts prompt text into `llm::Message`, calls `engine::RunTurn`, forwards loop events, and stores `TurnResult.updatedHistory` back into the `ContextMemory`. Before each turn it may run between-turn compaction (see Context module) when history exceeds the model's window. Persistence is wired via `SetRecords(records::AgentRecords*)` (best-effort logging of turn lifecycle + loop events); `Resume()` replays the wire stream into the `ContextMemory` (used by the Session module on resume). Permission gating is opt-in via `SetPermissionMode(config::PermissionMode)` + `SetApprovalCallback(...)`; the Agent then owns a `PermissionGate` threaded into each `TurnInput`. Hooks are opt-in via `SetHookEngine(...)`; the Agent fires its 3 events (UserPromptSubmit block + PreCompact/PostCompact) and threads the engine into each `TurnInput`. Skills and MCP remain deferred modules.
 
 ### Records (Event Sourcing)
 
@@ -116,7 +117,7 @@ The Permission module gates tool execution — the single consumer of `ToolExecu
 - `PermissionTypes.h` — `PermissionDecision` (`Allow`/`Deny`) and the `ApprovalCallback` signature
 - `PermissionRequestedEvent` / `PermissionDeniedEvent` — new `LoopEvent` kinds dispatched around the approval flow
 
-**Design (MVP scope):** Two effective modes. **Yolo** short-circuits and allows every tool without invoking the callback. **Manual** allows read-only tools (`requiresPermission == false`) automatically and invokes the `ApprovalCallback` for mutating tools, running them only on `Allow`. **Auto** is parsed from config but not yet implemented — it falls back to Manual behavior with a one-shot warning (true session-scoped Auto needs the Session module). A missing callback in Manual mode denies mutating tools (safe default) until a UI wires a real approval flow. The gate holds no per-session state and is owned by the Agent (`SetPermissionMode`/`SetApprovalCallback`). Out of scope (deferred to plan #11): the permission rules DSL, `PermissionRule`/`Policy` types, real Auto mode, audit logging of decisions, and the full 13-event HookEngine. Closes tech-debt TD-003.
+**Design (MVP scope):** Two effective modes. **Yolo** short-circuits and allows every tool without invoking the callback. **Manual** allows read-only tools (`requiresPermission == false`) automatically and invokes the `ApprovalCallback` for mutating tools, running them only on `Allow`. **Auto** is parsed from config but not yet implemented — it falls back to Manual behavior with a one-shot warning (true session-scoped Auto needs the Session module). A missing callback in Manual mode denies mutating tools (safe default) until a UI wires a real approval flow. The gate holds no per-session state and is owned by the Agent (`SetPermissionMode`/`SetApprovalCallback`). Out of scope (deferred): the permission rules DSL, `PermissionRule`/`Policy` types, real Auto mode, and audit logging of decisions. Closes tech-debt TD-003.
 
 ### Session (Persistence + Lifecycle)
 
@@ -128,7 +129,7 @@ The Session module owns the on-disk session layout and ties a directory to a liv
 - `SessionConfig` / `SessionMeta` / `SessionDir` / `SessionInfo` — value types
 - `EncodeWorkdirKey(absoluteWorkdir)` — sanitized-prefix + FNV-1a-64-hex path encoder (no new dependency)
 
-**Design (MVP scope):** Directory layout `<root>/<workdir-key>/<sessionId>/{state.json, agents/<agentId>/wire.jsonl}` with `<root>` resolved exactly like config: `$CODEHARNESS_HOME/sessions` if set, else `$HOME/.codeharness/sessions`. `Session::Create` allocates the dir via the store, then wires `FilePersistence(host, <dir>/agents/main/wire.jsonl)` → `AgentRecords` → `Agent`, calling `Agent::SetRecords`. `Session::Resume` wires the same then calls `Agent::Resume()` which replays the wire stream into in-memory history (Records' `restoring_` guard prevents re-recording). `Close()` flushes records and writes updated `state.json` (atomic). `SessionStore::WriteMeta` is atomic via write-tmp + `Host::Rename`. Out of scope (deferred to plan #09): the RPC protocol (CoreAPI/AgentAPI), `fork`/`export`, subagents (only `'main'` this iteration), and skill/MCP/hook ownership.
+**Design (MVP scope):** Directory layout `<root>/<workdir-key>/<sessionId>/{state.json, agents/<agentId>/wire.jsonl}` with `<root>` resolved exactly like config: `$CODEHARNESS_HOME/sessions` if set, else `$HOME/.codeharness/sessions`. `Session::Create` allocates the dir via the store, then wires `FilePersistence(host, <dir>/agents/main/wire.jsonl)` → `AgentRecords` → `Agent`, calling `Agent::SetRecords`. `Session::Resume` wires the same then calls `Agent::Resume()` which replays the wire stream into in-memory history (Records' `restoring_` guard prevents re-recording). `Close()` flushes records and writes updated `state.json` (atomic). `SessionStore::WriteMeta` is atomic via write-tmp + `Host::Rename`. Session fires the `SessionStart`/`SessionEnd` hooks when a `HookEngine` is supplied via `SessionConfig`. Out of scope (deferred to plan #09): the RPC protocol (CoreAPI/AgentAPI), `fork`/`export`, subagents (only `'main'` this iteration), and skill/MCP ownership.
 
 **Host additions:** `Host::Remove` (`RemoveOptions{recursive, existOk}`) and `Host::Rename(from, to)` were added to the `Host` interface (and implemented on `LocalHost`) to unblock `SessionStore::Remove` and atomic `state.json` writes — these methods were previously absent.
 
@@ -160,6 +161,19 @@ The Context module stops `Agent::history` from growing unbounded. See [Source/Co
 **Design (MVP scope):** Between-turn compaction only, living entirely in the Agent layer. `Agent` now holds a `ContextMemory` instead of a bare vector. In `Prompt()`, before building the turn history, it resolves `maxContextTokens` from `llm::GetCapability(provider->ModelName())` (unless `SetCompactionConfig` overrode it), and if `history.tokenCount() + incoming` crosses 75% it runs `Compact` — a second `Generate` produces a summary, the prefix is replaced by one summary message, the last 10 messages are kept verbatim. **Zero changes to `Loop.cpp`, `LoopTypes.h`, `LoopEvent`, `ChatProvider`, or any provider** — the loop keeps receiving a plain (shorter) `std::vector<llm::Message>`. `Resume()` replays records through `ContextMemory::Append` to keep the token cache consistent. Closes tech-debt TD-006. Out of scope (deferred to plan #06): the `InjectionManager` (plan/permission-mode injection — needs a wider `LoopHooks::beforeStep`), mid-turn compaction (between tool-call steps inside one turn), a real `CountTokens` provider virtual, and `ContextMessage` metadata (origin/id/createdAt).
 
 **Llm helper exported:** `ConcatTextParts` (flattens a message's content parts into one string) was promoted from `MessageJson.cpp`'s anonymous namespace to a public `codeharness::llm` function in `MessageJson.h`, so `TokenEstimate` can measure message text.
+
+### Hooks (Lifecycle Subprocess Hooks)
+
+The Hooks module runs user-configured subprocess hooks on agent lifecycle events. See [Source/CodeHarness/Hooks/](Source/CodeHarness/Hooks/) for source.
+
+**Key interfaces:**
+- `HookEngine` — `Trigger(event, ctx)` (best-effort fan-out, 9 informational events) + `TriggerBlock(event, ctx)` (first blocker, 2 blocking events); constructed with a `std::vector<HookDef>` + non-owning `Host*`
+- `HookTypes.h` — `HookEvent` (11 values), `HookAction` (`Allow`/`Block`), `HookDef` (one `[[hooks]]` entry), `HookResult`, `HookContext`
+- `HookEventName` / `ParseHookEvent` — string ↔ enum round-trip used by config
+
+**Design (MVP scope):** Command-type hooks only (no `callback` type). 11 of the 13 events from the reference design — the 2 subagent events (`SubagentStart`/`SubagentStop`) are deferred until subagents exist. Configured in `config.toml` as a `[[hooks]]` array (`event`, `command`, `matcher?`, `timeout?`). The engine spawns each hook via `Host::ExecWithEnv` (argv-style, no shell), pipes a JSON payload to stdin, drains stdout/stderr with the per-hook timeout, and inspects the exit code. **Fail-open invariant (Architecture Invariant #2):** a hook that fails (non-zero exit, timeout, crash) is ALWAYS treated as `Allow`. The only way a hook blocks is by printing a JSON line `{"action":"block","reason":"..."}` on stdout, and only for the 2 blocking events (`PreToolUse`, `UserPromptSubmit`). The `matcher` is a `std::regex` against the event target (tool name for tool events, session id for session events). `TurnInput.hookEngine` is an optional pointer (null = hooks disabled, back-compat). Out of scope (deferred): `callback`-type hooks, the 2 subagent events, the Permission rules DSL, and `InjectionManager`.
+
+**Event wiring:** Loop fires 5 events (`PreToolUse` block + `PostToolUse`/`PostToolUseFailure`/`Stop`/`StopFailure`); Agent fires 3 (`UserPromptSubmit` block + `PreCompact`/`PostCompact`); Session fires 2 (`SessionStart`/`SessionEnd`); `Notification` is glue for callers. The Agent's hook engine is the shared instance within a session.
 
 ## Core Principles
 

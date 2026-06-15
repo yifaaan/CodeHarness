@@ -3,8 +3,10 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "Config/ConfigTypes.h"
+#include "Hooks/HookTypes.h"
 #include "Llm/Types.h"
 
 namespace codeharness::config
@@ -41,10 +43,7 @@ namespace codeharness::config
 		std::string model;	  // model name as the provider knows it
 	};
 
-	// Root config object produced by `ConfigManager`. Only `general`, the
-	// provider table, the model table, and the global thinking block are
-	// consumed today; `permission`/`hooks`/`background` fields are intentionally
-	// absent and will be added when their modules are ported.
+	// Root config object produced by `ConfigManager`.
 	struct KimiConfig
 	{
 		std::string defaultModel;
@@ -53,6 +52,7 @@ namespace codeharness::config
 		std::map<std::string, ProviderConfig> providers;
 		std::map<std::string, ModelAlias> models;
 		std::optional<ThinkingConfig> thinking;
+		std::vector<hooks::HookDef> hooks; // [[hooks]] entries; empty by default
 	};
 
 } // namespace codeharness::config

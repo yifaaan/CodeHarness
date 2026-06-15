@@ -6,12 +6,14 @@
 #include <spdlog/spdlog.h>
 #include <toml++/toml.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <regex>
 #include <string>
 #include <string_view>
 
 #include "Host/Host.h"
+#include "Hooks/HookTypes.h"
 
 namespace codeharness::config
 {
@@ -245,6 +247,17 @@ namespace codeharness::config
 				out += "\n";
 				SerializeThinking(out, "", config.thinking);
 			}
+
+			for (const auto& hook : config.hooks)
+			{
+				out += "\n[[hooks]]\n";
+				out += fmt::format("event = \"{}\"\n", hooks::HookEventName(hook.event));
+				out += fmt::format("command = \"{}\"\n", TomlEscape(hook.command));
+				if (hook.matcher && !hook.matcher->empty())
+					out += fmt::format("matcher = \"{}\"\n", TomlEscape(*hook.matcher));
+				if (hook.timeoutSeconds != 30)
+					out += fmt::format("timeout = {}\n", hook.timeoutSeconds);
+			}
 			return out;
 		}
 
@@ -364,6 +377,45 @@ namespace codeharness::config
 		}
 
 		config.thinking = ParseThinking(root["thinking"]);
+
+		// [[hooks]] — array of tables. Each entry: event, command, matcher?, timeout?
+		if (auto hooksArr = root["hooks"].as_array())
+		{
+			for (const auto& entry : *hooksArr)
+			{
+				const auto* htable = entry.as_table();
+				if (!htable)
+					continue;
+				hooks::HookDef hook;
+				if (auto ev = (*htable)["event"].value<std::string>())
+				{
+					auto parsed = hooks::ParseHookEvent(*ev);
+					if (!parsed)
+					{
+						spdlog::warn("config: unknown hook event '{}', skipping", *ev);
+						continue;
+					}
+					hook.event = *parsed;
+				}
+				else
+				{
+					spdlog::warn("config: hook missing 'event', skipping");
+					continue;
+				}
+				if (auto cmd = (*htable)["command"].value<std::string>())
+					hook.command = *cmd;
+				if (hook.command.empty())
+				{
+					spdlog::warn("config: hook event '{}' missing 'command', skipping", hooks::HookEventName(hook.event));
+					continue;
+				}
+				if (auto m = (*htable)["matcher"].value<std::string>())
+					hook.matcher = *m;
+				if (auto t = (*htable)["timeout"].value<int64_t>())
+					hook.timeoutSeconds = static_cast<int>(std::clamp(*t, int64_t{1}, int64_t{600}));
+				config.hooks.push_back(std::move(hook));
+			}
+		}
 
 		return config;
 	}

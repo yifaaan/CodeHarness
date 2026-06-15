@@ -7,6 +7,8 @@
 #include "Context/ContextMemory.h"
 #include "Context/TokenEstimate.h"
 #include "Engine/Loop.h"
+#include "Hooks/HookEngine.h"
+#include "Hooks/HookTypes.h"
 #include "Llm/Capability.h"
 #include "Llm/ChatProvider.h"
 #include "Permission/PermissionGate.h"
@@ -52,6 +54,23 @@ namespace codeharness::agent
 			return loopTools.status();
 		}
 
+		// UserPromptSubmit hook (blocking). Fires before the prompt reaches the
+		// loop/LLM. Fail-open: a hook error never blocks the turn.
+		if (hookEngine != nullptr)
+		{
+			hooks::HookContext hctx{
+				.event = hooks::HookEvent::UserPromptSubmit,
+				.target = {},
+				.payload = {{"input", std::string(text)}},
+			};
+			auto block = hookEngine->TriggerBlock(hooks::HookEvent::UserPromptSubmit, hctx);
+			if (block.has_value() && block->action == hooks::HookAction::Block)
+			{
+				auto reason = block->reason.empty() ? std::string{"blocked by hook"} : block->reason;
+				return absl::CancelledError(fmt::format("prompt blocked by hook: {}", reason));
+			}
+		}
+
 		// Resolve the context-window budget from the model capability on first
 		// use, unless the caller overrode it via SetCompactionConfig.
 		if (!compactionConfigOverridden && compactionConfig.maxContextTokens == 0)
@@ -74,6 +93,15 @@ namespace codeharness::agent
 			if (context::ShouldCompact(used, compactionConfig))
 			{
 				Dispatch(ContextCompactingEvent{static_cast<int>(history.Size())});
+				if (hookEngine != nullptr)
+				{
+					hooks::HookContext pctx{
+						.event = hooks::HookEvent::PreCompact,
+						.target = {},
+						.payload = {{"tokenCount", used}, {"contextSize", static_cast<int64_t>(history.Size())}},
+					};
+					(void)hookEngine->Trigger(hooks::HookEvent::PreCompact, pctx);
+				}
 				auto r = context::Compact(provider, history.Messages(), compactionConfig);
 				if (!r.ok())
 				{
@@ -87,6 +115,15 @@ namespace codeharness::agent
 					spdlog::info("agent: compacted {} messages -> {} (est. {} -> {} tokens)",
 								 history.Size(), compacted.size(), history.TokenCount(), (*r)->newTokenCount);
 					history.ReplaceAll(std::move(compacted));
+					if (hookEngine != nullptr)
+					{
+						hooks::HookContext postctx{
+							.event = hooks::HookEvent::PostCompact,
+							.target = {},
+							.payload = {{"newTokenCount", (*r)->newTokenCount}},
+						};
+						(void)hookEngine->Trigger(hooks::HookEvent::PostCompact, postctx);
+					}
 				}
 			}
 		}
@@ -136,6 +173,7 @@ namespace codeharness::agent
 			.stopToken = currentStopSource->get_token(),
 			.maxSteps = config.maxSteps,
 			.permissionGate = permissionGate.get(),
+			.hookEngine = hookEngine,
 		};
 
 		auto turnResult = engine::RunTurn(std::move(input));
@@ -267,6 +305,11 @@ namespace codeharness::agent
 	{
 		compactionConfig = std::move(cfg);
 		compactionConfigOverridden = true;
+	}
+
+	void Agent::SetHookEngine(hooks::HookEngine* engine)
+	{
+		hookEngine = engine;
 	}
 
 	absl::Status Agent::Resume()

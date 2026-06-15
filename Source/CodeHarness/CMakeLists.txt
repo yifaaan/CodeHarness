@@ -45,6 +45,7 @@ add_library(codeharness
   Context/TokenEstimate.cpp
   Context/ContextMemory.cpp
   Context/Compactor.cpp
+  Hooks/HookEngine.cpp
 )
 
 target_include_directories(codeharness PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
