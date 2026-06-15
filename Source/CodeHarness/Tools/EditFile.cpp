@@ -10,16 +10,6 @@
 namespace codeharness::tools
 {
 
-	namespace
-	{
-
-		std::string GetPath(const nlohmann::json& args)
-		{
-			return args.value("file_path", std::string{});
-		}
-
-	} // namespace
-
 	std::string EditFileTool::Description() const
 	{
 		return "Replace an exact substring in a file. By default `old_string` must match exactly "
@@ -42,7 +32,7 @@ namespace codeharness::tools
 
 	absl::StatusOr<engine::ToolExecution> EditFileTool::ResolveExecution(const nlohmann::json& args)
 	{
-		auto path = GetPath(args);
+		auto path = args.value("file_path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'file_path' is required");
 
@@ -61,7 +51,7 @@ namespace codeharness::tools
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");
-		auto path = GetPath(args);
+		auto path = args.value("file_path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'file_path' is required");
 

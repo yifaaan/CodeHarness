@@ -27,11 +27,6 @@ namespace codeharness::tools
 			return requested;
 		}
 
-		std::string GetCommand(const nlohmann::json& args)
-		{
-			return args.value("command", std::string{});
-		}
-
 	} // namespace
 
 	std::string BashTool::Description() const
@@ -58,7 +53,7 @@ namespace codeharness::tools
 
 	absl::StatusOr<engine::ToolExecution> BashTool::ResolveExecution(const nlohmann::json& args)
 	{
-		auto command = GetCommand(args);
+		auto command = args.value("command", std::string{});
 		if (command.empty())
 			return absl::InvalidArgumentError("'command' is required");
 		return engine::ToolExecution{.description = fmt::format("Bash: {}", command), .requiresPermission = true};
@@ -68,7 +63,7 @@ namespace codeharness::tools
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");
-		auto command = GetCommand(args);
+		auto command = args.value("command", std::string{});
 		if (command.empty())
 			return absl::InvalidArgumentError("'command' is required");
 

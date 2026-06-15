@@ -18,11 +18,6 @@ namespace codeharness::tools
 
 		constexpr int kMaxReadLines = 1000;
 
-		std::string GetPath(const nlohmann::json& args)
-		{
-			return args.value("path", std::string{});
-		}
-
 	} // namespace
 
 	std::string ReadFileTool::Description() const
@@ -48,7 +43,7 @@ namespace codeharness::tools
 
 	absl::StatusOr<engine::ToolExecution> ReadFileTool::ResolveExecution(const nlohmann::json& args)
 	{
-		auto path = GetPath(args);
+		auto path = args.value("path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'path' is required");
 		return engine::ToolExecution{.description = fmt::format("Read {}", path), .requiresPermission = false};
@@ -58,7 +53,7 @@ namespace codeharness::tools
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");
-		auto path = GetPath(args);
+		auto path = args.value("path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'path' is required");
 

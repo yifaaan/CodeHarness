@@ -10,21 +10,6 @@
 namespace codeharness::tools
 {
 
-	namespace
-	{
-
-		std::string GetPath(const nlohmann::json& args)
-		{
-			return args.value("path", std::string{});
-		}
-
-		std::string GetMode(const nlohmann::json& args)
-		{
-			return args.value("mode", std::string{"overwrite"});
-		}
-
-	} // namespace
-
 	std::string WriteFileTool::Description() const
 	{
 		return "Create or overwrite a file. Set `mode` to \"append\" to add content to the end "
@@ -50,10 +35,10 @@ namespace codeharness::tools
 
 	absl::StatusOr<engine::ToolExecution> WriteFileTool::ResolveExecution(const nlohmann::json& args)
 	{
-		auto path = GetPath(args);
+		auto path = args.value("path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'path' is required");
-		auto mode = GetMode(args);
+		auto mode = args.value("mode", std::string{"overwrite"});
 		if (mode != "overwrite" && mode != "append")
 		{
 			return absl::InvalidArgumentError("'mode' must be \"overwrite\" or \"append\"");
@@ -65,10 +50,10 @@ namespace codeharness::tools
 	{
 		if (!ctx.host)
 			return absl::FailedPreconditionError("no host available");
-		auto path = GetPath(args);
+		auto path = args.value("path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'path' is required");
-		auto mode = GetMode(args);
+		auto mode = args.value("mode", std::string{"overwrite"});
 		if (mode != "overwrite" && mode != "append")
 		{
 			return absl::InvalidArgumentError("'mode' must be \"overwrite\" or \"append\"");
