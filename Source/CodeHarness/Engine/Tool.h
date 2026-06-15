@@ -33,6 +33,7 @@ namespace codeharness::engine
 	{
 		std::string description;
 		bool requiresPermission = false;
+		bool canRunConcurrently = false;
 	};
 
 	class ExecutableTool

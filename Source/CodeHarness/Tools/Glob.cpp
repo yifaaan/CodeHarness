@@ -51,7 +51,7 @@ namespace codeharness::tools
 		{
 			return absl::InvalidArgumentError("'pattern' is too broad; provide a more specific glob");
 		}
-		return engine::ToolExecution{.description = fmt::format("Glob {}", pattern), .requiresPermission = false};
+		return engine::ToolExecution{.description = fmt::format("Glob {}", pattern), .requiresPermission = false, .canRunConcurrently = true};
 	}
 
 	absl::StatusOr<engine::ToolResult> GlobTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)

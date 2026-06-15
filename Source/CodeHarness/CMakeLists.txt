@@ -26,6 +26,7 @@ add_library(codeharness
   Config/ProviderManager.cpp
   Agent/Agent.cpp
   Engine/Loop.cpp
+  Engine/ToolScheduler.cpp
   Tools/ToolOutput.cpp
   Tools/ToolManager.cpp
   Tools/ReadFile.cpp

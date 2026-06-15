@@ -87,7 +87,7 @@ namespace codeharness::tools
 		{
 			return absl::InvalidArgumentError("'output_mode' must be content, files_with_matches, or count");
 		}
-		return engine::ToolExecution{.description = fmt::format("Grep /{}/", pattern), .requiresPermission = false};
+		return engine::ToolExecution{.description = fmt::format("Grep /{}/", pattern), .requiresPermission = false, .canRunConcurrently = true};
 	}
 
 	absl::StatusOr<engine::ToolResult> GrepTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)

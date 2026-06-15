@@ -1,17 +1,14 @@
 #include "Loop.h"
 
 #include <algorithm>
-#include <span>
 #include <string>
 #include <utility>
 
 #include "Llm/ChatProvider.h"
 #include "Hooks/HookEngine.h"
 #include "Hooks/HookTypes.h"
-#include "Permission/PermissionGate.h"
+#include "ToolScheduler.h"
 #include "absl/status/status.h"
-#include "fmt/format.h"
-#include "spdlog/spdlog.h"
 
 namespace codeharness::engine
 {
@@ -25,77 +22,6 @@ namespace codeharness::engine
 			{
 				input.dispatchEvent(event);
 			}
-		}
-
-		ToolResult ExecuteToolCall(ExecutableTool& tool, const llm::ToolCall& tc, const ToolContext& ctx, const TurnInput& input)
-		{
-			nlohmann::json args;
-			if (!tc.arguments.empty())
-			{
-				try
-				{
-					args = nlohmann::json::parse(tc.arguments);
-				}
-				catch (const nlohmann::json::parse_error& e)
-				{
-					return {.content = fmt::format("invalid tool arguments: {}", e.what()), .isError = true};
-				}
-			}
-
-			auto resolution = tool.ResolveExecution(args);
-			if (!resolution.ok())
-			{
-				return {.content = std::string(resolution.status().message()), .isError = true};
-			}
-
-			// Permission gate: the single point where requiresPermission becomes
-			// live. Read-only tools (requiresPermission == false) always pass. When
-			// no gate is wired the call is allowed, preserving the legacy behavior.
-			const auto& exec = *resolution;
-			if (input.permissionGate != nullptr && exec.requiresPermission)
-			{
-				Dispatch(input, PermissionRequestedEvent{tc.name, args, exec.description});
-				if (!input.permissionGate->ShouldRun(true, tc.name, args, exec.description))
-				{
-					Dispatch(input, PermissionDeniedEvent{tc.name, exec.description});
-					return {.content = fmt::format("permission denied for tool '{}'", tc.name), .isError = true};
-				}
-			}
-
-			// PreToolUse hook (blocking). Composes with the permission gate above:
-			// the tool runs only if both allow. Fail-open on any hook error.
-			if (input.hookEngine != nullptr)
-			{
-				hooks::HookContext hctx{
-					.event = hooks::HookEvent::PreToolUse,
-					.target = tc.name,
-					.payload = {{"toolCall", {{"name", tc.name}, {"args", args}, {"toolCallId", tc.id}}}},
-				};
-				auto block = input.hookEngine->TriggerBlock(hooks::HookEvent::PreToolUse, hctx, ctx.stopToken);
-				if (block.has_value() && block->action == hooks::HookAction::Block)
-				{
-					auto reason = block->reason.empty() ? std::string{"blocked by hook"} : block->reason;
-					return {.content = fmt::format("blocked by hook: {}", reason), .isError = true};
-				}
-			}
-
-			auto result = tool.Execute(args, ctx);
-			if (!result.ok())
-			{
-				return {.content = std::string(result.status().message()), .isError = true};
-			}
-
-			return std::move(*result);
-		}
-
-		ExecutableTool* FindTool(std::span<ExecutableTool*> tools, std::string_view name)
-		{
-			for (auto* t : tools)
-			{
-				if (t->Name() == name)
-					return t;
-			}
-			return nullptr;
 		}
 
 	} // namespace
@@ -230,8 +156,8 @@ namespace codeharness::engine
 			}
 
 			ToolContext ctx{.host = input.host, .stopToken = input.stopToken};
-
-			for (const auto& tc : pendingCalls)
+			auto toolResults = RunToolCallBatch(pendingCalls, ctx, input);
+			for (auto& scheduled : toolResults)
 			{
 				if (input.stopToken.stop_requested())
 				{
@@ -239,53 +165,10 @@ namespace codeharness::engine
 					return result;
 				}
 
-				nlohmann::json args;
-				if (!tc.arguments.empty())
-				{
-					try
-					{
-						args = nlohmann::json::parse(tc.arguments);
-					}
-					catch (...)
-					{
-						args = nlohmann::json::object();
-					}
-				}
-
-				Dispatch(input, ToolCallStartedEvent{tc.id, tc.name, args});
-
-				auto* tool = FindTool(input.tools, tc.name);
-				ToolResult toolResult;
-				if (!tool)
-				{
-					toolResult.isError = true;
-					toolResult.content = fmt::format("tool '{}' not found", tc.name);
-					spdlog::warn("tool not found: {}", tc.name);
-				}
-				else
-				{
-					toolResult = ExecuteToolCall(*tool, tc, ctx, input);
-				}
-
-				Dispatch(input, ToolResultEvent{tc.id, tc.name, toolResult});
-
-				// PostToolUse (success) / PostToolUseFailure (error). Best-effort fan-out.
-				if (input.hookEngine != nullptr)
-				{
-					auto ev = toolResult.isError ? hooks::HookEvent::PostToolUseFailure : hooks::HookEvent::PostToolUse;
-					hooks::HookContext hctx{
-						.event = ev,
-						.target = tc.name,
-						.payload = {{"toolCall", {{"name", tc.name}, {"toolCallId", tc.id}}},
-									{"result", {{"isError", toolResult.isError}, {"content", toolResult.content}}}},
-					};
-					(void)input.hookEngine->Trigger(ev, hctx, input.stopToken);
-				}
-
 				llm::Message toolMsg;
 				toolMsg.role = llm::Role::Tool;
-				toolMsg.toolCallId = tc.id;
-				toolMsg.content.push_back(llm::TextPart{toolResult.content});
+				toolMsg.toolCallId = scheduled.call.id;
+				toolMsg.content.push_back(llm::TextPart{scheduled.result.content});
 				result.updatedHistory.push_back(std::move(toolMsg));
 			}
 		}

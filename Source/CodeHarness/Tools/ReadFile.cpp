@@ -46,7 +46,7 @@ namespace codeharness::tools
 		auto path = args.value("path", std::string{});
 		if (path.empty())
 			return absl::InvalidArgumentError("'path' is required");
-		return engine::ToolExecution{.description = fmt::format("Read {}", path), .requiresPermission = false};
+		return engine::ToolExecution{.description = fmt::format("Read {}", path), .requiresPermission = false, .canRunConcurrently = true};
 	}
 
 	absl::StatusOr<engine::ToolResult> ReadFileTool::Execute(const nlohmann::json& args, const engine::ToolContext& ctx)

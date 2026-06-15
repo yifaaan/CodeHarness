@@ -97,6 +97,11 @@ namespace codeharness::engine
 
 	using EventDispatcher = std::function<void(const LoopEvent&)>;
 
+	struct ToolSchedulerConfig
+	{
+		int maxConcurrentTools = 4;
+	};
+
 	struct TurnInput
 	{
 		llm::ChatProvider* provider = nullptr;
@@ -114,6 +119,7 @@ namespace codeharness::engine
 		// PostToolUse/PostToolUseFailure/Stop/StopFailure informational). When
 		// null, hooks are disabled (back-compat; existing tests stay green).
 		hooks::HookEngine* hookEngine = nullptr;
+		ToolSchedulerConfig toolScheduler;
 	};
 
 	struct TurnResult

@@ -36,7 +36,7 @@ This document tracks technical debt in the CodeHarness project, following OpenAI
 | ID | Category | Description | Impact | Status | Due Date |
 |----|----------|-------------|--------|--------|----------|
 | TD-001 | Architecture | Missing Kaos abstraction layer | High | Resolved (MVP) | 2026-07-01 |
-| TD-002 | Architecture | No ToolScheduler for concurrent execution | High | Pending | 2026-07-15 |
+| TD-002 | Architecture | No ToolScheduler for concurrent execution | High | Resolved (MVP) | 2026-07-15 |
 | TD-003 | Security | Incomplete permission checking | High | Resolved (MVP) | 2026-07-01 |
 
 ### Medium Priority (Should Fix)
@@ -56,6 +56,8 @@ This document tracks technical debt in the CodeHarness project, following OpenAI
 | TD-009 | Performance | Unoptimized string operations | Low | Pending | 2026-09-30 |
 
 ### Resolution Notes
+
+- **TD-002 (Resolved 2026-06-15, MVP):** The Engine now has a `ToolScheduler` that batch-executes explicitly concurrency-safe tools while preserving deterministic event and history ordering. `ToolExecution::canRunConcurrently` is the opt-in marker; `ReadFile`, `Glob`, and `Grep` enable it by default, and mutating or stateful tools remain serial barriers. `TurnInput.toolScheduler.maxConcurrentTools` defaults to 4 and `<= 1` forces serial execution for compatibility/testing. Deferred: user-facing config for scheduler policy and broader per-resource conflict analysis for safe write/tool overlap.
 
 - **TD-001 (Resolved 2026-06-15, MVP):** The original Kaos abstraction plan has landed under the C++ `Host` naming: `Host`, `LocalHost`, `HostPath`, and `CurrentHost` now provide filesystem, path, and process abstraction. Tools, Session, Config, CLI, Hooks, Skills, and MCP all perform world I/O through `Host*`. The deferred portion is remote/SSH execution, not the local abstraction layer.
 

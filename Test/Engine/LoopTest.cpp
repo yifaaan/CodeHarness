@@ -1,10 +1,17 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -104,6 +111,7 @@ namespace
 		std::string toolName;
 		std::string toolDesc;
 		json toolParams = json::object();
+		bool canRunConcurrently = false;
 		std::function<eng::ToolResult(const json&)> handler;
 
 		std::string Name() const override
@@ -121,7 +129,7 @@ namespace
 
 		absl::StatusOr<eng::ToolExecution> ResolveExecution(const json& args) override
 		{
-			return eng::ToolExecution{.description = fmt::format("execute {}", toolName)};
+			return eng::ToolExecution{.description = fmt::format("execute {}", toolName), .canRunConcurrently = canRunConcurrently};
 		}
 
 		absl::StatusOr<eng::ToolResult> Execute(const json& args, const eng::ToolContext& ctx) override
@@ -167,6 +175,17 @@ namespace
 			return std::nullopt;
 		}
 
+		std::vector<eng::ToolResultEvent> ToolResults() const
+		{
+			std::vector<eng::ToolResultEvent> result;
+			for (const auto& e : events)
+			{
+				if (auto* tr = std::get_if<eng::ToolResultEvent>(&e))
+					result.push_back(*tr);
+			}
+			return result;
+		}
+
 		std::string AllText() const
 		{
 			std::string result;
@@ -191,6 +210,14 @@ namespace
 		return {idx, std::move(id), std::move(name), std::move(args)};
 	}
 
+	void UpdateMax(std::atomic<int>& maxValue, int candidate)
+	{
+		int current = maxValue.load();
+		while (candidate > current && !maxValue.compare_exchange_weak(current, candidate))
+		{
+		}
+	}
+
 	// Variant of MockTool whose ResolveExecution sets requiresPermission, so
 	// permission-gated loop tests can exercise the mutating-tool path.
 	class GatedTool : public eng::ExecutableTool
@@ -199,6 +226,7 @@ namespace
 		std::string toolName;
 		std::string toolDesc;
 		bool requiresPermission = true;
+		bool canRunConcurrently = false;
 		bool executeCalled = false;
 		std::function<eng::ToolResult(const json&)> handler;
 
@@ -208,7 +236,11 @@ namespace
 
 		absl::StatusOr<eng::ToolExecution> ResolveExecution(const json&) override
 		{
-			return eng::ToolExecution{.description = fmt::format("execute {}", toolName), .requiresPermission = requiresPermission};
+			return eng::ToolExecution{
+				.description = fmt::format("execute {}", toolName),
+				.requiresPermission = requiresPermission,
+				.canRunConcurrently = canRunConcurrently,
+			};
 		}
 
 		absl::StatusOr<eng::ToolResult> Execute(const json& args, const eng::ToolContext&) override
@@ -312,6 +344,244 @@ TEST_CASE("Loop: multiple tool calls in one step")
 	auto& toolMsg2 = result.updatedHistory[result.updatedHistory.size() - 2];
 	CHECK(toolMsg1.role == llm::Role::Tool);
 	CHECK(toolMsg2.role == llm::Role::Tool);
+}
+
+TEST_CASE("Loop: concurrent-safe tools run in parallel and results stay ordered")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "read", R"({"msg":"first"})"),
+					   TC(1, "c2", "read", R"({"msg":"second"})")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "All done", .finish = llm::FinishReason::Completed},
+	};
+
+	std::atomic<int> active = 0;
+	std::atomic<int> maxActive = 0;
+	int started = 0;
+	std::mutex mutex;
+	std::condition_variable cv;
+
+	MockTool read;
+	read.toolName = "read";
+	read.canRunConcurrently = true;
+	read.handler = [&](const json& args) -> eng::ToolResult {
+		int now = ++active;
+		UpdateMax(maxActive, now);
+		{
+			std::lock_guard lock(mutex);
+			++started;
+		}
+		cv.notify_all();
+		{
+			std::unique_lock lock(mutex);
+			cv.wait_for(lock, std::chrono::seconds(2), [&] { return started >= 2; });
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		--active;
+		return {.content = args.value("msg", "")};
+	};
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&read},
+		.dispatchEvent = log.MakeDispatcher(),
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK(maxActive.load() >= 2);
+
+	auto toolResults = log.ToolResults();
+	REQUIRE(toolResults.size() == 2);
+	CHECK(toolResults[0].id == "c1");
+	CHECK(toolResults[0].result.content == "first");
+	CHECK(toolResults[1].id == "c2");
+	CHECK(toolResults[1].result.content == "second");
+
+	REQUIRE(result.updatedHistory.size() >= 4);
+	auto& toolMsg1 = result.updatedHistory[result.updatedHistory.size() - 3];
+	auto& toolMsg2 = result.updatedHistory[result.updatedHistory.size() - 2];
+	CHECK(toolMsg1.toolCallId == "c1");
+	CHECK(toolMsg2.toolCallId == "c2");
+}
+
+TEST_CASE("Loop: scheduler maxConcurrentTools <= 1 keeps concurrent-safe tools serial")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "read", "{}"),
+					   TC(1, "c2", "read", "{}")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "done", .finish = llm::FinishReason::Completed},
+	};
+
+	std::atomic<int> active = 0;
+	std::atomic<int> maxActive = 0;
+
+	MockTool read;
+	read.toolName = "read";
+	read.canRunConcurrently = true;
+	read.handler = [&](const json&) -> eng::ToolResult {
+		int now = ++active;
+		UpdateMax(maxActive, now);
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		--active;
+		return {.content = "ok"};
+	};
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&read},
+		.dispatchEvent = log.MakeDispatcher(),
+		.toolScheduler = {.maxConcurrentTools = 1},
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK(maxActive.load() == 1);
+	CHECK(log.CountToolResults() == 2);
+}
+
+TEST_CASE("Loop: serial tools act as barriers between concurrent-safe batches")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "read", R"({"msg":"before"})"),
+					   TC(1, "c2", "edit", "{}"),
+					   TC(2, "c3", "read", R"({"msg":"after"})")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "done", .finish = llm::FinishReason::Completed},
+	};
+
+	std::atomic<int> activeReads = 0;
+	bool editOverlappedRead = false;
+	std::vector<std::string> order;
+	std::mutex mutex;
+
+	MockTool read;
+	read.toolName = "read";
+	read.canRunConcurrently = true;
+	read.handler = [&](const json& args) -> eng::ToolResult {
+		++activeReads;
+		{
+			std::lock_guard lock(mutex);
+			order.push_back("read-start-" + args.value("msg", ""));
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		{
+			std::lock_guard lock(mutex);
+			order.push_back("read-end-" + args.value("msg", ""));
+		}
+		--activeReads;
+		return {.content = args.value("msg", "")};
+	};
+
+	MockTool edit;
+	edit.toolName = "edit";
+	edit.canRunConcurrently = false;
+	edit.handler = [&](const json&) -> eng::ToolResult {
+		editOverlappedRead = activeReads.load() != 0;
+		{
+			std::lock_guard lock(mutex);
+			order.push_back("edit");
+		}
+		return {.content = "edited"};
+	};
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&read, &edit},
+		.dispatchEvent = log.MakeDispatcher(),
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK_FALSE(editOverlappedRead);
+	REQUIRE(order.size() == 5);
+	CHECK(order[0] == "read-start-before");
+	CHECK(order[1] == "read-end-before");
+	CHECK(order[2] == "edit");
+	CHECK(order[3] == "read-start-after");
+	CHECK(order[4] == "read-end-after");
+}
+
+TEST_CASE("Loop: concurrent batch preserves order when one tool fails")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "read", R"({"msg":"ok"})"),
+					   TC(1, "c2", "read", R"({"msg":"fail"})")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "done", .finish = llm::FinishReason::Completed},
+	};
+
+	MockTool read;
+	read.toolName = "read";
+	read.canRunConcurrently = true;
+	read.handler = [](const json& args) -> eng::ToolResult {
+		if (args.value("msg", "") == "fail")
+			return {.content = "boom", .isError = true};
+		return {.content = "ok"};
+	};
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&read},
+		.dispatchEvent = log.MakeDispatcher(),
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	auto toolResults = log.ToolResults();
+	REQUIRE(toolResults.size() == 2);
+	CHECK(toolResults[0].id == "c1");
+	CHECK_FALSE(toolResults[0].result.isError);
+	CHECK(toolResults[1].id == "c2");
+	CHECK(toolResults[1].result.isError);
+}
+
+TEST_CASE("Loop: invalid concurrent tool arguments do not execute")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(0, "c1", "read", "{not json}")},
+		 .finish = llm::FinishReason::ToolCalls},
+		{.text = "recovered", .finish = llm::FinishReason::Completed},
+	};
+
+	MockTool read;
+	read.toolName = "read";
+	read.canRunConcurrently = true;
+	bool executeCalled = false;
+	read.handler = [&](const json&) -> eng::ToolResult {
+		executeCalled = true;
+		return {.content = "should not run"};
+	};
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&read},
+		.dispatchEvent = log.MakeDispatcher(),
+	};
+
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK_FALSE(executeCalled);
+	auto tr = log.LastToolResult();
+	REQUIRE(tr.has_value());
+	CHECK(tr->result.isError);
+	CHECK(tr->result.content.find("invalid tool arguments") != std::string::npos);
 }
 
 TEST_CASE("Loop: multi-step tool chain")
