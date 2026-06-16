@@ -5,18 +5,33 @@
 namespace codeharness::cli
 {
 
-	// Parsed command-line options for the non-interactive CLI. MVP scope: a
-	// single `--prompt` run against a configured model. The TUI/shell mode,
-	// `--continue`/`--session`, and `--output-format stream-json` are deferred.
+	enum class CliMode
+	{
+		Prompt,
+		Shell,
+	};
+
+	enum class OutputFormat
+	{
+		Text,
+		StreamJson,
+	};
+
+	// Parsed command-line options for the CLI. Prompt mode is the one-shot path;
+	// shell mode keeps one live session for multiple prompts.
 	struct CliOptions
 	{
-		std::string prompt; // -p/--prompt (required for v1)
-		std::string model;	// -m/--model; empty → config defaultModel
-		std::string workdir; // --workdir; empty → process cwd
-		std::string skill;	 // -s/--skill: activate skill before prompt (format: name[:args])
-		bool yolo = false;	// -y/--yolo: allow-all permission mode
-		bool help = false;	// -h/--help
-		bool version = false; // -V/--version
+		std::string prompt;	// -p/--prompt (required in prompt mode)
+		std::string model;	// -m/--model; empty means config defaultModel
+		std::string workdir; // --workdir; empty means process cwd
+		std::string skill;	// -s/--skill: activate skill before prompt (format: name[:args])
+		std::string sessionId; // --session: resume session id/prefix in shell mode
+		CliMode mode = CliMode::Prompt;
+		OutputFormat outputFormat = OutputFormat::Text;
+		bool continueLast = false; // --continue: resume latest session for workdir
+		bool yolo = false;		  // -y/--yolo: allow-all permission mode
+		bool help = false;		  // -h/--help
+		bool version = false;	  // -V/--version
 	};
 
 } // namespace codeharness::cli

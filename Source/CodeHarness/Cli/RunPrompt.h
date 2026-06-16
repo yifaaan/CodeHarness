@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <istream>
 #include <memory>
 #include <string>
 
@@ -23,26 +24,17 @@ namespace codeharness::cli
 
 	// Test seam + dependency bundle for Run(). Production builds resolve the
 	// provider from config; tests inject a MockChatProvider to avoid the
-	// network. `resolveProvider` returns the live provider + resolved model
-	// name; returning a non-OK status aborts the run with that error.
-	//
-	// `host` and `http` are non-owning and must outlive Run().
+	// network. `host` and `http` are non-owning and must outlive Run().
 	struct RunDeps
 	{
 		host::Host* host = nullptr;
 		llm::HttpClient* http = nullptr;
-		// Returns the provider to use. If null/empty, Run resolves from config.
-		// If set (test injection), config/provider resolution is skipped.
+		std::istream* input = nullptr; // shell input; defaults to std::cin
 		std::function<absl::StatusOr<std::pair<llm::ChatProvider*, std::string>>()> resolveProvider;
 	};
 
-	// Execute one non-interactive prompt end-to-end:
-	//   load config → resolve provider → build tools → create Session →
-	//   wire event dispatcher (stream text to stdout) → set permission mode →
-	//   Agent::Prompt → close session.
-	//
-	// `deps.resolveProvider` lets tests inject a mock provider; when null, Run
-	// resolves the real provider from config.toml via ProviderManager.
+	// Execute the requested CLI mode end-to-end. Prompt mode keeps the existing
+	// one-shot behavior; shell mode keeps one live session for multiple prompts.
 	absl::Status Run(const CliOptions& opts, RunDeps deps = {});
 
 	// Resolve the provider from config.toml. Public so tests can exercise the
