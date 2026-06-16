@@ -42,6 +42,7 @@ add_library(codeharness
   Session/WorkdirKey.cpp
   Session/SessionStore.cpp
   Session/Session.cpp
+  Rpc/CoreApi.cpp
   Cli/CliParser.cpp
   Cli/RunPrompt.cpp
   Context/TokenEstimate.cpp
