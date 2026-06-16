@@ -36,6 +36,7 @@ add_executable(codeharness_tests
   Skills/SkillManagerTest.cpp
   Skills/SkillToolTest.cpp
   Tui/MarkdownRendererTest.cpp
+  Tui/SlashCommandsTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE

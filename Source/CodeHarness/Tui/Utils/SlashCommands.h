@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <optional>
 #include <vector>
 
 namespace codeharness::tui
@@ -14,13 +15,24 @@ public:
 	struct Command
 	{
 		std::string name;
+		std::vector<std::string> aliases;
 		std::string description;
+		std::string argumentHint;
+		int priority = 0;
+		std::string availability = "idle-only";
+	};
+
+	struct ParsedCommand
+	{
+		std::string name;
 		std::string args;
 	};
 
 	static bool IsSlashCommand(std::string_view text);
-	static Command Parse(std::string_view text);
+	static std::optional<ParsedCommand> Parse(std::string_view text);
 	static std::vector<Command> All();
+	static const Command* Find(std::string_view name);
+	static std::string CanonicalName(std::string_view name);
 };
 
 } // namespace codeharness::tui

@@ -38,6 +38,7 @@
 #include "Tui/Renderers/MarkdownRenderer.h"
 #include "Tui/Components/ToolCallCard.h"
 #include "Tui/TuiState.h"
+#include "Tui/Utils/SlashCommands.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
 #include "spdlog/spdlog.h"
@@ -53,11 +54,34 @@ int64_t TotalTokens(const llm::TokenUsage& u)
 	return u.inputOther + u.output + u.inputCacheRead + u.inputCacheCreation;
 }
 
+std::string_view PermissionModeLabel(config::PermissionMode mode)
+{
+	switch (mode)
+	{
+		case config::PermissionMode::Yolo:
+			return "YOLO";
+		case config::PermissionMode::Auto:
+			return "Auto";
+		case config::PermissionMode::Manual:
+		default:
+			return "Manual";
+	}
+}
+
+void PushSystemMessage(const std::shared_ptr<TuiState>& state, std::string text)
+{
+	std::lock_guard lk(state->mutex);
+	state->transcript.push_back({
+		.kind = TranscriptEntry::Kind::System,
+		.text = std::move(text),
+	});
+}
+
 } // namespace
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // Construction / Destruction
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 TuiApp::TuiApp(std::unique_ptr<rpc::CoreApi> api, const cli::CliOptions& opts)
 	: api(std::move(api)),
@@ -76,9 +100,9 @@ TuiApp::~TuiApp()
 	stopped = true;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // Run - entry point
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 absl::Status TuiApp::Run()
 {
@@ -110,9 +134,9 @@ void TuiApp::PostRender()
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // Session lifecycle
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 absl::Status TuiApp::InitializeSession()
 {
@@ -216,9 +240,9 @@ absl::Status TuiApp::Shutdown()
 	return absl::OkStatus();
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // CoreApi callbacks (called from worker thread)
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 void TuiApp::OnCoreEvent(const rpc::CoreEvent& event)
 {
@@ -293,9 +317,9 @@ std::string TuiApp::OnQuestion(const tools::QuestionRequest& request)
 	return future.get();
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // Layout construction
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 ftxui::Component TuiApp::MakeLayout()
 {
@@ -327,7 +351,7 @@ ftxui::Component TuiApp::MakeMainContainer()
 	auto chat = MakeChatPane();
 	auto input = MakeInputField();
 
-	// Read-only panels (no focus handling) — their Render() output is composed
+	// Read-only panels (no focus handling) - their Render() output is composed
 	// manually into the layout Element below.
 	auto activity = ActivityIndicator::Create(state);
 	auto todo = TodoPanel::Create(state);
@@ -545,9 +569,7 @@ ftxui::Component TuiApp::MakeStatusBar()
 		std::lock_guard lk(state->mutex);
 
 		auto modelStr = state->model.empty() ? "no model" : state->model;
-		auto modeStr = state->permissionMode == config::PermissionMode::Yolo
-						   ? "YOLO"
-						   : "Manual";
+		auto modeStr = PermissionModeLabel(state->permissionMode);
 
 		// Status indicator (left side): spinner when streaming, dot when idle
 		Element statusIndicator;
@@ -874,18 +896,25 @@ ftxui::Component TuiApp::MakeHelpDialog()
 				   text("    Escape      Close dialog"),
 				   separator(),
 				   text("  Slash commands:") | bold,
-				   text("    /help       Show this help"),
-				   text("    /clear      Clear context"),
-				   text("    /compact    Compact context now"),
-				   text("    /fork       Fork current session"),
-				   text("    /rename X   Rename current session"),
-				   text("    /status     Show session/model/mode"),
-				   text("    /version    Show CodeHarness version"),
-				   text("    /exit       Quit"),
-				   text("    /model      Pick model from list"),
-				   text("    /model X    Switch to model X"),
-				   text("    /sessions   Pick session to resume"),
-				   text("    /mode       Toggle YOLO/Manual"),
+				   text("    /help, /h, /?  Show this help"),
+				   text("    /clear, /new   Clear context or start fresh"),
+				   text("    /compact        Compact context now"),
+				   text("    /fork           Fork current session"),
+				   text("    /rename, /title Set or rename session title"),
+				   text("    /status         Show session/model/mode"),
+				   text("    /version        Show CodeHarness version"),
+				   text("    /exit, /quit, /q Quit"),
+				   text("    /model          Pick model from list"),
+				   text("    /model X        Switch to model X"),
+				   text("    /sessions, /resume Pick session to resume"),
+				   text("    /mode, /yolo    Toggle YOLO/Manual"),
+				   text("    /permission     Permission selector"),
+				   text("    /settings, /config Settings"),
+				   text("    /usage          Show usage summary"),
+				   text("    /login, /logout Account access"),
+				   text("    /mcp, /plugins, /tasks, /feedback"),
+				   text("    /reload, /reload-tui, /export"),
+				   text("    /plan, /goal, /swarm, /btw, /undo"),
 				   separator(),
 				   text("  Press Escape to close") | dim,
 			   }) | border | center;
@@ -1046,9 +1075,9 @@ ftxui::Component TuiApp::MakeSettingsDialog()
 	return withEnter;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // Input handling
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 bool TuiApp::HandleInput(ftxui::Event event)
 {
@@ -1095,26 +1124,41 @@ bool TuiApp::HandleInput(ftxui::Event event)
 
 bool TuiApp::HandleSlashCommand(std::string_view cmd)
 {
-	if (cmd == "/help" || cmd == "/?")
+	auto parsed = SlashCommands::Parse(cmd);
+	if (!parsed.has_value())
+	{
+		return false;
+	}
+
+	const auto* command = SlashCommands::Find(parsed->name);
+	if (command == nullptr)
+	{
+		return false;
+	}
+
+	const std::string name = command->name;
+	const std::string args = parsed->args;
+
+	if (name == "help")
 	{
 		std::lock_guard lk(state->mutex);
 		state->activeModal = ModalKind::Help;
 		PostRender();
 		return true;
 	}
-	if (cmd == "/clear")
+	if (name == "new")
 	{
 		(void)api->ClearContext(state->sessionId);
 		std::lock_guard lk(state->mutex);
 		state->transcript.clear();
 		state->transcript.push_back({
 			.kind = TranscriptEntry::Kind::System,
-			.text = "Context cleared.",
+			.text = args.empty() ? "Context cleared." : fmt::format("Context cleared. New-session title is not implemented yet: {}", args),
 		});
 		PostRender();
 		return true;
 	}
-	if (cmd == "/exit" || cmd == "/quit")
+	if (name == "exit")
 	{
 		if (screen)
 		{
@@ -1126,7 +1170,7 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		}
 		return true;
 	}
-	if (cmd == "/compact")
+	if (name == "compact")
 	{
 		std::thread([this] {
 			auto status = api->CompactNow(state->sessionId);
@@ -1149,10 +1193,10 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		}).detach();
 		return true;
 	}
-	if (cmd == "/fork")
+	if (name == "fork")
 	{
-		std::thread([this] {
-			auto result = api->ForkSession(state->sessionId);
+		std::thread([this, title = args] {
+			auto result = api->ForkSession(state->sessionId, title);
 			std::lock_guard lk(state->mutex);
 			if (result.ok())
 			{
@@ -1172,7 +1216,7 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		}).detach();
 		return true;
 	}
-	if (cmd == "/status")
+	if (name == "status")
 	{
 		std::lock_guard lk(state->mutex);
 		state->transcript.push_back({
@@ -1181,26 +1225,36 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 				"session={} model={} mode={}",
 				state->sessionId.empty() ? "-" : state->sessionId,
 				state->model.empty() ? "-" : state->model,
-				state->permissionMode == config::PermissionMode::Yolo ? "YOLO" : "Manual"),
+					PermissionModeLabel(state->permissionMode)),
 		});
 		PostRender();
 		return true;
 	}
-	if (cmd == "/version")
+	if (name == "usage")
 	{
 		std::lock_guard lk(state->mutex);
 		state->transcript.push_back({
 			.kind = TranscriptEntry::Kind::System,
-			.text = "CodeHarness v0.1.0",
+			.text = fmt::format("usage={} tokens", TotalTokens(state->lastUsage)),
 		});
 		PostRender();
 		return true;
 	}
-	if (cmd.rfind("/rename ", 0) == 0)
+	if (name == "version")
 	{
-		auto title = std::string(cmd.substr(8));
-		if (title.empty()) return true;
-		std::thread([this, title] {
+		PushSystemMessage(state, "CodeHarness v0.1.0");
+		PostRender();
+		return true;
+	}
+	if (name == "title")
+	{
+		if (args.empty())
+		{
+			PushSystemMessage(state, "Usage: /title <title>");
+			PostRender();
+			return true;
+		}
+		std::thread([this, title = args] {
 			auto status = api->RenameSession(state->sessionId, title);
 			std::lock_guard lk(state->mutex);
 			if (status.ok())
@@ -1221,9 +1275,8 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		}).detach();
 		return true;
 	}
-	if (cmd == "/sessions" || cmd == "/session")
+	if (name == "sessions")
 	{
-		// Load sessions in background, then open the picker
 		std::thread([this] {
 			auto sessions = api->ListSessions(opts.workdir);
 			if (sessions.ok())
@@ -1236,9 +1289,27 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		}).detach();
 		return true;
 	}
-	if (cmd == "/model")
+	if (name == "model")
 	{
-		// Load models in background, then open the settings dialog
+		if (!args.empty())
+		{
+			auto status = api->SetModel(state->sessionId, args);
+			if (status.ok())
+			{
+				std::lock_guard lk(state->mutex);
+				state->model = args;
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = fmt::format("Model switched to: {}", args),
+				});
+			}
+			else
+			{
+				PushSystemMessage(state, fmt::format("Error: {}", status.message()));
+			}
+			PostRender();
+			return true;
+		}
 		std::thread([this] {
 			auto models = api->ListModels();
 			if (models.ok())
@@ -1255,34 +1326,15 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		}).detach();
 		return true;
 	}
-	if (cmd.rfind("/model ", 0) == 0)
+	if (name == "settings")
 	{
-		// /model <name> - set directly
-		auto target = std::string(cmd.substr(7));
-		auto status = api->SetModel(state->sessionId, target);
-		if (status.ok())
-		{
-			std::lock_guard lk(state->mutex);
-			state->model = target;
-			state->transcript.push_back({
-				.kind = TranscriptEntry::Kind::System,
-				.text = fmt::format("Model switched to: {}", target),
-			});
-		}
-		else
-		{
-			std::lock_guard lk(state->mutex);
-			state->transcript.push_back({
-				.kind = TranscriptEntry::Kind::System,
-				.text = fmt::format("Error: {}", status.message()),
-			});
-		}
+		std::lock_guard lk(state->mutex);
+		state->activeModal = ModalKind::Settings;
 		PostRender();
 		return true;
 	}
-	if (cmd == "/mode" || cmd == "/yolo")
+	if (name == "yolo")
 	{
-		// Toggle permission mode
 		config::PermissionMode newMode;
 		{
 			std::lock_guard lk(state->mutex);
@@ -1296,13 +1348,28 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 			state->permissionMode = newMode;
 			state->transcript.push_back({
 				.kind = TranscriptEntry::Kind::System,
-				.text = fmt::format("Mode: {}", newMode == config::PermissionMode::Yolo ? "YOLO" : "Manual"),
+				.text = fmt::format("Mode: {}", PermissionModeLabel(newMode)),
 			});
 		}
 		PostRender();
 		return true;
 	}
-	return false;
+	if (name == "auto")
+	{
+		(void)api->SetPermissionMode(state->sessionId, config::PermissionMode::Auto);
+		std::lock_guard lk(state->mutex);
+		state->permissionMode = config::PermissionMode::Auto;
+		state->transcript.push_back({
+			.kind = TranscriptEntry::Kind::System,
+			.text = "Mode: Auto (falls back to Manual until policy rules are implemented)",
+		});
+		PostRender();
+		return true;
+	}
+
+	PushSystemMessage(state, fmt::format("/{0} is recognized from Kimi Code but is not implemented in CodeHarness TUI yet.", name));
+	PostRender();
+	return true;
 }
 
 void TuiApp::SubmitPrompt(std::string text)
@@ -1402,9 +1469,9 @@ void TuiApp::SubmitPrompt(std::string text)
 	}).detach();
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 // Free: Top-level Run function
-// ═══════════════════════════════════════════════════════════════════════
+// =======================================================================
 
 absl::Status Run(host::Host* host, llm::HttpClient* http, const cli::CliOptions& opts)
 {
