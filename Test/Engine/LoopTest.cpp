@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <climits>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -582,6 +583,41 @@ TEST_CASE("Loop: invalid concurrent tool arguments do not execute")
 	REQUIRE(tr.has_value());
 	CHECK(tr->result.isError);
 	CHECK(tr->result.content.find("invalid tool arguments") != std::string::npos);
+}
+
+TEST_CASE("Loop: invalid tool call index is ignored without allocating")
+{
+	MockChatProvider provider;
+	provider.responses = {
+		{.toolCalls = {TC(INT_MAX, "huge", "echo", "{}")}, .finish = llm::FinishReason::ToolCalls},
+	};
+
+	MockTool echo;
+	echo.toolName = "echo";
+	bool executed = false;
+	echo.handler = [&](const json&) {
+		executed = true;
+		return eng::ToolResult{.content = "ok"};
+	};
+
+	EventLog log;
+	eng::TurnInput input{
+		.provider = &provider,
+		.tools = {&echo},
+		.dispatchEvent = log.MakeDispatcher(),
+		.maxSteps = 1,
+	};
+	auto result = eng::RunTurn(std::move(input));
+
+	CHECK(result.stopReason == eng::StopReason::Completed);
+	CHECK_FALSE(executed);
+	CHECK(std::any_of(log.events.begin(), log.events.end(), [](const auto& e) {
+		if (auto* err = std::get_if<eng::ErrorEvent>(&e))
+		{
+			return err->message.find("invalid tool call index") != std::string::npos;
+		}
+		return false;
+	}));
 }
 
 TEST_CASE("Loop: multi-step tool chain")

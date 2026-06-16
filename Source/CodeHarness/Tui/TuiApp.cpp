@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -9,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <typeinfo>
 #include <utility>
 
 #include <ftxui/component/component.hpp>
@@ -477,22 +479,22 @@ ftxui::Component TuiApp::MakeInputField()
 	ftxui::InputOption opt;
 	opt.placeholder = "Type a message... (Enter to send)";
 	opt.multiline = false;
+	opt.on_enter = [this] {
+		if (inputContent.empty())
+		{
+			return;
+		}
+		std::string text = inputContent;
+		inputContent.clear();
+		history.Add(text);
+		historyCursor = history.Entries().size();
+		SubmitPrompt(text);
+	};
 
 	auto input = Input(&inputContent, opt);
+	input->TakeFocus();
 
 	auto withEnter = CatchEvent(input, [this](Event event) -> bool {
-		if (event == Event::Return)
-		{
-			if (!inputContent.empty())
-			{
-				std::string text = inputContent;
-				inputContent.clear();
-				history.Add(text);
-				historyCursor = history.Entries().size();
-				SubmitPrompt(text);
-			}
-			return true;
-		}
 		if (event == Event::CtrlC && state->streaming)
 		{
 			(void)api->Cancel(state->sessionId);
@@ -1305,10 +1307,19 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 
 void TuiApp::SubmitPrompt(std::string text)
 {
-	if (text.empty() || state->sessionId.empty())
+	std::string sessionId;
 	{
+		std::lock_guard lk(state->mutex);
+		sessionId = state->sessionId;
+	}
+
+	if (text.empty() || sessionId.empty())
+	{
+		spdlog::debug("tui: ignoring prompt submit text_len={} session_empty={}", text.size(), sessionId.empty());
 		return;
 	}
+
+	spdlog::debug("tui: submit prompt session={} text_len={}", sessionId, text.size());
 
 	if (text[0] == '/')
 	{
@@ -1329,28 +1340,61 @@ void TuiApp::SubmitPrompt(std::string text)
 	}
 	PostRender();
 
-	// Detach a thread to run the prompt without blocking the UI
-	std::thread([this, text] {
-		auto result = api->Prompt(state->sessionId, text);
-		if (!result.ok())
+	// Detach a thread to run the prompt without blocking the UI.
+	std::thread([this, sessionId, text] {
+		try
 		{
-			spdlog::error("tui: prompt error: {}", result.status().message());
+			spdlog::debug("tui: prompt thread start session={} text_len={}", sessionId, text.size());
+			auto result = api->Prompt(sessionId, text);
+			if (!result.ok())
+			{
+				spdlog::error("tui: prompt error: {}", result.status().message());
+				{
+					std::lock_guard lk(state->mutex);
+					state->lastError = std::string(result.status().message());
+					state->transcript.push_back({
+						.kind = TranscriptEntry::Kind::System,
+						.text = fmt::format("Error: {}", result.status().message()),
+					});
+					state->streaming = false;
+				}
+				PostRender();
+			}
+			else
+			{
+				spdlog::debug("tui: prompt completed session={} steps={}", sessionId, result->stepsExecuted);
+				{
+					std::lock_guard lk(state->mutex);
+					state->lastUsage = result->usage;
+					state->streaming = false;
+				}
+				PostRender();
+			}
+		}
+		catch (const std::exception& e)
+		{
+			spdlog::error("tui: prompt threw exception type={} what={}", typeid(e).name(), e.what());
 			{
 				std::lock_guard lk(state->mutex);
-				state->lastError = std::string(result.status().message());
+				state->lastError = e.what();
 				state->transcript.push_back({
 					.kind = TranscriptEntry::Kind::System,
-					.text = fmt::format("Error: {}", result.status().message()),
+					.text = fmt::format("Error: {}", e.what()),
 				});
 				state->streaming = false;
 			}
 			PostRender();
 		}
-		else
+		catch (...)
 		{
+			spdlog::error("tui: prompt threw unknown exception");
 			{
 				std::lock_guard lk(state->mutex);
-				state->lastUsage = result->usage;
+				state->lastError = "unknown prompt exception";
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = "Error: unknown prompt exception",
+				});
 				state->streaming = false;
 			}
 			PostRender();

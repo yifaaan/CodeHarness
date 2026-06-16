@@ -35,30 +35,66 @@ namespace codeharness::llm
 		constexpr auto ReadTimeout = std::chrono::seconds(120);
 		constexpr auto ShutdownTimeout = std::chrono::seconds(5);
 
+		std::string HostHeader(const HttpRequest& req)
+		{
+			const bool defaultPort = (req.useTls && req.port == "443") || (!req.useTls && req.port == "80");
+			if (defaultPort || req.port.empty())
+			{
+				return req.host;
+			}
+			return fmt::format("{}:{}", req.host, req.port);
+		}
+
 		absl::Status ErrorCodeToStatus(beast::error_code ec, std::string_view context)
 		{
+			const auto stableError = fmt::format("{}:{}", ec.category().name(), ec.value());
+			spdlog::debug("http: {} failed category={} value={} message={}",
+						  context, ec.category().name(), ec.value(), ec.message());
 			if (ec == asio::error::host_not_found || ec == asio::error::service_not_found)
 			{
-				return absl::NotFoundError(fmt::format("{}: {}", context, ec.message()));
+				return absl::NotFoundError(fmt::format("{}: {}", context, stableError));
 			}
 			if (ec == asio::error::connection_refused || ec == asio::error::connection_reset || ec == asio::error::eof ||
 				ec == ssl::error::stream_truncated)
 			{
-				return absl::UnavailableError(fmt::format("{}: {}", context, ec.message()));
+				return absl::UnavailableError(fmt::format("{}: {}", context, stableError));
 			}
-			return absl::InternalError(fmt::format("{}: {}", context, ec.message()));
+			return absl::InternalError(fmt::format("{}: {}", context, stableError));
+		}
+
+		void ShutdownStream(ssl::stream<beast::tcp_stream>& stream)
+		{
+			beast::get_lowest_layer(stream).expires_after(ShutdownTimeout);
+			beast::error_code shutdownEc;
+			stream.shutdown(shutdownEc);
+			if (shutdownEc && shutdownEc != ssl::error::stream_truncated && shutdownEc != beast::errc::not_connected)
+			{
+				spdlog::debug("TLS shutdown: {}", shutdownEc.message());
+			}
+		}
+
+		void ShutdownStream(beast::tcp_stream& stream)
+		{
+			beast::get_lowest_layer(stream).expires_after(ShutdownTimeout);
+			beast::error_code shutdownEc;
+			stream.socket().shutdown(tcp::socket::shutdown_both, shutdownEc);
+			if (shutdownEc && shutdownEc != beast::errc::not_connected)
+			{
+				spdlog::debug("TCP shutdown: {}", shutdownEc.message());
+			}
 		}
 
 		template <typename Stream>
 		absl::StatusOr<HttpResponse> DoStreamRequest(Stream& stream, const HttpRequest& req, const StreamChunkCallback& onChunk, std::stop_token stopToken)
 		{
 			beast::error_code ec;
+			spdlog::debug("http: request start method={} host={} path={} body_bytes={}", req.method, req.host, req.path, req.body.size());
 
 			http::request<http::string_body> httpReq;
 			httpReq.method_string(req.method);
 			httpReq.target(req.path);
 			httpReq.version(11);
-			httpReq.set(http::field::host, req.host);
+			httpReq.set(http::field::host, HostHeader(req));
 			httpReq.set(http::field::user_agent, "CodeHarness/0.1");
 			for (const auto& [key, value] : req.headers)
 			{
@@ -83,6 +119,7 @@ namespace codeharness::llm
 				return ErrorCodeToStatus(ec, "failed to read response headers");
 
 			int status = parser.get().result_int();
+			spdlog::debug("http: response headers status={}", status);
 			auto& body = parser.get().body();
 
 			if (status != 200)
@@ -97,7 +134,10 @@ namespace codeharness::llm
 					http::read_some(stream, buffer, parser, readEc);
 					auto n = sizeof(errBuf) - body.size;
 					if (n > 0)
+					{
+						spdlog::trace("http: error body chunk bytes={}", n);
 						errBody.append(errBuf, n);
+					}
 					if (readEc == http::error::need_buffer)
 						continue;
 					if (readEc == http::error::end_of_stream)
@@ -128,6 +168,7 @@ namespace codeharness::llm
 				auto bytesRead = sizeof(chunkBuf) - body.size;
 				if (bytesRead > 0)
 				{
+					spdlog::trace("http: response chunk bytes={}", bytesRead);
 					if (!onChunk(std::string_view(chunkBuf, bytesRead)))
 						break;
 				}
@@ -142,13 +183,7 @@ namespace codeharness::llm
 					return ErrorCodeToStatus(readEc, "read error");
 			}
 
-			beast::get_lowest_layer(stream).expires_after(ShutdownTimeout);
-			beast::error_code shutdownEc;
-			stream.shutdown(shutdownEc);
-			if (shutdownEc && shutdownEc != ssl::error::stream_truncated && shutdownEc != beast::errc::not_connected)
-			{
-				spdlog::debug("TLS shutdown: {}", shutdownEc.message());
-			}
+			ShutdownStream(stream);
 
 			return HttpResponse{status, {}, ""};
 		}
@@ -181,7 +216,25 @@ namespace codeharness::llm
 	{
 		if (!req.useTls)
 		{
-			return absl::UnimplementedError("plain HTTP not yet supported, use TLS");
+			asio::io_context ioc;
+			beast::tcp_stream stream(ioc);
+
+			beast::error_code ec;
+			tcp::resolver resolver(ioc);
+			auto endpoints = resolver.resolve(req.host, req.port, ec);
+			if (ec)
+			{
+				return ErrorCodeToStatus(ec, fmt::format("failed to resolve '{}'", req.host));
+			}
+
+			beast::get_lowest_layer(stream).expires_after(ConnectTimeout);
+			beast::get_lowest_layer(stream).connect(endpoints, ec);
+			if (ec)
+			{
+				return ErrorCodeToStatus(ec, fmt::format("failed to connect to '{}:{}'", req.host, req.port));
+			}
+
+			return DoStreamRequest(stream, req, onChunk, stopToken);
 		}
 
 		asio::io_context ioc;

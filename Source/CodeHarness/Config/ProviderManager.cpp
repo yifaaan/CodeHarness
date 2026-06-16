@@ -41,28 +41,47 @@ namespace codeharness::config
 			return t == ProviderType::OpenAi || t == ProviderType::Kimi || t == ProviderType::OpenAiResponses;
 		}
 
-		// Split a `base_url` like "https://host[:port]/v1" into the host and the
-		// full completions path. Missing prefix defaults to `/v1`; the suffix
-		// `/chat/completions` is always appended.
-		std::pair<std::string, std::string> SplitBaseUrl(const std::optional<std::string>& baseUrl)
+		struct BaseUrlParts
+		{
+			std::string host = "api.openai.com";
+			std::string port = "443";
+			std::string path = "/v1/chat/completions";
+			bool useTls = true;
+		};
+
+		// Split a `base_url` like "https://host[:port]/v1" into the host, port,
+		// TLS mode, and full completions path. Missing prefix defaults to `/v1`;
+		// the suffix `/chat/completions` is always appended.
+		BaseUrlParts SplitBaseUrl(const std::optional<std::string>& baseUrl)
 		{
 			if (!baseUrl || baseUrl->empty())
-				return {"api.openai.com", "/v1/chat/completions"};
+				return {};
 
+			BaseUrlParts out;
 			std::string url = *baseUrl;
 			if (auto pos = url.find("://"); pos != std::string::npos)
+			{
+				auto scheme = url.substr(0, pos);
+				out.useTls = scheme != "http";
+				out.port = out.useTls ? "443" : "80";
 				url = url.substr(pos + 3);
+			}
 
-			std::string host;
 			std::string prefix;
 			if (auto pos = url.find('/'); pos != std::string::npos)
 			{
-				host = url.substr(0, pos);
+				out.host = url.substr(0, pos);
 				prefix = url.substr(pos);
 			}
 			else
 			{
-				host = url;
+				out.host = url;
+			}
+
+			if (auto pos = out.host.rfind(':'); pos != std::string::npos && out.host.find(']') == std::string::npos)
+			{
+				out.port = out.host.substr(pos + 1);
+				out.host = out.host.substr(0, pos);
 			}
 
 			while (prefix.size() > 1 && prefix.back() == '/')
@@ -70,7 +89,8 @@ namespace codeharness::config
 			if (prefix.empty())
 				prefix = "/v1";
 
-			return {host, prefix + "/chat/completions"};
+			out.path = prefix + "/chat/completions";
+			return out;
 		}
 
 		// Resolve the API key for a provider from explicit config sources. The
@@ -164,9 +184,11 @@ namespace codeharness::config
 		oc.apiKey = ResolveApiKey(pc);
 		oc.model = mit->second.model;
 
-		auto [h, p] = SplitBaseUrl(pc.baseUrl);
-		oc.host = h;
-		oc.path = p;
+		auto baseUrl = SplitBaseUrl(pc.baseUrl);
+		oc.host = std::move(baseUrl.host);
+		oc.port = std::move(baseUrl.port);
+		oc.path = std::move(baseUrl.path);
+		oc.useTls = baseUrl.useTls;
 
 		// Provider-specific thinking overrides the global block.
 		const std::optional<ThinkingConfig>& thinking = pc.thinking ? pc.thinking : config.thinking;

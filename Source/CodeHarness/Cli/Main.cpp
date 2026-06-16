@@ -1,5 +1,7 @@
 #include <iostream>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "Cli/CliParser.h"
 #include "Cli/RunPrompt.h"
@@ -8,6 +10,8 @@
 #include "Tui/TuiApp.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
+#include "spdlog/logger.h"
+#include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/spdlog.h"
 
 namespace
@@ -21,8 +25,26 @@ namespace
 		{
 			lvl = std::getenv("CODEHARNESS_LOG_LEVEL");
 		}
-		std::string level = (lvl && lvl[0]) ? std::string(lvl) : "warn";
-		spdlog::set_level(spdlog::level::from_str(level));
+		const std::string level = (lvl && lvl[0]) ? std::string(lvl) : "warn";
+		const auto parsedLevel = spdlog::level::from_str(level);
+
+		try
+		{
+			auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("log.log", true);
+			std::vector<spdlog::sink_ptr> sinks{fileSink};
+			auto logger = std::make_shared<spdlog::logger>("codeharness", sinks.begin(), sinks.end());
+			logger->set_level(parsedLevel);
+
+			spdlog::set_default_logger(std::move(logger));
+			spdlog::set_level(parsedLevel);
+			spdlog::flush_on(spdlog::level::trace);
+		}
+		catch (const spdlog::spdlog_ex& ex)
+		{
+			fmt::print(stderr, "codeharness: failed to initialize file logging: {}\n", ex.what());
+			spdlog::set_level(parsedLevel);
+			spdlog::flush_on(spdlog::level::trace);
+		}
 	}
 
 } // namespace

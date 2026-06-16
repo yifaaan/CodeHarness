@@ -64,7 +64,7 @@ namespace
 	config::KimiConfig MakeConfig()
 	{
 		config::KimiConfig cfg;
-		cfg.defaultModel = "gpt-4o";
+		cfg.defaultModel = "gpt-5.5";
 
 		config::ProviderConfig openai;
 		openai.type = config::ProviderType::OpenAi;
@@ -74,8 +74,8 @@ namespace
 
 		config::ModelAlias m;
 		m.provider = "my-openai";
-		m.model = "gpt-4o";
-		cfg.models["gpt-4o"] = m;
+		m.model = "gpt-5.5";
+		cfg.models["gpt-5.5"] = m;
 		return cfg;
 	}
 
@@ -87,10 +87,10 @@ TEST_CASE("ProviderManager: resolves alias to OpenAiProvider with correct model"
 	mock.responseChunks = {Sse(R"({"choices":[{"delta":{},"finish_reason":"stop"}]})"), "data: [DONE]\n\n"};
 
 	config::ProviderManager mgr(MakeConfig(), &mock);
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 	CHECK(resolved->provider->Name() == "openai");
-	CHECK(resolved->provider->ModelName() == "gpt-4o");
+	CHECK(resolved->provider->ModelName() == "gpt-5.5");
 	CHECK(resolved->providerName == "my-openai");
 	CHECK(resolved->providerType == config::ProviderType::OpenAi);
 }
@@ -101,7 +101,7 @@ TEST_CASE("ProviderManager: wires api_key into Authorization header")
 	mock.responseChunks = {Sse(R"({"choices":[{"delta":{},"finish_reason":"stop"}]})"), "data: [DONE]\n\n"};
 
 	config::ProviderManager mgr(MakeConfig(), &mock);
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 
 	CHECK(resolved->provider->Generate("", {}, {}, {}).ok());
@@ -114,11 +114,31 @@ TEST_CASE("ProviderManager: splits base_url into host and path")
 	mock.responseChunks = {Sse(R"({"choices":[{"delta":{},"finish_reason":"stop"}]})"), "data: [DONE]\n\n"};
 
 	config::ProviderManager mgr(MakeConfig(), &mock);
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 
 	CHECK(resolved->provider->Generate("", {}, {}, {}).ok());
 	CHECK(mock.captured.host == "proxy.example.com");
+	CHECK(mock.captured.port == "443");
+	CHECK(mock.captured.useTls == true);
+	CHECK(mock.captured.path == "/v1/chat/completions");
+}
+
+TEST_CASE("ProviderManager: splits local http base_url into host port and path")
+{
+	MockHttpClient mock;
+	mock.responseChunks = {Sse(R"({"choices":[{"delta":{},"finish_reason":"stop"}]})"), "data: [DONE]\n\n"};
+
+	auto cfg = MakeConfig();
+	cfg.providers["my-openai"].baseUrl = "http://127.0.0.1:8317/v1";
+	config::ProviderManager mgr(cfg, &mock);
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
+	REQUIRE(resolved.ok());
+
+	CHECK(resolved->provider->Generate("", {}, {}, {}).ok());
+	CHECK(mock.captured.host == "127.0.0.1");
+	CHECK(mock.captured.port == "8317");
+	CHECK(mock.captured.useTls == false);
 	CHECK(mock.captured.path == "/v1/chat/completions");
 }
 
@@ -131,10 +151,12 @@ TEST_CASE("ProviderManager: defaults host and path when base_url absent")
 	cfg.providers["my-openai"].baseUrl.reset();
 	config::ProviderManager mgr(cfg, &mock);
 
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 	CHECK(resolved->provider->Generate("", {}, {}, {}).ok());
 	CHECK(mock.captured.host == "api.openai.com");
+	CHECK(mock.captured.port == "443");
+	CHECK(mock.captured.useTls == true);
 	CHECK(mock.captured.path == "/v1/chat/completions");
 }
 
@@ -148,7 +170,7 @@ TEST_CASE("ProviderManager: uses env sub-table when api_key absent")
 	cfg.providers["my-openai"].env["OPENAI_API_KEY"] = "sk-from-env-table";
 	config::ProviderManager mgr(cfg, &mock);
 
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 	CHECK(resolved->provider->Generate("", {}, {}, {}).ok());
 	CHECK(AuthBearer(mock.captured).value_or("") == "Bearer sk-from-env-table");
@@ -162,7 +184,7 @@ TEST_CASE("ProviderManager: provider thinking overrides global block")
 	cfg.providers["my-openai"].thinking = config::ThinkingConfig{.effort = llm::ThinkingEffort::High};
 	config::ProviderManager mgr(cfg, &mock);
 
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 	REQUIRE(resolved->provider->ThinkingEffortLevel().has_value());
 	CHECK(*resolved->provider->ThinkingEffortLevel() == llm::ThinkingEffort::High);
@@ -175,7 +197,7 @@ TEST_CASE("ProviderManager: global thinking applies when provider has none")
 	cfg.thinking = config::ThinkingConfig{.effort = llm::ThinkingEffort::Medium};
 	config::ProviderManager mgr(cfg, &mock);
 
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 	REQUIRE(resolved->provider->ThinkingEffortLevel().has_value());
 	CHECK(*resolved->provider->ThinkingEffortLevel() == llm::ThinkingEffort::Medium);
@@ -186,12 +208,12 @@ TEST_CASE("ProviderManager: ResolveConfigForModel reports capability fields")
 	MockHttpClient mock;
 	config::ProviderManager mgr(MakeConfig(), &mock);
 
-	auto rc = mgr.ResolveConfigForModel("gpt-4o");
+	auto rc = mgr.ResolveConfigForModel("gpt-5.5");
 	REQUIRE(rc.ok());
-	CHECK(rc->modelName == "gpt-4o");
+	CHECK(rc->modelName == "gpt-5.5");
 	CHECK(rc->providerType == config::ProviderType::OpenAi);
-	CHECK(rc->supportsImages == true);
-	CHECK(rc->maxTokens == 128000);
+	CHECK(rc->supportsImages == false);
+	CHECK(rc->maxTokens == llm::UnknownCapability.maxContextTokens);
 }
 
 TEST_CASE("ProviderManager: unknown alias returns NotFound")
@@ -241,7 +263,7 @@ TEST_CASE("ProviderManager: kimi provider type is OpenAI-compatible")
 	cfg.providers["my-openai"].type = config::ProviderType::Kimi;
 	config::ProviderManager mgr(cfg, &mock);
 
-	auto resolved = mgr.ResolveForModel("gpt-4o");
+	auto resolved = mgr.ResolveForModel("gpt-5.5");
 	REQUIRE(resolved.ok());
 	CHECK(resolved->providerType == config::ProviderType::Kimi);
 	CHECK(resolved->provider->Name() == "openai");

@@ -17,47 +17,34 @@
     },
     {
       "name": "windows-msvc",
-      "displayName": "Windows MSVC",
       "inherits": "base",
       "generator": "Visual Studio 18 2026",
       "architecture": "x64",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {
-      "name": "linux-debug",
-      "displayName": "Linux Debug",
+      "name": "linux",
+      "hidden": true,
       "inherits": "base",
       "generator": "Unix Makefiles",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
         "VCPKG_TARGET_TRIPLET": "x64-linux"
       }
     },
     {
-      "name": "linux-release",
-      "displayName": "Linux Release",
-      "inherits": "base",
-      "generator": "Unix Makefiles",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
+      "name": "linux-debug",
+      "inherits": "linux",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_TARGET_TRIPLET": "x64-linux"
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-release",
+      "inherits": "linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
@@ -65,92 +52,51 @@
     {
       "name": "windows-msvc-debug",
       "configurePreset": "windows-msvc",
-      "configuration": "Debug",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
+      "configuration": "Debug"
     },
     {
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc",
-      "configuration": "Release",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
+      "configuration": "Release"
     },
     {
       "name": "linux-debug",
-      "configurePreset": "linux-debug",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
+      "configurePreset": "linux-debug"
     },
     {
       "name": "linux-release",
-      "configurePreset": "linux-release",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
+      "configurePreset": "linux-release"
     }
   ],
   "testPresets": [
     {
-      "name": "windows-msvc-debug",
-      "configurePreset": "windows-msvc",
-      "configuration": "Debug",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
+      "name": "test",
+      "hidden": true,
       "output": {
         "outputOnFailure": true
       }
+    },
+    {
+      "name": "windows-msvc-debug",
+      "inherits": "test",
+      "configurePreset": "windows-msvc",
+      "configuration": "Debug"
     },
     {
       "name": "windows-msvc-release",
+      "inherits": "test",
       "configurePreset": "windows-msvc",
-      "configuration": "Release",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
-      "output": {
-        "outputOnFailure": true
-      }
+      "configuration": "Release"
     },
     {
       "name": "linux-debug",
-      "configurePreset": "linux-debug",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
-      "output": {
-        "outputOnFailure": true
-      }
+      "inherits": "test",
+      "configurePreset": "linux-debug"
     },
     {
       "name": "linux-release",
-      "configurePreset": "linux-release",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      },
-      "output": {
-        "outputOnFailure": true
-      }
+      "inherits": "test",
+      "configurePreset": "linux-release"
     }
   ]
 }

@@ -17,10 +17,12 @@ namespace codeharness::llm
 	{
 		std::string apiKey;
 		std::string host = "api.openai.com";
+		std::string port = "443";
 		std::string path = "/v1/chat/completions";
 		std::string model;
 		std::optional<ThinkingEffort> thinking;
 		int maxCompletionTokens = 0;
+		bool useTls = true;
 	};
 
 	class OpenAiProvider : public ChatProvider

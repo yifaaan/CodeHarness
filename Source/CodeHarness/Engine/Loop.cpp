@@ -9,12 +9,15 @@
 #include "Hooks/HookTypes.h"
 #include "ToolScheduler.h"
 #include "absl/status/status.h"
+#include "fmt/format.h"
+#include "spdlog/spdlog.h"
 
 namespace codeharness::engine
 {
 
 	namespace
 	{
+		constexpr int kMaxToolCallIndex = 64;
 
 		void Dispatch(const TurnInput& input, LoopEvent event)
 		{
@@ -37,6 +40,7 @@ namespace codeharness::engine
 		{
 			toolDefs.push_back(t->GetToolDefinition());
 		}
+		spdlog::debug("engine: RunTurn start history={} tools={} max_steps={}", result.updatedHistory.size(), toolDefs.size(), input.maxSteps);
 
 		for (int step = 1; step <= input.maxSteps; ++step)
 		{
@@ -65,6 +69,11 @@ namespace codeharness::engine
 				.onThink = {},
 				.onToolCallStart =
 					[&](int idx, std::string_view id, std::string_view name) {
+						if (idx < 0 || idx >= kMaxToolCallIndex)
+						{
+							Dispatch(input, ErrorEvent{fmt::format("invalid tool call index: {}", idx)});
+							return;
+						}
 						if (idx >= static_cast<int>(pendingCalls.size()))
 						{
 							pendingCalls.resize(idx + 1);
@@ -74,6 +83,11 @@ namespace codeharness::engine
 					},
 				.onToolCallDelta =
 					[&](int idx, std::string_view args) {
+						if (idx < 0 || idx >= kMaxToolCallIndex)
+						{
+							Dispatch(input, ErrorEvent{fmt::format("invalid tool call index: {}", idx)});
+							return;
+						}
 						if (idx < static_cast<int>(pendingCalls.size()))
 						{
 							pendingCalls[idx].arguments += args;
@@ -86,8 +100,31 @@ namespace codeharness::engine
 					},
 			};
 
-			auto status =
-				input.provider->Generate(input.systemPrompt, toolDefs, result.updatedHistory, callbacks, input.stopToken);
+			spdlog::debug("engine: step {} Generate start history={} tools={} system_prompt_len={}",
+						  step, result.updatedHistory.size(), toolDefs.size(), input.systemPrompt.size());
+			auto status = absl::OkStatus();
+			try
+			{
+				status = input.provider->Generate(input.systemPrompt, toolDefs, result.updatedHistory, callbacks, input.stopToken);
+			}
+			catch (const std::bad_alloc&)
+			{
+				result.stopReason = StopReason::Error;
+				result.errorMessage = "bad allocation during provider Generate";
+				spdlog::error("engine: step {} bad_alloc during Generate history={} tools={}", step, result.updatedHistory.size(), toolDefs.size());
+				Dispatch(input, ErrorEvent{result.errorMessage});
+				return result;
+			}
+			catch (const std::exception& e)
+			{
+				result.stopReason = StopReason::Error;
+				result.errorMessage = fmt::format("provider Generate threw: {}", e.what());
+				spdlog::error("engine: step {} Generate threw: {}", step, e.what());
+				Dispatch(input, ErrorEvent{result.errorMessage});
+				return result;
+			}
+			spdlog::debug("engine: step {} Generate end ok={} assistant_len={} pending_calls={}",
+						  step, status.ok(), assistantText.size(), pendingCalls.size());
 
 			if (!status.ok())
 			{

@@ -40,6 +40,8 @@ namespace codeharness::agent
 
 	absl::StatusOr<PromptResult> Agent::Prompt(std::string_view text)
 	{
+		spdlog::debug("agent: Prompt start text_len={} status={} history={} provider={}",
+					  text.size(), static_cast<int>(status), history.Size(), provider != nullptr ? provider->ModelName() : "<null>");
 		if (status != AgentStatus::Idle)
 		{
 			return absl::FailedPreconditionError("agent already has an active turn");
@@ -55,6 +57,7 @@ namespace codeharness::agent
 		{
 			return loopTools.status();
 		}
+		spdlog::debug("agent: resolved loop tools count={}", loopTools->size());
 
 		// UserPromptSubmit hook (blocking). Fires before the prompt reaches the
 		// loop/LLM. Fail-open: a hook error never blocks the turn.
@@ -132,6 +135,7 @@ namespace codeharness::agent
 
 		std::vector<llm::Message> turnHistory = history.Messages();
 		turnHistory.push_back(userMessage);
+		spdlog::debug("agent: turn history built messages={} tokens_est={}", turnHistory.size(), history.TokenCount());
 
 		// Build the effective system prompt: the user's base prompt plus (when
 		// skills are wired) the model-invocable skill catalog and any prompt-
@@ -201,6 +205,7 @@ namespace codeharness::agent
 		};
 
 		auto turnResult = engine::RunTurn(std::move(input));
+		spdlog::debug("agent: RunTurn returned stop={} steps={} error='{}'", static_cast<int>(turnResult.stopReason), turnResult.stepsExecuted, turnResult.errorMessage);
 		history.ReplaceAll(std::move(turnResult.updatedHistory));
 
 		PromptResult result{
