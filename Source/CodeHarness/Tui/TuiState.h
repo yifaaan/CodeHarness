@@ -149,6 +149,8 @@ struct TuiState
 	// Session info
 	std::string sessionId;
 	std::string model;
+	std::string workdir;
+	std::string version = "CodeHarness v0.1.0";
 	config::PermissionMode permissionMode = config::PermissionMode::Manual;
 
 	// Available sessions (loaded by SessionPicker)

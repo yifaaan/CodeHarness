@@ -9,8 +9,7 @@ namespace codeharness::tui
 
 struct TuiState;
 
-/// Bottom status bar component showing model, mode, streaming status, and usage.
-class StatusBar
+class WelcomePanel
 {
 public:
 	static ftxui::Component Create(std::shared_ptr<TuiState> state);

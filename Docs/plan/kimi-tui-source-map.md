@@ -10,7 +10,7 @@ This map tracks the 1:1 TUI port from Kimi Code's TypeScript `apps/kimi-code/src
 | --- | --- | --- | --- | --- |
 | 1 | `tui-state.ts`, `types.ts` | `TuiState.h`, `EventRouter.*` | Partial | Current state covers transcript, tools, modal, theme, session, and usage. Missing live-pane and richer app/dialog state. |
 | 2 | `commands/*` | `Utils/SlashCommands.*`, `TuiApp::HandleSlashCommand` | Partial | Command catalog and parsing are being expanded first; unsupported commands should surface clear status messages. |
-| 3 | `components/chrome/*` | `Components/StatusBar`, `ActivityIndicator`, `TodoPanel`, `QueuePanel`, future banner/welcome | Partial | Current layout has status/activity/todo/queue; missing faithful banner, footer fields, and welcome. |
+| 3 | `components/chrome/*` | `Components/StatusBar`, `ActivityIndicator`, `TodoPanel`, `QueuePanel`, `Banner`, `WelcomePanel` | Partial | Banner, welcome, and a Kimi-like two-line footer are wired; git/goal/task badges and weighted rotating tips remain deferred. |
 | 4 | `components/messages/*` | `Components/MessageEntry`, `ToolCallCard`, `ThinkingView`, renderers | Partial | Current transcript supports user/assistant/tool/system; missing dedicated usage/status/plan/skill panels. |
 | 5 | `components/dialogs/*` | `Make*Dialog`, future dialog components | Partial | Approval/question/session/settings/help exist; missing model/provider/permission/theme/tasks/undo dialogs. |
 | 6 | `controllers/*` | future `Controllers/*` | Not started | Current behavior lives mostly in `TuiApp.cpp`; split after state and commands stabilize. |
@@ -77,3 +77,4 @@ The reference command list comes from `apps/kimi-code/src/tui/commands/registry.
 - Unsupported commands should render a concise system message instead of being sent to the model.
 - Add backend APIs only when a command cannot be represented as a clear UI stub.
 - Prefer moving behavior out of `TuiApp.cpp` after command parity is visible and tested.
+- TUI chrome files intentionally use Unicode visual glyphs; save them as UTF-8 without BOM and verify with byte-level checks on Windows.

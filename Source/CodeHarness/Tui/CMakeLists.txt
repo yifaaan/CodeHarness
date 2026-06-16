@@ -10,6 +10,7 @@ add_library(codeharness_tui
   Theme/Theme.cpp
   Theme/TerminalTheme.cpp
   Components/ChatPane.cpp
+  Components/Banner.cpp
   Components/InputField.cpp
   Components/MessageEntry.cpp
   Components/ToolCallCard.cpp
@@ -26,6 +27,7 @@ add_library(codeharness_tui
   Components/TodoPanel.cpp
   Components/QueuePanel.cpp
   Components/ThinkingView.cpp
+  Components/WelcomePanel.cpp
   Renderers/MarkdownRenderer.cpp
   Renderers/CodeHighlighter.cpp
   Renderers/DiffRenderer.cpp

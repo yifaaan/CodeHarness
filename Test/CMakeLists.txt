@@ -35,6 +35,7 @@ add_executable(codeharness_tests
   Skills/SkillRegistryTest.cpp
   Skills/SkillManagerTest.cpp
   Skills/SkillToolTest.cpp
+  Tui/ChromeComponentsTest.cpp
   Tui/MarkdownRendererTest.cpp
   Tui/SlashCommandsTest.cpp
 )

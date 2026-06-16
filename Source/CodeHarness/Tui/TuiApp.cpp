@@ -27,6 +27,7 @@
 #include "Rpc/CoreApi.h"
 #include "Rpc/RpcTypes.h"
 #include "Tui/Components/ActivityIndicator.h"
+#include "Tui/Components/Banner.h"
 #include "Tui/Components/ChatPane.h"
 #include "Tui/Components/CompactionIndicator.h"
 #include "Tui/Components/InputField.h"
@@ -34,6 +35,7 @@
 #include "Tui/Components/SidePanel.h"
 #include "Tui/Components/StatusBar.h"
 #include "Tui/Components/TodoPanel.h"
+#include "Tui/Components/WelcomePanel.h"
 #include "Tui/EventRouter.h"
 #include "Tui/Renderers/MarkdownRenderer.h"
 #include "Tui/Components/ToolCallCard.h"
@@ -93,6 +95,7 @@ TuiApp::TuiApp(std::unique_ptr<rpc::CoreApi> api, const cli::CliOptions& opts)
 	state->darkMode = dark;
 	state->colors = MakePalette(dark);
 	state->agentStatus = agent::AgentStatus::Idle;
+	state->workdir = opts.workdir;
 }
 
 TuiApp::~TuiApp()
@@ -215,11 +218,9 @@ absl::Status TuiApp::InitializeSession()
 		std::lock_guard lk(state->mutex);
 		state->sessionId = sessionId;
 		state->model = effectiveModel;
+		state->workdir = sessionOpts.workdir;
 		state->permissionMode = sessionOpts.permissionMode;
-		state->transcript.push_back({
-			.kind = TranscriptEntry::Kind::System,
-			.text = fmt::format("Session started: {}", sessionId),
-		});
+		state->statusMessage = fmt::format("Session started: {}", sessionId);
 	}
 
 	spdlog::info("tui: session {} initialized", sessionId);
@@ -354,6 +355,8 @@ ftxui::Component TuiApp::MakeMainContainer()
 	// Read-only panels (no focus handling) - their Render() output is composed
 	// manually into the layout Element below.
 	auto activity = ActivityIndicator::Create(state);
+	auto banner = Banner::Create(state);
+	auto welcome = WelcomePanel::Create(state);
 	auto todo = TodoPanel::Create(state);
 	auto queue = QueuePanel::Create(state);
 	auto compaction = CompactionIndicator::Create(state);
@@ -370,11 +373,13 @@ ftxui::Component TuiApp::MakeMainContainer()
 	// Single Renderer composes the full main body. This avoids nesting
 	// non-focusable Renderers inside focus-handling Containers (which has
 	// historically triggered asserts in some FTXUI builds).
-	auto body = Renderer(focusColumn, [this, focusColumn, activity, todo, queue, compaction, side] {
+	auto body = Renderer(focusColumn, [this, focusColumn, activity, banner, welcome, todo, queue, compaction, side] {
 		// chat + input own focus; their Render() output is the focus column.
 		Element chatInput = focusColumn->Render() | flex;
 
 		Element mainCol = vbox({
+			welcome->Render(),
+			banner->Render(),
 			chatInput,
 			activity->Render(),
 			todo->Render(),
@@ -563,54 +568,7 @@ ftxui::Component TuiApp::MakeInputField()
 
 ftxui::Component TuiApp::MakeStatusBar()
 {
-	using namespace ftxui;
-
-	auto render = Renderer([this] {
-		std::lock_guard lk(state->mutex);
-
-		auto modelStr = state->model.empty() ? "no model" : state->model;
-		auto modeStr = PermissionModeLabel(state->permissionMode);
-
-		// Status indicator (left side): spinner when streaming, dot when idle
-		Element statusIndicator;
-		if (state->streaming)
-		{
-			statusIndicator = hbox({
-				spinner(7, spinnerFrame) | color(Color::Cyan),
-				text(" working") | color(Color::Cyan),
-			});
-		}
-		else
-		{
-			statusIndicator = text("* ready") | color(Color::Green);
-		}
-
-		Elements left;
-		left.push_back(text(" "));
-		left.push_back(text(modelStr) | bold | color(Color::Blue));
-		left.push_back(text(" "));
-		left.push_back(text(fmt::format("[{}]", modeStr)) | dim | color(Color::GrayLight));
-
-		Elements right;
-		int64_t tokens = TotalTokens(state->lastUsage);
-		if (tokens > 0)
-		{
-			right.push_back(text(fmt::format(" {} tok", tokens)) | dim | color(Color::GrayLight));
-			right.push_back(text("  "));
-		}
-		right.push_back(statusIndicator);
-		right.push_back(text(" "));
-
-		return vbox({
-			separatorLight(),
-			hbox({
-				hbox(std::move(left)) | flex,
-				hbox(std::move(right)),
-			}),
-		});
-	});
-
-	return render;
+	return StatusBar::Create(state);
 }
 
 ftxui::Component TuiApp::MakeModalOverlay()

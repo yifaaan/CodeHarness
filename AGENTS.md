@@ -1,6 +1,10 @@
 # CodeHarness
 
+## Coding Guidelines
+
 **Map, not encyclopedia.** For deep dives, follow the links.
+- **SUPER IMPORTANT** Your should always follow the coding convention when coding:
+  - `./github/Coding.md`
 
 ## Implemented Modules
 

@@ -1,16 +1,16 @@
 #pragma once
 
-#include <ftxui/component/component.hpp>
-
 #include <memory>
+
+#include <ftxui/component/component.hpp>
 
 namespace codeharness::tui
 {
 
 struct TuiState;
 
-/// Bottom status bar component showing model, mode, streaming status, and usage.
-class StatusBar
+/// Kimi-style top banner shown above an active transcript.
+class Banner
 {
 public:
 	static ftxui::Component Create(std::shared_ptr<TuiState> state);
