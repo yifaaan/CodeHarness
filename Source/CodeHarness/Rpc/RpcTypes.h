@@ -6,11 +6,13 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "Agent/AgentTypes.h"
 #include "Config/ConfigTypes.h"
 #include "Permission/PermissionTypes.h"
 #include "Session/SessionTypes.h"
+#include "Tools/AskUser.h"
 #include "absl/status/statusor.h"
 
 namespace codeharness::host
@@ -46,6 +48,49 @@ namespace codeharness::rpc
 
 	using CoreEventSink = std::function<void(const CoreEvent&)>;
 
+	struct CoreSessionInfo
+	{
+		session::SessionInfo session;
+		std::string model;
+		config::PermissionMode permissionMode = config::PermissionMode::Manual;
+		bool planMode = false;
+		bool active = false;
+	};
+
+	struct ToolInfo
+	{
+		std::string name;
+		std::string description;
+		nlohmann::json inputSchema;
+	};
+
+	struct ModelInfo
+	{
+		std::string alias;
+		std::string provider;
+		std::string model;
+		bool isDefault = false;
+	};
+
+	struct McpServerInfo
+	{
+		std::string name;
+		std::string command;
+		std::vector<std::string> args;
+		std::string cwd;
+		bool enabled = true;
+		bool connected = false;
+	};
+
+	struct BackgroundTaskInfo
+	{
+		std::string taskId;
+		std::string command;
+		std::string cwd;
+		std::string status;
+		int exitCode = -1;
+	};
+
 	struct CoreApiConfig
 	{
 		host::Host* host = nullptr;
@@ -53,6 +98,7 @@ namespace codeharness::rpc
 		ProviderResolver providerResolver;
 		CoreEventSink eventSink;
 		permission::ApprovalCallback approvalCallback;
+		tools::QuestionCallback questionCallback;
 	};
 
 	nlohmann::json PromptResultToJson(const agent::PromptResult& result);

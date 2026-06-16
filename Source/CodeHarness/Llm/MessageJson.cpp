@@ -28,9 +28,62 @@ namespace codeharness::llm
 					result += '\n';
 				result += text->text;
 			}
+			else if (auto* image = std::get_if<ImagePart>(&part))
+			{
+				if (!result.empty())
+					result += '\n';
+				result += fmt::format("[image: {}]", image->url);
+			}
+			else if (auto* video = std::get_if<VideoPart>(&part))
+			{
+				if (!result.empty())
+					result += '\n';
+				result += fmt::format("[video: {}]", video->url);
+			}
 		}
 		return result;
 	}
+
+	namespace
+	{
+
+		nlohmann::json MessageContentToJson(const std::vector<ContentPart>& parts)
+		{
+			bool rich = false;
+			for (const auto& part : parts)
+			{
+				rich = rich || std::holds_alternative<ImagePart>(part) || std::holds_alternative<VideoPart>(part);
+			}
+			if (!rich)
+			{
+				return ConcatTextParts(parts);
+			}
+
+			auto content = nlohmann::json::array();
+			for (const auto& part : parts)
+			{
+				if (auto* text = std::get_if<TextPart>(&part))
+				{
+					content.push_back({{"type", "text"}, {"text", text->text}});
+				}
+				else if (auto* image = std::get_if<ImagePart>(&part))
+				{
+					nlohmann::json obj = {{"type", "image_url"}, {"image_url", {{"url", image->url}}}};
+					if (!image->detail.empty())
+					{
+						obj["image_url"]["detail"] = image->detail;
+					}
+					content.push_back(std::move(obj));
+				}
+				else if (auto* video = std::get_if<VideoPart>(&part))
+				{
+					content.push_back({{"type", "text"}, {"text", fmt::format("[video: {}]", video->url)}});
+				}
+			}
+			return content;
+		}
+
+	} // namespace
 
 	nlohmann::json MessagesToJson(std::string_view systemPrompt, std::span<const Message> messages)
 	{
@@ -52,7 +105,7 @@ namespace codeharness::llm
 				obj["tool_call_id"] = *msg.toolCallId;
 			}
 
-			obj["content"] = ConcatTextParts(msg.content);
+			obj["content"] = MessageContentToJson(msg.content);
 
 			if (msg.role == Role::Assistant && !msg.toolCalls.empty())
 			{

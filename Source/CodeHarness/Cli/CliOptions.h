@@ -9,6 +9,7 @@ namespace codeharness::cli
 	{
 		Prompt,
 		Shell,
+		Tui,
 	};
 
 	enum class OutputFormat

@@ -48,7 +48,20 @@ namespace codeharness::llm
 		std::optional<std::string> encrypted;
 	};
 
-	using ContentPart = std::variant<TextPart, ThinkPart>;
+	struct ImagePart
+	{
+		std::string url;
+		std::string mimeType;
+		std::string detail;
+	};
+
+	struct VideoPart
+	{
+		std::string url;
+		std::string mimeType;
+	};
+
+	using ContentPart = std::variant<TextPart, ThinkPart, ImagePart, VideoPart>;
 
 	struct ToolCall
 	{

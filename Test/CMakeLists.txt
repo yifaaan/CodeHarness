@@ -35,10 +35,12 @@ add_executable(codeharness_tests
   Skills/SkillRegistryTest.cpp
   Skills/SkillManagerTest.cpp
   Skills/SkillToolTest.cpp
+  Tui/MarkdownRendererTest.cpp
 )
 
 target_link_libraries(codeharness_tests PRIVATE
   codeharness
+  codeharness_tui
   doctest::doctest
   reproc++
   fmt::fmt

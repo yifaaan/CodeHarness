@@ -37,11 +37,29 @@ namespace codeharness::rpc
 		absl::StatusOr<std::string> ResumeSession(std::string_view sessionId, CreateSessionOptions options = {});
 		absl::Status CloseSession(std::string_view sessionId);
 		absl::StatusOr<std::vector<session::SessionInfo>> ListSessions(std::string_view workdir = {});
+		absl::StatusOr<CoreSessionInfo> GetSessionInfo(std::string_view sessionId);
+		absl::Status RenameSession(std::string_view sessionId, std::string_view title);
+		absl::StatusOr<std::string> ForkSession(std::string_view sessionId, std::string_view title = {});
+		absl::StatusOr<std::string> ExportSessionZip(std::string_view sessionId, std::string_view outputPath = {});
 
 		absl::StatusOr<agent::PromptResult> Prompt(std::string_view sessionId, std::string_view text);
 		absl::Status Cancel(std::string_view sessionId);
 		absl::Status ClearContext(std::string_view sessionId);
+		absl::Status CompactNow(std::string_view sessionId);
+		absl::Status SetModel(std::string_view sessionId, std::string_view model);
+		absl::Status SetPermissionMode(std::string_view sessionId, config::PermissionMode permissionMode);
+		absl::Status SetPlanMode(std::string_view sessionId, bool enabled);
 		absl::Status ActivateSkill(std::string_view sessionId, std::string_view name, std::string_view args = {});
+		absl::StatusOr<std::vector<ModelInfo>> ListModels();
+		absl::StatusOr<std::vector<ToolInfo>> ListTools(std::string_view sessionId);
+		absl::StatusOr<std::vector<McpServerInfo>> ListMcpServers();
+		absl::StatusOr<std::vector<BackgroundTaskInfo>> ListBackgroundTasks();
+		absl::StatusOr<std::string> ReadTaskOutput(std::string_view taskId);
+		absl::Status StopTask(std::string_view taskId);
+
+		void SetEventSink(CoreEventSink sink);
+		void SetApprovalCallback(permission::ApprovalCallback callback);
+		void SetQuestionCallback(tools::QuestionCallback callback);
 
 	private:
 		struct CoreSessionRuntime;
@@ -52,6 +70,7 @@ namespace codeharness::rpc
 																		 std::string_view modelOverride);
 		absl::Status ConfigureAgent(CoreSessionRuntime& runtime, config::PermissionMode permissionMode);
 		absl::StatusOr<CoreSessionRuntime*> FindOpenRuntime(std::string_view sessionId);
+		absl::StatusOr<session::SessionDir> FindSessionDir(std::string_view sessionId);
 
 		CoreApiConfig config;
 		std::unique_ptr<session::SessionStore> sessionStore;

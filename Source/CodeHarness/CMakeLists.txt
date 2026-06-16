@@ -11,6 +11,7 @@ find_package(OpenSSL CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
+find_package(ftxui CONFIG REQUIRED)
 
 add_library(codeharness
   Host/HostPath.cpp
@@ -29,6 +30,7 @@ add_library(codeharness
   Engine/ToolScheduler.cpp
   Tools/ToolOutput.cpp
   Tools/ToolManager.cpp
+  Tools/AskUser.cpp
   Tools/ReadFile.cpp
   Tools/WriteFile.cpp
   Tools/EditFile.cpp
@@ -83,11 +85,13 @@ if(CODEHARNESS_BUILD_TESTS)
   add_subdirectory(${CMAKE_SOURCE_DIR}/Test ${CMAKE_BINARY_DIR}/Test)
 endif()
 
+# TUI library (port of Kimi TUI)
+add_subdirectory(Tui)
+
 # Non-interactive CLI executable. Always built (a default build should produce a
-# runnable program). The TUI/shell mode is deferred; this is one-shot --prompt.
-# CliParser.cpp and RunPrompt.cpp live in the codeharness library (so tests can
-# link them); only Main.cpp is exclusive to the executable.
+# runnable program). CliParser.cpp and RunPrompt.cpp live in the codeharness
+# library (so tests can link them); only Main.cpp is exclusive to the executable.
 add_executable(codeharness_cli
   Cli/Main.cpp
 )
-target_link_libraries(codeharness_cli PRIVATE codeharness)
+target_link_libraries(codeharness_cli PRIVATE codeharness codeharness_tui)

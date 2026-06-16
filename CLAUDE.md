@@ -17,6 +17,7 @@
 | **Session** | `codeharness::session` | `Source/CodeHarness/Session/` | ✅ Implemented (MVP) |
 | **Cli** | `codeharness::cli` | `Source/CodeHarness/Cli/` | ✅ Implemented (MVP) |
 | **Context** | `codeharness::context` | `Source/CodeHarness/Context/` | ✅ Implemented (MVP) |
+| **Tui** | `codeharness::tui` | `Source/CodeHarness/Tui/` | ✅ Implemented (FTXUI) |
 
 ### Host (Execution Environment Abstraction)
 
@@ -138,12 +139,12 @@ The Cli module is the first executable target — turns the library into a runna
 
 **Key interfaces:**
 - `ParseArgs(argc, argv)` → `StatusOr<CliOptions>` — CLI11-based flag parser
-- `CliOptions` — `{prompt, model, workdir, yolo, help, version}`
-- `Run(opts, RunDeps)` → `Status` — the end-to-end wiring chain
+- `CliOptions` — `{prompt, model, workdir, yolo, help, version, mode (Prompt|Shell|Tui), sessionId, continueLast}`
+- `Run(opts, RunDeps)` → `Status` — the end-to-end wiring chain for prompt/shell modes
 - `RunDeps` — test seam: `{host*, http*, resolveProvider}`, letting tests inject a mock provider without touching the network
 - `ResolveProviderFromConfig(host, http, modelOverride)` — ConfigManager → ProviderManager → live `ChatProvider`
 
-**Design (MVP scope):** One-shot `--prompt` mode only. `Run` wires the full chain: load `config.toml` → resolve provider → register built-in tools → `Session::Create` → wire the agent's event dispatcher (stream `AssistantDeltaEvent` text to stdout) → set permission mode (`Yolo` for `--yolo`, else `Manual` with a synchronous stdin y/n approval callback) → `Agent::Prompt` → `Session::Close`. `Main.cpp` owns the `LocalHost` + `BeastHttpClient` (synchronous, no threading) lifetimes and injects them via `RunDeps`. The `codeharness_cli` executable is always built (not gated on `CODEHARNESS_BUILD_TESTS`). Out of scope (deferred to plan #14): the TUI/`shell` mode, reverse-RPC approval panel, REPL/multi-turn, `--continue`/`--session` resume flags, `--output-format stream-json`, and a config auto-creation wizard.
+**Design:** `Run` handles both one-shot `--prompt` and interactive `shell` modes. Both load `config.toml`, resolve the provider, register tools, and wire callbacks. `Main.cpp` additionally routes `CliMode::Tui` to `tui::Run(host, http, opts)` before falling through to the shell path. The shell mode supports `--session ID` resume, `--continue` (latest session), `/help` `/clear` `/skill` slash commands. The `tui` subcommand accepts the same flags (`--session`, `--continue`, `-y`, `-m`, `--workdir`) and dispatches to the full-screen FTXUI app (see Tui module).
 
 **Build:** `cmake --build` produces `codeharness_cli.exe` alongside `codeharness_tests.exe`. `CliParser.cpp`/`RunPrompt.cpp` live in the `codeharness` library (so tests link them); only `Main.cpp` is exclusive to the executable. CLI11 is now a library dependency.
 
@@ -160,6 +161,35 @@ The Context module stops `Agent::history` from growing unbounded. See [Source/Co
 **Design (MVP scope):** Between-turn compaction only, living entirely in the Agent layer. `Agent` now holds a `ContextMemory` instead of a bare vector. In `Prompt()`, before building the turn history, it resolves `maxContextTokens` from `llm::GetCapability(provider->ModelName())` (unless `SetCompactionConfig` overrode it), and if `history.tokenCount() + incoming` crosses 75% it runs `Compact` — a second `Generate` produces a summary, the prefix is replaced by one summary message, the last 10 messages are kept verbatim. **Zero changes to `Loop.cpp`, `LoopTypes.h`, `LoopEvent`, `ChatProvider`, or any provider** — the loop keeps receiving a plain (shorter) `std::vector<llm::Message>`. `Resume()` replays records through `ContextMemory::Append` to keep the token cache consistent. Closes tech-debt TD-006. Out of scope (deferred to plan #06): the `InjectionManager` (plan/permission-mode injection — needs a wider `LoopHooks::beforeStep`), mid-turn compaction (between tool-call steps inside one turn), a real `CountTokens` provider virtual, and `ContextMessage` metadata (origin/id/createdAt).
 
 **Llm helper exported:** `ConcatTextParts` (flattens a message's content parts into one string) was promoted from `MessageJson.cpp`'s anonymous namespace to a public `codeharness::llm` function in `MessageJson.h`, so `TokenEstimate` can measure message text.
+
+### Tui (Full-Screen Terminal UI)
+
+The Tui module is the full-screen interactive UI built on FTXUI. See [Source/CodeHarness/Tui/](Source/CodeHarness/Tui/) for source. It's a port of the Kimi Code TUI design (a TypeScript app using pi-tui) into modern C++20.
+
+**Key interfaces:**
+- `TuiApp` — top-level orchestrator owning the FTXUI screen + component tree; runs `screen->Loop(component)` on the UI thread and detaches a worker thread per `Prompt` call
+- `TuiState` — mutex-protected shared state (transcript entries, tool call tracking, pending approval/question promises, theme palette, modal kind); read by the UI render loop, mutated by the EventRouter
+- `EventRouter` — converts `rpc::CoreEvent` → `TuiState` mutations (one method per event type: `OnAssistantDelta`, `OnToolCallStarted`, `OnToolResult`, `OnPermissionRequested`, `OnTurnEnded`, etc.)
+- `MarkdownRenderer` — line-based markdown parser → FTXUI Element (supports headings, bold/italic/inline code, fenced code blocks, lists, blockquotes, horizontal rules)
+- `Run(host, http, opts)` — top-level entry point called by `Cli/Main.cpp` when `opts.mode == CliMode::Tui`
+
+**Design (threading model):**
+1. UI thread runs `ScreenInteractive::Loop` — owns FTXUI component tree, processes keyboard input, builds Element tree on each render
+2. Worker thread runs `CoreApi::Prompt` (a blocking call inside `std::thread([this, text]{ api->Prompt(...); }).detach()`)
+3. `eventSink` callback fires on the worker thread → `EventRouter::Dispatch` mutates `TuiState` under mutex → `screen->PostEvent(Event::Custom)` triggers a re-render on the UI thread
+4. `ApprovalCallback` / `QuestionCallback` are synchronous (block the worker thread) → push a `std::promise` into `TuiState`, wake the UI via PostEvent, then `future.wait_for(5min)` blocks until the user picks a button (or auto-deny on timeout/Escape)
+
+**Visual design (port of Kimi):**
+- Status icons: spinner (running), `+` (done), `x` (error) with semantic colors (yellow/green/red)
+- Tool call cards: header line (icon + name + args preview from `path/command/pattern/...`), body shown after completion
+- Modal overlays via `Container::Stacked` + `Maybe` guards checking `state->activeModal`
+- Approval panel: bordered double frame with `A`/`D` keyboard shortcuts
+- Question dialog: `Radiobox` for fixed options + `Input` for free-form
+- Slash commands: `/help` `/clear` `/exit` `/model [name]` `/sessions` `/mode`
+
+**Build:** `codeharness_tui` is a separate library linked to `codeharness_cli`. Tests link both `codeharness` + `codeharness_tui`. FTXUI is found via `find_package(ftxui CONFIG REQUIRED)` (already in `vcpkg.json`).
+
+**Launch:** `codeharness tui [--session ID] [--continue] [-y] [-m model] [--workdir DIR]`. Reuses the same `config.toml` and provider resolution as the shell/CLI modes.
 
 ## Core Principles
 

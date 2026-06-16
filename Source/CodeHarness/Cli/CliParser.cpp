@@ -32,6 +32,13 @@ namespace codeharness::cli
 		shell->add_option("--session", opts.sessionId, "Resume a session by id or unique prefix.");
 		shell->add_flag("--continue", opts.continueLast, "Resume the latest session for the current workdir.");
 
+		auto* tui = app.add_subcommand("tui", "Start the full-screen TUI.");
+		tui->add_option("--session", opts.sessionId, "Resume a session by id or unique prefix.");
+		tui->add_flag("--continue", opts.continueLast, "Resume the latest session for the current workdir.");
+		tui->add_option("-m,--model", opts.model, "Model alias; defaults to config's default_model.");
+		tui->add_option("--workdir", opts.workdir, "Working directory; defaults to the current directory.");
+		tui->add_flag("-y,--yolo", opts.yolo, "Allow all tool actions without prompting (Yolo permission mode).");
+
 		try
 		{
 			app.parse(argc, argv);
@@ -62,6 +69,22 @@ namespace codeharness::cli
 			{
 				std::cout << app.help();
 				return absl::InvalidArgumentError("--prompt cannot be used with shell mode");
+			}
+			if (!opts.sessionId.empty() && opts.continueLast)
+			{
+				std::cout << app.help();
+				return absl::InvalidArgumentError("--session and --continue are mutually exclusive");
+			}
+			return opts;
+		}
+
+		if (tui->parsed())
+		{
+			opts.mode = CliMode::Tui;
+			if (!prompt.empty())
+			{
+				std::cout << app.help();
+				return absl::InvalidArgumentError("--prompt cannot be used with tui mode");
 			}
 			if (!opts.sessionId.empty() && opts.continueLast)
 			{

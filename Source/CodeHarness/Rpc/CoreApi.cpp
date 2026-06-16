@@ -1,8 +1,11 @@
 #include "Rpc/CoreApi.h"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,6 +15,7 @@
 #include "Config/ConfigManager.h"
 #include "Config/ProviderManager.h"
 #include "Engine/LoopTypes.h"
+#include "Engine/Tool.h"
 #include "Host/Host.h"
 #include "Llm/ChatProvider.h"
 #include "Mcp/McpConnectionManager.h"
@@ -23,6 +27,7 @@
 #include "Skills/SkillRegistry.h"
 #include "Skills/SkillScanner.h"
 #include "Skills/SkillTool.h"
+#include "Tools/AskUser.h"
 #include "Tools/Bash.h"
 #include "Tools/EditFile.h"
 #include "Tools/Glob.h"
@@ -80,7 +85,28 @@ namespace codeharness::rpc
 			};
 		}
 
-		void RegisterBuiltInTools(tools::ToolManager& tm, skills::SkillManager* skillManager)
+		const char* ProviderTypeName(config::ProviderType type)
+		{
+			switch (type)
+			{
+			case config::ProviderType::OpenAi:
+				return "openai";
+			case config::ProviderType::OpenAiResponses:
+				return "openai_responses";
+			case config::ProviderType::Anthropic:
+				return "anthropic";
+			case config::ProviderType::Kimi:
+				return "kimi";
+			case config::ProviderType::GoogleGenai:
+				return "google-genai";
+			case config::ProviderType::Vertexai:
+				return "vertexai";
+			}
+			return "openai";
+		}
+
+		void RegisterBuiltInTools(tools::ToolManager& tm, skills::SkillManager* skillManager,
+								  tools::QuestionCallback questionCallback)
 		{
 			tm.Register(std::make_unique<tools::ReadFileTool>());
 			tm.Register(std::make_unique<tools::WriteFileTool>());
@@ -88,6 +114,7 @@ namespace codeharness::rpc
 			tm.Register(std::make_unique<tools::GlobTool>());
 			tm.Register(std::make_unique<tools::GrepTool>());
 			tm.Register(std::make_unique<tools::BashTool>());
+			tm.Register(std::make_unique<tools::AskUserTool>(std::move(questionCallback)));
 			if (skillManager != nullptr)
 			{
 				tm.Register(std::make_unique<tools::SkillTool>(skillManager));
@@ -124,6 +151,140 @@ namespace codeharness::rpc
 			return roots;
 		}
 
+		void AppendLe16(std::vector<uint8_t>& out, uint16_t value)
+		{
+			out.push_back(static_cast<uint8_t>(value & 0xff));
+			out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+		}
+
+		void AppendLe32(std::vector<uint8_t>& out, uint32_t value)
+		{
+			out.push_back(static_cast<uint8_t>(value & 0xff));
+			out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+			out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
+			out.push_back(static_cast<uint8_t>((value >> 24) & 0xff));
+		}
+
+		uint32_t Crc32(std::span<const uint8_t> data)
+		{
+			uint32_t crc = 0xffffffffU;
+			for (uint8_t byte : data)
+			{
+				crc ^= byte;
+				for (int i = 0; i < 8; ++i)
+				{
+					crc = (crc >> 1) ^ (0xedb88320U & (0U - (crc & 1U)));
+				}
+			}
+			return crc ^ 0xffffffffU;
+		}
+
+		struct ZipEntry
+		{
+			std::string name;
+			std::vector<uint8_t> data;
+		};
+
+		absl::Status CollectFiles(host::Host* host, std::string_view root, std::string_view path,
+								  std::vector<ZipEntry>& entries)
+		{
+			auto children = host->Iterdir(path);
+			if (children.ok())
+			{
+				for (const auto& child : *children)
+				{
+					auto childPath = fmt::format("{}/{}", path, child);
+					auto status = CollectFiles(host, root, childPath, entries);
+					if (!status.ok())
+					{
+						return status;
+					}
+				}
+				return absl::OkStatus();
+			}
+
+			auto bytes = host->ReadBytes(path);
+			if (!bytes.ok())
+			{
+				return bytes.status();
+			}
+			std::string rel(path.substr(root.size()));
+			while (!rel.empty() && (rel.front() == '/' || rel.front() == '\\'))
+			{
+				rel.erase(rel.begin());
+			}
+			std::replace(rel.begin(), rel.end(), '\\', '/');
+			entries.push_back(ZipEntry{.name = std::move(rel), .data = std::move(*bytes)});
+			return absl::OkStatus();
+		}
+
+		std::vector<uint8_t> BuildStoreZip(const std::vector<ZipEntry>& entries)
+		{
+			struct CentralRecord
+			{
+				std::string name;
+				uint32_t crc = 0;
+				uint32_t size = 0;
+				uint32_t offset = 0;
+			};
+
+			std::vector<uint8_t> out;
+			std::vector<CentralRecord> central;
+			for (const auto& entry : entries)
+			{
+				auto offset = static_cast<uint32_t>(out.size());
+				auto crc = Crc32(entry.data);
+				auto size = static_cast<uint32_t>(entry.data.size());
+				AppendLe32(out, 0x04034b50);
+				AppendLe16(out, 20);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe32(out, crc);
+				AppendLe32(out, size);
+				AppendLe32(out, size);
+				AppendLe16(out, static_cast<uint16_t>(entry.name.size()));
+				AppendLe16(out, 0);
+				out.insert(out.end(), entry.name.begin(), entry.name.end());
+				out.insert(out.end(), entry.data.begin(), entry.data.end());
+				central.push_back({entry.name, crc, size, offset});
+			}
+
+			auto centralOffset = static_cast<uint32_t>(out.size());
+			for (const auto& record : central)
+			{
+				AppendLe32(out, 0x02014b50);
+				AppendLe16(out, 20);
+				AppendLe16(out, 20);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe32(out, record.crc);
+				AppendLe32(out, record.size);
+				AppendLe32(out, record.size);
+				AppendLe16(out, static_cast<uint16_t>(record.name.size()));
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe16(out, 0);
+				AppendLe32(out, 0);
+				AppendLe32(out, record.offset);
+				out.insert(out.end(), record.name.begin(), record.name.end());
+			}
+			auto centralSize = static_cast<uint32_t>(out.size()) - centralOffset;
+			AppendLe32(out, 0x06054b50);
+			AppendLe16(out, 0);
+			AppendLe16(out, 0);
+			AppendLe16(out, static_cast<uint16_t>(central.size()));
+			AppendLe16(out, static_cast<uint16_t>(central.size()));
+			AppendLe32(out, centralSize);
+			AppendLe32(out, centralOffset);
+			AppendLe16(out, 0);
+			return out;
+		}
+
 	} // namespace
 
 	struct CoreApi::CoreSessionRuntime
@@ -148,6 +309,8 @@ namespace codeharness::rpc
 		std::unique_ptr<skills::SkillManager> skillManager;
 		std::unique_ptr<mcp::McpConnectionManager> mcpManager;
 		std::unique_ptr<tools::ToolManager> toolManager;
+		config::PermissionMode permissionMode = config::PermissionMode::Manual;
+		bool planMode = false;
 		bool closed = false;
 		std::unique_ptr<session::Session> session;
 	};
@@ -337,7 +500,8 @@ namespace codeharness::rpc
 		runtime->mcpManager = std::make_unique<mcp::McpConnectionManager>(config.host, std::move(mcpServers));
 		runtime->toolManager = std::make_unique<tools::ToolManager>();
 		RegisterBuiltInTools(*runtime->toolManager,
-							 runtime->skillRegistry.Empty() ? nullptr : runtime->skillManager.get());
+							 runtime->skillRegistry.Empty() ? nullptr : runtime->skillManager.get(),
+							 config.questionCallback);
 		(void)runtime->mcpManager->RegisterTools(*runtime->toolManager);
 		return runtime;
 	}
@@ -356,12 +520,13 @@ namespace codeharness::rpc
 		}
 
 		runtime.skillManager->SetSessionId(runtime.session->Id());
-		agent->SetSkillManager(runtime.skillManager.get());
-		agent->SetPermissionMode(permissionMode);
-		if (config.approvalCallback)
-		{
-			agent->SetApprovalCallback(config.approvalCallback);
-		}
+			agent->SetSkillManager(runtime.skillManager.get());
+			agent->SetPermissionMode(permissionMode);
+			runtime.permissionMode = permissionMode;
+			if (config.approvalCallback)
+			{
+				agent->SetApprovalCallback(config.approvalCallback);
+			}
 
 		agent->SetEventDispatcher([this, sessionId = runtime.session->Id()](const agent::AgentEvent& ev) {
 			if (config.eventSink)
@@ -515,8 +680,164 @@ namespace codeharness::rpc
 		{
 			return resolvedWorkdir.status();
 		}
-		return sessionStore->List(*resolvedWorkdir);
-	}
+			return sessionStore->List(*resolvedWorkdir);
+		}
+
+		absl::StatusOr<session::SessionDir> CoreApi::FindSessionDir(std::string_view sessionId)
+		{
+			auto storeStatus = EnsureSessionStore();
+			if (!storeStatus.ok())
+			{
+				return storeStatus;
+			}
+			return sessionStore->Find(sessionId);
+		}
+
+		absl::StatusOr<CoreSessionInfo> CoreApi::GetSessionInfo(std::string_view sessionId)
+		{
+			auto active = sessions.find(std::string(sessionId));
+			if (active != sessions.end())
+			{
+				auto* runtime = active->second.get();
+				session::SessionInfo info;
+				info.sessionId = active->first;
+				if (runtime->session)
+				{
+					const auto& meta = runtime->session->Meta();
+					info.title = meta.title;
+					info.workdir = meta.workdir;
+					info.createdAt = meta.createdAt;
+					info.updatedAt = meta.updatedAt;
+				}
+				else
+				{
+					info.workdir = runtime->workdir;
+				}
+				return CoreSessionInfo{
+					.session = std::move(info),
+					.model = runtime->modelName,
+					.permissionMode = runtime->permissionMode,
+					.planMode = runtime->planMode,
+					.active = !runtime->closed,
+				};
+			}
+
+			auto dir = FindSessionDir(sessionId);
+			if (!dir.ok())
+			{
+				return dir.status();
+			}
+			auto meta = sessionStore->ReadMeta(dir->path);
+			if (!meta.ok())
+			{
+				return meta.status();
+			}
+			return CoreSessionInfo{
+				.session =
+					session::SessionInfo{
+						.sessionId = dir->sessionId,
+						.title = meta->title,
+						.workdir = meta->workdir,
+						.createdAt = meta->createdAt,
+						.updatedAt = meta->updatedAt,
+						.agentCount = 1,
+					},
+				.model = {},
+				.permissionMode = config::PermissionMode::Manual,
+				.planMode = false,
+				.active = false,
+			};
+		}
+
+		absl::Status CoreApi::RenameSession(std::string_view sessionId, std::string_view title)
+		{
+			if (title.empty())
+			{
+				return absl::InvalidArgumentError("session title cannot be empty");
+			}
+			auto dir = FindSessionDir(sessionId);
+			if (!dir.ok())
+			{
+				return dir.status();
+			}
+			auto meta = sessionStore->ReadMeta(dir->path);
+			if (!meta.ok())
+			{
+				return meta.status();
+			}
+			return sessionStore->RenameTitle(meta->workdir, dir->sessionId, title);
+		}
+
+		absl::StatusOr<std::string> CoreApi::ForkSession(std::string_view sessionId, std::string_view title)
+		{
+			auto dir = FindSessionDir(sessionId);
+			if (!dir.ok())
+			{
+				return dir.status();
+			}
+			auto meta = sessionStore->ReadMeta(dir->path);
+			if (!meta.ok())
+			{
+				return meta.status();
+			}
+			auto forkDir = sessionStore->Create(meta->workdir,
+												title.empty() ? fmt::format("{} (fork)", meta->title) : std::string(title));
+			if (!forkDir.ok())
+			{
+				return forkDir.status();
+			}
+
+			auto oldWire = fmt::format("{}/agents/main/wire.jsonl", dir->path);
+			auto wireBytes = config.host->ReadBytes(oldWire);
+			if (wireBytes.ok())
+			{
+				auto write = config.host->WriteBytes(forkDir->AgentWirePath("main"), *wireBytes);
+				if (!write.ok())
+				{
+					return write;
+				}
+			}
+			else if (!absl::IsNotFound(wireBytes.status()))
+			{
+				return wireBytes.status();
+			}
+			return forkDir->sessionId;
+		}
+
+		absl::StatusOr<std::string> CoreApi::ExportSessionZip(std::string_view sessionId, std::string_view outputPath)
+		{
+			auto dir = FindSessionDir(sessionId);
+			if (!dir.ok())
+			{
+				return dir.status();
+			}
+			std::vector<ZipEntry> entries;
+			auto collect = CollectFiles(config.host, dir->path, dir->path, entries);
+			if (!collect.ok())
+			{
+				return collect;
+			}
+			auto manifest = nlohmann::json{
+				{"session_id", dir->sessionId},
+				{"source_path", dir->path},
+				{"format", "codeharness-session-export"},
+				{"version", 1},
+			}
+								.dump(2);
+			entries.push_back(ZipEntry{
+				.name = "metadata.json",
+				.data = std::vector<uint8_t>(manifest.begin(), manifest.end()),
+			});
+			auto zip = BuildStoreZip(entries);
+			std::string out = outputPath.empty() ? fmt::format("{}/{}.zip", dir->path, dir->sessionId)
+												 : std::string(outputPath);
+			auto write = config.host->WriteBytes(out, zip);
+			if (!write.ok())
+			{
+				return write;
+			}
+			return out;
+		}
 
 	absl::StatusOr<CoreApi::CoreSessionRuntime*> CoreApi::FindOpenRuntime(std::string_view sessionId)
 	{
@@ -566,9 +887,69 @@ namespace codeharness::rpc
 		{
 			return runtime.status();
 		}
-		(*runtime)->session->MainAgent()->ClearContext();
-		return absl::OkStatus();
-	}
+			(*runtime)->session->MainAgent()->ClearContext();
+			return absl::OkStatus();
+		}
+
+		absl::Status CoreApi::CompactNow(std::string_view sessionId)
+		{
+			auto runtime = FindOpenRuntime(sessionId);
+			if (!runtime.ok())
+			{
+				return runtime.status();
+			}
+			return absl::UnimplementedError("manual compaction is not implemented yet");
+		}
+
+		absl::Status CoreApi::SetModel(std::string_view sessionId, std::string_view model)
+		{
+			auto runtime = FindOpenRuntime(sessionId);
+			if (!runtime.ok())
+			{
+				return runtime.status();
+			}
+			if (model.empty())
+			{
+				return absl::InvalidArgumentError("model cannot be empty");
+			}
+			if ((*runtime)->modelName == model)
+			{
+				return absl::OkStatus();
+			}
+			return absl::UnimplementedError("switching the provider of an active session is not implemented yet");
+		}
+
+		absl::Status CoreApi::SetPermissionMode(std::string_view sessionId, config::PermissionMode permissionMode)
+		{
+			auto runtime = FindOpenRuntime(sessionId);
+			if (!runtime.ok())
+			{
+				return runtime.status();
+			}
+			auto* agent = (*runtime)->session->MainAgent();
+			if (agent == nullptr)
+			{
+				return absl::InternalError("session has no main agent");
+			}
+			agent->SetPermissionMode(permissionMode);
+			if (config.approvalCallback)
+			{
+				agent->SetApprovalCallback(config.approvalCallback);
+			}
+			(*runtime)->permissionMode = permissionMode;
+			return absl::OkStatus();
+		}
+
+		absl::Status CoreApi::SetPlanMode(std::string_view sessionId, bool enabled)
+		{
+			auto runtime = FindOpenRuntime(sessionId);
+			if (!runtime.ok())
+			{
+				return runtime.status();
+			}
+			(*runtime)->planMode = enabled;
+			return absl::OkStatus();
+		}
 
 	absl::Status CoreApi::ActivateSkill(std::string_view sessionId, std::string_view name, std::string_view args)
 	{
@@ -576,9 +957,133 @@ namespace codeharness::rpc
 		if (!runtime.ok())
 		{
 			return runtime.status();
+			}
+			return (*runtime)->session->MainAgent()->ActivateSkill(name, args);
 		}
-		return (*runtime)->session->MainAgent()->ActivateSkill(name, args);
-	}
+
+		absl::StatusOr<std::vector<ModelInfo>> CoreApi::ListModels()
+		{
+			std::vector<ModelInfo> out;
+			if (config.providerResolver)
+			{
+				for (const auto& [id, runtime] : sessions)
+				{
+					if (runtime && !runtime->modelName.empty())
+					{
+						out.push_back(ModelInfo{.alias = runtime->modelName,
+												.provider = "injected",
+												.model = runtime->modelName,
+												.isDefault = out.empty()});
+					}
+				}
+				return out;
+			}
+
+			config::ConfigManager cm(config.host);
+			auto cfg = cm.Load();
+			if (!cfg.ok())
+			{
+				return cfg.status();
+			}
+			for (const auto& [alias, model] : cfg->models)
+			{
+				std::string providerType = model.provider;
+				if (auto provider = cfg->providers.find(model.provider); provider != cfg->providers.end())
+				{
+					providerType = ProviderTypeName(provider->second.type);
+				}
+				out.push_back(ModelInfo{.alias = alias,
+										.provider = providerType,
+										.model = model.model,
+										.isDefault = alias == cfg->defaultModel});
+			}
+			return out;
+		}
+
+		absl::StatusOr<std::vector<ToolInfo>> CoreApi::ListTools(std::string_view sessionId)
+		{
+			auto runtime = FindOpenRuntime(sessionId);
+			if (!runtime.ok())
+			{
+				return runtime.status();
+			}
+			std::vector<ToolInfo> out;
+			for (auto* tool : (*runtime)->toolManager->LoopTools())
+			{
+				auto def = tool->GetToolDefinition();
+				out.push_back(ToolInfo{.name = std::move(def.name),
+									   .description = std::move(def.description),
+									   .inputSchema = std::move(def.inputSchema)});
+			}
+			return out;
+		}
+
+		absl::StatusOr<std::vector<McpServerInfo>> CoreApi::ListMcpServers()
+		{
+			std::vector<McpServerInfo> out;
+			if (config.providerResolver)
+			{
+				return out;
+			}
+			config::ConfigManager cm(config.host);
+			auto cfg = cm.Load();
+			if (!cfg.ok())
+			{
+				return cfg.status();
+			}
+			for (const auto& server : cfg->mcpServers)
+			{
+				out.push_back(McpServerInfo{.name = server.name,
+											.command = server.command,
+											.args = server.args,
+											.cwd = server.cwd,
+											.enabled = server.enabled,
+											.connected = false});
+			}
+			return out;
+		}
+
+		absl::StatusOr<std::vector<BackgroundTaskInfo>> CoreApi::ListBackgroundTasks()
+		{
+			return std::vector<BackgroundTaskInfo>{};
+		}
+
+		absl::StatusOr<std::string> CoreApi::ReadTaskOutput(std::string_view taskId)
+		{
+			return absl::NotFoundError(fmt::format("background task not found: {}", taskId));
+		}
+
+		absl::Status CoreApi::StopTask(std::string_view taskId)
+		{
+			return absl::NotFoundError(fmt::format("background task not found: {}", taskId));
+		}
+
+		void CoreApi::SetEventSink(CoreEventSink sink)
+		{
+			config.eventSink = std::move(sink);
+		}
+
+		void CoreApi::SetApprovalCallback(permission::ApprovalCallback callback)
+		{
+			config.approvalCallback = std::move(callback);
+			for (auto& [id, runtime] : sessions)
+			{
+				(void)id;
+				if (runtime && runtime->session && !runtime->closed)
+				{
+					auto* agent = runtime->session->MainAgent();
+					if (agent != nullptr)
+					{
+						agent->SetApprovalCallback(config.approvalCallback);
+					}
+				}
+			}
+		}
+
+		void CoreApi::SetQuestionCallback(tools::QuestionCallback callback)
+		{
+			config.questionCallback = std::move(callback);
+		}
 
 	absl::StatusOr<std::pair<std::unique_ptr<llm::ChatProvider>, std::string>>
 	ResolveProviderFromConfig(host::Host* host, llm::HttpClient* http, std::string_view modelOverride)

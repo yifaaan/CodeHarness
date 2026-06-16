@@ -5,6 +5,7 @@
 #include "Cli/RunPrompt.h"
 #include "Host/LocalHost.h"
 #include "Llm/BeastHttpClient.h"
+#include "Tui/TuiApp.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
 #include "spdlog/spdlog.h"
@@ -49,6 +50,17 @@ int main(int argc, char** argv)
 
 	codeharness::host::LocalHost host;
 	codeharness::llm::BeastHttpClient http;
+
+	if (opts->mode == codeharness::cli::CliMode::Tui)
+	{
+		auto tuiStatus = codeharness::tui::Run(&host, &http, *opts);
+		if (!tuiStatus.ok())
+		{
+			fmt::print(stderr, "codeharness: {}\n", tuiStatus.message());
+			return 2;
+		}
+		return 0;
+	}
 
 	codeharness::cli::RunDeps deps{
 		.host = &host,
