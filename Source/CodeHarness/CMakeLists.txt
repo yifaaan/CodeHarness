@@ -95,3 +95,4 @@ add_executable(codeharness_cli
   Cli/Main.cpp
 )
 target_link_libraries(codeharness_cli PRIVATE codeharness codeharness_tui)
+set_target_properties(codeharness_cli PROPERTIES OUTPUT_NAME codeharness)

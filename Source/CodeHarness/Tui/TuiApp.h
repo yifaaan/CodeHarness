@@ -72,7 +72,6 @@ private:
 	ftxui::Component MakeChatPane();
 	ftxui::Component MakeInputField();
 	ftxui::Component MakeStatusBar();
-	ftxui::Component MakeSidePanel();
 	ftxui::Component MakeModalOverlay();
 	ftxui::Component MakeApprovalPanel();
 	ftxui::Component MakeQuestionDialog();

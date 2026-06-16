@@ -6,6 +6,8 @@
 #include <string_view>
 #include <utility>
 
+#include <fmt/format.h>
+
 #include "Agent/AgentTypes.h"
 #include "Engine/LoopTypes.h"
 #include "Rpc/RpcTypes.h"
@@ -134,6 +136,24 @@ void EventRouter::OnToolCallStarted(std::string_view id, std::string_view name,
 	state->activeToolCalls[std::string(id)] = std::move(tc);
 	state->toolCallCount++;
 
+	// Surface a human-readable activity label for the ActivityIndicator.
+	// Prefer the most useful arg field; fall back to the bare tool name.
+	std::string preview;
+	if (args.is_object())
+	{
+		for (const char* key : {"path", "file_path", "file", "command", "pattern", "query", "url"})
+		{
+			if (args.contains(key) && args[key].is_string())
+			{
+				preview = args[key].get<std::string>();
+				break;
+			}
+		}
+	}
+	state->currentActivity = preview.empty()
+								? std::string(name)
+								: fmt::format("{}: {}", name, preview);
+
 	// Add transcript entry
 	state->transcript.push_back({
 		.kind = TranscriptEntry::Kind::ToolCall,
@@ -156,6 +176,12 @@ void EventRouter::OnToolResult(std::string_view id, std::string_view /*name*/,
 		// Move from active to completed
 		state->completedToolCalls[std::string(id)] = std::move(it->second);
 		state->activeToolCalls.erase(it);
+	}
+
+	// Clear the activity label when no active tools remain.
+	if (state->activeToolCalls.empty())
+	{
+		state->currentActivity.clear();
 	}
 
 	// Update the transcript entry

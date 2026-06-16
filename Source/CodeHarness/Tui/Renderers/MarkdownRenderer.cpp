@@ -1,5 +1,7 @@
 #include "Tui/Renderers/MarkdownRenderer.h"
 
+#include "Tui/Renderers/CodeHighlighter.h"
+
 #include <algorithm>
 #include <sstream>
 #include <string>
@@ -193,14 +195,16 @@ Element RenderQuote(std::string_view line)
 }
 
 // Render a fenced code block.
-Element RenderCodeBlock(const std::vector<std::string>& lines)
+Element RenderCodeBlock(const std::vector<std::string>& lines, const std::string& lang)
 {
-	Elements body;
-	for (const auto& line : lines)
+	std::string joined;
+	for (size_t i = 0; i < lines.size(); ++i)
 	{
-		body.push_back(ftxui::text(line) | ftxui::color(kCodeFg));
+		if (i) joined.push_back('\n');
+		joined += lines[i];
 	}
-	return ftxui::vbox(std::move(body)) | ftxui::borderLight | ftxui::color(kCodeFg);
+	auto body = CodeHighlighter::Highlight(joined, lang);
+	return std::move(body) | ftxui::borderLight | ftxui::color(kCodeFg);
 }
 
 } // namespace
@@ -230,7 +234,7 @@ Element MarkdownRenderer::Render(const std::string& text)
 			}
 			else
 			{
-				result.push_back(RenderCodeBlock(codeBuffer));
+				result.push_back(RenderCodeBlock(codeBuffer, codeLang));
 				inCodeBlock = false;
 				codeBuffer.clear();
 			}
@@ -318,7 +322,7 @@ Element MarkdownRenderer::Render(const std::string& text)
 	// Unterminated code fence — render as a block too
 	if (inCodeBlock && !codeBuffer.empty())
 	{
-		result.push_back(RenderCodeBlock(codeBuffer));
+		result.push_back(RenderCodeBlock(codeBuffer, codeLang));
 	}
 
 	if (result.empty())

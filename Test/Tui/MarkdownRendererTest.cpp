@@ -85,7 +85,10 @@ TEST_CASE("MarkdownRenderer: code fence")
 {
 	auto el = codeharness::tui::MarkdownRenderer::Render("```cpp\nint main() { return 0; }\n```");
 	auto str = RenderToString(el, 50);
-	CHECK(str.find("int main()") != std::string::npos);
+	// After syntax highlighting the tokens are colored, so ANSI escapes may
+	// interleave the words. Check for both tokens separately.
+	CHECK(str.find("int") != std::string::npos);
+	CHECK(str.find("main") != std::string::npos);
 }
 
 TEST_CASE("MarkdownRenderer: horizontal rule")

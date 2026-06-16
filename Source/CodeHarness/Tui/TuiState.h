@@ -27,6 +27,28 @@ namespace codeharness::tui
 
 struct ToolCallState;
 
+// ─── Todo item (rendered by TodoPanel; populated by TaskCreate tool events) ─
+
+struct TodoItem
+{
+	enum class Status
+	{
+		Pending,
+		InProgress,
+		Done,
+	};
+	Status status = Status::Pending;
+	std::string text;
+};
+
+// ─── Queued tool call (rendered by QueuePanel; populated by ToolScheduler) ─
+
+struct QueuedToolCall
+{
+	std::string name;
+	std::string preview; // short text preview of args
+};
+
 // ─── Message types rendered in the transcript ───────────────────────────
 
 /// One entry in the transcript (user, assistant text, tool call card, etc.)
@@ -136,16 +158,22 @@ struct TuiState
 	// Transcript
 	std::deque<TranscriptEntry> transcript;
 	std::string currentAssistantBuffer; // accumulating streaming text
+	std::string currentThinking;		 // extended-thinking stream (if any)
 
 	// Tool tracking
 	std::unordered_map<std::string, ToolCallState> activeToolCalls;
 	std::unordered_map<std::string, ToolCallState> completedToolCalls;
+	std::vector<QueuedToolCall> pendingToolCalls; // awaiting ToolScheduler
 	int toolCallCount = 0;
+
+	// Todo list (drives TodoPanel). Empty by default until TaskCreate fires.
+	std::vector<TodoItem> todos;
 
 	// Streaming state
 	bool streaming = false;
 	bool compacting = false;
 	int compactingCount = 0;
+	std::string currentActivity; // human-readable one-liner for ActivityIndicator
 
 	// Token usage
 	llm::TokenUsage lastUsage;
@@ -163,8 +191,13 @@ struct TuiState
 	// Navigation / UI
 	int scrollOffset = 0;
 	int visibleHeight = 0;
+	bool userScrolledUp = false; // suppress auto-scroll-to-bottom while user browses history
 	std::string statusMessage;
 	agent::AgentStatus agentStatus = agent::AgentStatus::Idle;
+
+	// Visibility toggles (driven by keyboard shortcuts like Ctrl+B)
+	bool sidePanelVisible = false;
+	bool todoPanelVisible = true; // shown by default; can be toggled off
 
 	// Mutex for thread-safe access
 	mutable std::mutex mutex;

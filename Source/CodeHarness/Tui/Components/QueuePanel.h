@@ -9,9 +9,9 @@ namespace codeharness::tui
 
 struct TuiState;
 
-/// Bottom-of-transcript banner shown while `state->compacting` is true.
-/// Renders an empty Element when no compaction is in progress.
-class CompactionIndicator
+/// Renders `state->pendingToolCalls` (awaiting ToolScheduler). Empty state
+/// collapses to nothing — the panel only appears when there is queued work.
+class QueuePanel
 {
 public:
 	static ftxui::Component Create(std::shared_ptr<TuiState> state);

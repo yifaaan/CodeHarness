@@ -9,9 +9,9 @@ namespace codeharness::tui
 
 struct TuiState;
 
-/// Bottom-of-transcript banner shown while `state->compacting` is true.
-/// Renders an empty Element when no compaction is in progress.
-class CompactionIndicator
+/// Single-line strip below the transcript showing the current activity:
+/// "Thinking…", "Reading file.txt", "Running: ls -la". Empty when idle.
+class ActivityIndicator
 {
 public:
 	static ftxui::Component Create(std::shared_ptr<TuiState> state);

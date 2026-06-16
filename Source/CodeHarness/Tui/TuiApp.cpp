@@ -24,11 +24,17 @@
 #include "Permission/PermissionTypes.h"
 #include "Rpc/CoreApi.h"
 #include "Rpc/RpcTypes.h"
+#include "Tui/Components/ActivityIndicator.h"
 #include "Tui/Components/ChatPane.h"
+#include "Tui/Components/CompactionIndicator.h"
 #include "Tui/Components/InputField.h"
+#include "Tui/Components/QueuePanel.h"
+#include "Tui/Components/SidePanel.h"
 #include "Tui/Components/StatusBar.h"
+#include "Tui/Components/TodoPanel.h"
 #include "Tui/EventRouter.h"
 #include "Tui/Renderers/MarkdownRenderer.h"
+#include "Tui/Components/ToolCallCard.h"
 #include "Tui/TuiState.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"
@@ -53,11 +59,11 @@ int64_t TotalTokens(const llm::TokenUsage& u)
 
 TuiApp::TuiApp(std::unique_ptr<rpc::CoreApi> api, const cli::CliOptions& opts)
 	: api(std::move(api)),
+	  state(std::make_shared<TuiState>()),
 	  opts(opts),
 	  router(state)
 {
 	auto dark = DetectDarkMode();
-	state = std::make_shared<TuiState>();
 	state->darkMode = dark;
 	state->colors = MakePalette(dark);
 	state->agentStatus = agent::AgentStatus::Idle;
@@ -314,10 +320,54 @@ ftxui::Component TuiApp::MakeLayout()
 ftxui::Component TuiApp::MakeMainContainer()
 {
 	using namespace ftxui;
-	return Container::Vertical({
-		MakeChatPane(),
-		MakeInputField(),
+
+	// Interactive components (must live inside a focus-handling container).
+	auto chat = MakeChatPane();
+	auto input = MakeInputField();
+
+	// Read-only panels (no focus handling) — their Render() output is composed
+	// manually into the layout Element below.
+	auto activity = ActivityIndicator::Create(state);
+	auto todo = TodoPanel::Create(state);
+	auto queue = QueuePanel::Create(state);
+	auto compaction = CompactionIndicator::Create(state);
+	auto side = SidePanel::Create(state);
+
+	// Stack the focusable parts (chat needs PgUp/PgDn handling; input needs
+	// text entry). Other panels are decoration only and are rendered into the
+	// Element tree directly.
+	auto focusColumn = Container::Vertical({
+		chat,
+		input,
 	});
+
+	// Single Renderer composes the full main body. This avoids nesting
+	// non-focusable Renderers inside focus-handling Containers (which has
+	// historically triggered asserts in some FTXUI builds).
+	auto body = Renderer(focusColumn, [this, focusColumn, activity, todo, queue, compaction, side] {
+		// chat + input own focus; their Render() output is the focus column.
+		Element chatInput = focusColumn->Render() | flex;
+
+		Element mainCol = vbox({
+			chatInput,
+			activity->Render(),
+			todo->Render(),
+			queue->Render(),
+			compaction->Render(),
+		});
+
+		std::lock_guard lk(state->mutex);
+		if (!state->sidePanelVisible)
+		{
+			return std::move(mainCol);
+		}
+		return hbox({
+			std::move(mainCol) | flex,
+			side->Render(),
+		});
+	});
+
+	return body;
 }
 
 ftxui::Component TuiApp::MakeChatPane()
@@ -394,81 +444,7 @@ ftxui::Component TuiApp::MakeChatPane()
 						break;
 					}
 
-					// Status icon and color
-					Color statusColor;
-					Element iconEl;
-					if (tc->status == "running")
-					{
-						statusColor = Color::Yellow;
-						iconEl = spinner(7, spinnerFrame) | bold | color(statusColor);
-					}
-					else if (tc->status == "error")
-					{
-						statusColor = Color::Red;
-						iconEl = text("x") | bold | color(statusColor);
-					}
-					else
-					{
-						statusColor = Color::Green;
-						iconEl = text("+") | bold | color(statusColor);
-					}
-
-					// Brief args preview: try common fields (path/command/pattern)
-					std::string argsPreview;
-					if (tc->args.is_object())
-					{
-						for (const char* key : {"path", "file_path", "file", "command", "pattern", "query", "url"})
-						{
-							if (tc->args.contains(key))
-							{
-								const auto& v = tc->args[key];
-								if (v.is_string())
-								{
-									argsPreview = v.get<std::string>();
-									break;
-								}
-							}
-						}
-						if (argsPreview.empty() && !tc->args.empty())
-						{
-							argsPreview = tc->args.begin().value().dump();
-						}
-					}
-					if (argsPreview.size() > 60)
-					{
-						argsPreview = argsPreview.substr(0, 57) + "...";
-					}
-
-					// Header line: "  + ToolName  args..."
-					Elements header;
-					header.push_back(text("  "));
-					header.push_back(std::move(iconEl));
-					header.push_back(text(" "));
-					header.push_back(text(tc->name) | bold);
-					if (!argsPreview.empty())
-					{
-						header.push_back(text("  ") | dim);
-						header.push_back(text(argsPreview) | dim | color(Color::GrayLight));
-					}
-
-					Elements cardElems;
-					cardElems.push_back(hbox(std::move(header)));
-
-					// Body: output preview if completed (or expanded)
-					bool showBody = (tc->status != "running" && !tc->output.empty()) || tc->expanded;
-					if (showBody)
-					{
-						auto body = MarkdownRenderer::Render(tc->output);
-						if (!tc->expanded)
-						{
-							// Cap to ~10 lines when collapsed: just render without cap for now
-							// (FTXUI vbox doesn't easily truncate; future improvement)
-						}
-						cardElems.push_back(text(""));
-						cardElems.push_back(body | color(Color::GrayLight));
-					}
-
-					children.push_back(vbox(std::move(cardElems)));
+					children.push_back(ToolCallCard::Render(*tc, spinnerFrame));
 					break;
 				}
 			}
@@ -611,14 +587,6 @@ ftxui::Component TuiApp::MakeStatusBar()
 	});
 
 	return render;
-}
-
-ftxui::Component TuiApp::MakeSidePanel()
-{
-	using namespace ftxui;
-	return Renderer([] {
-		return text("");
-	});
 }
 
 ftxui::Component TuiApp::MakeModalOverlay()
@@ -899,11 +867,18 @@ ftxui::Component TuiApp::MakeHelpDialog()
 				   text("    Enter       Send message"),
 				   text("    Up/Down     Navigate input history"),
 				   text("    Ctrl+C      Cancel streaming"),
+				   text("    Ctrl+B      Toggle side panel"),
+				   text("    Ctrl+L      Redraw screen"),
 				   text("    Escape      Close dialog"),
 				   separator(),
 				   text("  Slash commands:") | bold,
 				   text("    /help       Show this help"),
 				   text("    /clear      Clear context"),
+				   text("    /compact    Compact context now"),
+				   text("    /fork       Fork current session"),
+				   text("    /rename X   Rename current session"),
+				   text("    /status     Show session/model/mode"),
+				   text("    /version    Show CodeHarness version"),
 				   text("    /exit       Quit"),
 				   text("    /model      Pick model from list"),
 				   text("    /model X    Switch to model X"),
@@ -1097,6 +1072,22 @@ bool TuiApp::HandleInput(ftxui::Event event)
 		return true;
 	}
 
+	// Ctrl+B toggles the side panel (Kimi-style shortcut).
+	if (event == ftxui::Event::CtrlB)
+	{
+		std::lock_guard lk(state->mutex);
+		state->sidePanelVisible = !state->sidePanelVisible;
+		PostRender();
+		return true;
+	}
+
+	// Ctrl+L clears the screen (keeps transcript).
+	if (event == ftxui::Event::CtrlL)
+	{
+		PostRender();
+		return true;
+	}
+
 	return false;
 }
 
@@ -1131,6 +1122,101 @@ bool TuiApp::HandleSlashCommand(std::string_view cmd)
 		{
 			stopped = true;
 		}
+		return true;
+	}
+	if (cmd == "/compact")
+	{
+		std::thread([this] {
+			auto status = api->CompactNow(state->sessionId);
+			std::lock_guard lk(state->mutex);
+			if (status.ok())
+			{
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = "Context compacted.",
+				});
+			}
+			else
+			{
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = fmt::format("Error: compaction failed: {}", status.message()),
+				});
+			}
+			PostRender();
+		}).detach();
+		return true;
+	}
+	if (cmd == "/fork")
+	{
+		std::thread([this] {
+			auto result = api->ForkSession(state->sessionId);
+			std::lock_guard lk(state->mutex);
+			if (result.ok())
+			{
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = fmt::format("Forked to new session: {}", *result),
+				});
+			}
+			else
+			{
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = fmt::format("Error: fork failed: {}", result.status().message()),
+				});
+			}
+			PostRender();
+		}).detach();
+		return true;
+	}
+	if (cmd == "/status")
+	{
+		std::lock_guard lk(state->mutex);
+		state->transcript.push_back({
+			.kind = TranscriptEntry::Kind::System,
+			.text = fmt::format(
+				"session={} model={} mode={}",
+				state->sessionId.empty() ? "-" : state->sessionId,
+				state->model.empty() ? "-" : state->model,
+				state->permissionMode == config::PermissionMode::Yolo ? "YOLO" : "Manual"),
+		});
+		PostRender();
+		return true;
+	}
+	if (cmd == "/version")
+	{
+		std::lock_guard lk(state->mutex);
+		state->transcript.push_back({
+			.kind = TranscriptEntry::Kind::System,
+			.text = "CodeHarness v0.1.0",
+		});
+		PostRender();
+		return true;
+	}
+	if (cmd.rfind("/rename ", 0) == 0)
+	{
+		auto title = std::string(cmd.substr(8));
+		if (title.empty()) return true;
+		std::thread([this, title] {
+			auto status = api->RenameSession(state->sessionId, title);
+			std::lock_guard lk(state->mutex);
+			if (status.ok())
+			{
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = fmt::format("Renamed session to: {}", title),
+				});
+			}
+			else
+			{
+				state->transcript.push_back({
+					.kind = TranscriptEntry::Kind::System,
+					.text = fmt::format("Error: rename failed: {}", status.message()),
+				});
+			}
+			PostRender();
+		}).detach();
 		return true;
 	}
 	if (cmd == "/sessions" || cmd == "/session")

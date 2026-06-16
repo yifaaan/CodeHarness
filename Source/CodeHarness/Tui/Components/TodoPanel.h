@@ -9,9 +9,9 @@ namespace codeharness::tui
 
 struct TuiState;
 
-/// Bottom-of-transcript banner shown while `state->compacting` is true.
-/// Renders an empty Element when no compaction is in progress.
-class CompactionIndicator
+/// Renders `state->todos` as a checklist. Empty state shows "No active tasks".
+/// Hidden entirely when `state->todoPanelVisible` is false.
+class TodoPanel
 {
 public:
 	static ftxui::Component Create(std::shared_ptr<TuiState> state);

@@ -22,6 +22,10 @@ add_library(codeharness_tui
   Components/SessionPicker.cpp
   Components/SettingsDialog.cpp
   Components/Spinner.cpp
+  Components/ActivityIndicator.cpp
+  Components/TodoPanel.cpp
+  Components/QueuePanel.cpp
+  Components/ThinkingView.cpp
   Renderers/MarkdownRenderer.cpp
   Renderers/CodeHighlighter.cpp
   Renderers/DiffRenderer.cpp

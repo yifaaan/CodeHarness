@@ -199,6 +199,33 @@ TEST_CASE("CliParser: shell captures --session and --continue is mutually exclus
 	}
 }
 
+TEST_CASE("CliParser: tui mode does not require --prompt")
+{
+	Argv argv({"tui", "--session", "abc123", "-m", "mock-model", "--workdir", "/tmp/foo", "-y"});
+	auto r = cli::ParseArgs(argv.argc(), argv.argv());
+	REQUIRE(r.ok());
+	CHECK(r->mode == cli::CliMode::Tui);
+	CHECK(r->prompt.empty());
+	CHECK(r->sessionId == "abc123");
+	CHECK(r->model == "mock-model");
+	CHECK(r->workdir == "/tmp/foo");
+	CHECK(r->yolo);
+}
+
+TEST_CASE("CliParser: tui rejects prompt and mutually exclusive resume flags")
+{
+	{
+		Argv argv({"tui", "--session", "abc123", "--continue"});
+		auto r = cli::ParseArgs(argv.argc(), argv.argv());
+		CHECK_FALSE(r.ok());
+	}
+	{
+		Argv argv({"--prompt", "x", "tui"});
+		auto r = cli::ParseArgs(argv.argc(), argv.argv());
+		CHECK_FALSE(r.ok());
+	}
+}
+
 TEST_CASE("CliParser: --output-format accepts text and stream-json only")
 {
 	{
