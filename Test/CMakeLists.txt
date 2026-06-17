@@ -39,6 +39,7 @@ add_executable(codeharness_tests
   Tui/MarkdownRendererTest.cpp
   Tui/MessageEntryTest.cpp
   Tui/SlashCommandsTest.cpp
+  Tui/ThinkingViewTest.cpp
   Tui/ToolCallCardTest.cpp
 )
 

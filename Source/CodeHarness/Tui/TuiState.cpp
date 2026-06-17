@@ -7,6 +7,19 @@
 namespace codeharness::tui
 {
 
+	void ApplyToolOutputExpanded(TuiState& state, bool expanded)
+	{
+		state.toolOutputExpanded = expanded;
+		for (auto& [_, tool] : state.activeToolCalls)
+		{
+			tool.expanded = expanded;
+		}
+		for (auto& [_, tool] : state.completedToolCalls)
+		{
+			tool.expanded = expanded;
+		}
+	}
+
 	bool DetectDarkMode()
 	{
 #ifdef _WIN32

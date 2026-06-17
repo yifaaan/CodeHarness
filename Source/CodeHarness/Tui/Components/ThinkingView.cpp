@@ -1,5 +1,7 @@
 #include "Tui/Components/ThinkingView.h"
 
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -17,6 +19,9 @@ namespace codeharness::tui
 		using ftxui::Element;
 		using ftxui::Elements;
 		using ftxui::text;
+
+		constexpr size_t kPreviewLines = 3;
+		constexpr std::string_view kStatusBullet = "\xE2\x97\x8F"; // U+25CF.
 
 		std::vector<std::string_view> SplitLines(std::string_view s)
 		{
@@ -36,22 +41,45 @@ namespace codeharness::tui
 			return out;
 		}
 
+		bool IsBlank(std::string_view value)
+		{
+			return std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+				return std::isspace(ch) != 0;
+			});
+		}
+
 	} // namespace
 
-	Element ThinkingView::Render(const std::string& thinking)
+	Element ThinkingView::Render(const std::string& thinking, bool expanded)
 	{
 		if (thinking.empty())
 		{
 			return ftxui::text("");
 		}
 
+		auto lines = SplitLines(thinking);
+		while (!lines.empty() && IsBlank(lines.back()))
+		{
+			lines.pop_back();
+		}
+
+		const bool truncated = !expanded && lines.size() > kPreviewLines;
+		const size_t shownCount = truncated ? kPreviewLines : lines.size();
+
 		Elements rows;
-		rows.push_back(text(" 💭 thinking") | ftxui::bold | ftxui::color(Color::Magenta));
-		for (auto line : SplitLines(thinking))
+		for (size_t i = 0; i < shownCount; ++i)
 		{
 			rows.push_back(ftxui::hbox({
-				text("     "),
-				text(std::string(line)) | ftxui::dim | ftxui::color(Color::GrayLight),
+				text(i == 0 ? std::string(kStatusBullet) + " " : "  ") | ftxui::dim | ftxui::color(Color::GrayLight),
+				text(std::string(lines[i])) | ftxui::dim | ftxui::color(Color::GrayLight),
+			}));
+		}
+		if (truncated)
+		{
+			rows.push_back(ftxui::hbox({
+				text("  "),
+				text("... (" + std::to_string(lines.size() - kPreviewLines) + " more lines, ctrl+o to expand)") |
+					ftxui::dim | ftxui::color(Color::GrayLight),
 			}));
 		}
 		return ftxui::vbox(std::move(rows));

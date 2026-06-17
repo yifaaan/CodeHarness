@@ -15,7 +15,7 @@ namespace codeharness::tui
 	class ThinkingView
 	{
 	public:
-		static ftxui::Element Render(const std::string& text);
+		static ftxui::Element Render(const std::string& text, bool expanded = false);
 	};
 
 } // namespace codeharness::tui

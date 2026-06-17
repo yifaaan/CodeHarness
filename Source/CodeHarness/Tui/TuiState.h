@@ -196,6 +196,7 @@ namespace codeharness::tui
 		bool userScrolledUp = false; // suppress auto-scroll-to-bottom while user browses history
 		std::string statusMessage;
 		agent::AgentStatus agentStatus = agent::AgentStatus::Idle;
+		bool toolOutputExpanded = false; // global Ctrl+O state for tool/thinking detail blocks
 
 		// Visibility toggles (driven by keyboard shortcuts like Ctrl+B)
 		bool sidePanelVisible = false;
@@ -212,5 +213,8 @@ namespace codeharness::tui
 
 	/// Build a default ColorPalette for the given mode.
 	ColorPalette MakePalette(bool darkMode);
+
+	/// Apply the global tool-output expansion state to all tracked tool cards.
+	void ApplyToolOutputExpanded(TuiState& state, bool expanded);
 
 } // namespace codeharness::tui

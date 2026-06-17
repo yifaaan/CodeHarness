@@ -35,6 +35,7 @@
 #include "Tui/Components/QueuePanel.h"
 #include "Tui/Components/SidePanel.h"
 #include "Tui/Components/StatusBar.h"
+#include "Tui/Components/ThinkingView.h"
 #include "Tui/Components/TodoPanel.h"
 #include "Tui/Components/ToolCallCard.h"
 #include "Tui/Components/WelcomePanel.h"
@@ -460,11 +461,15 @@ namespace codeharness::tui
 				}
 			}
 
-			if (state->streaming && state->currentAssistantBuffer.empty())
+		if (state->streaming && state->currentAssistantBuffer.empty())
+		{
+			if (!state->currentThinking.empty())
 			{
-				children.push_back(hbox({
-					text("  "),
-					spinner(7, spinnerFrame) | color(Color::Cyan),
+				children.push_back(ThinkingView::Render(state->currentThinking, state->toolOutputExpanded));
+			}
+			children.push_back(hbox({
+				text("  "),
+				spinner(7, spinnerFrame) | color(Color::Cyan),
 					text(" Thinking...") | dim | color(Color::GrayLight),
 				}));
 			}
@@ -1042,17 +1047,27 @@ namespace codeharness::tui
 			return true;
 		}
 
-		// Ctrl+B toggles the side panel (Kimi-style shortcut).
-		if (event == ftxui::Event::CtrlB)
-		{
-			std::lock_guard lk(state->mutex);
-			state->sidePanelVisible = !state->sidePanelVisible;
-			PostRender();
-			return true;
-		}
+	// Ctrl+B toggles the side panel (Kimi-style shortcut).
+	if (event == ftxui::Event::CtrlB)
+	{
+		std::lock_guard lk(state->mutex);
+		state->sidePanelVisible = !state->sidePanelVisible;
+		PostRender();
+		return true;
+	}
 
-		// Ctrl+L clears the screen (keeps transcript).
-		if (event == ftxui::Event::CtrlL)
+	if (event == ftxui::Event::Character("o") || event == ftxui::Event::Character("O") ||
+		event == ftxui::Event::Character("\x0F"))
+	{
+		std::lock_guard lk(state->mutex);
+		ApplyToolOutputExpanded(*state, !state->toolOutputExpanded);
+		state->statusMessage = state->toolOutputExpanded ? "Expanded tool output" : "Collapsed tool output";
+		PostRender();
+		return true;
+	}
+
+	// Ctrl+L clears the screen (keeps transcript).
+	if (event == ftxui::Event::CtrlL)
 		{
 			PostRender();
 			return true;

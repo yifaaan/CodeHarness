@@ -94,6 +94,8 @@ namespace codeharness::tui
 			tips.push_back(text("  ") | dim);
 			tips.push_back(text("/model") | dim);
 			tips.push_back(text("  ") | dim);
+			tips.push_back(text("ctrl+o: expand") | dim);
+			tips.push_back(text("  ") | dim);
 			tips.push_back(text("ctrl+c: cancel") | dim);
 
 			Color activityColor = state->streaming ? Color::Cyan : Color::Green;
@@ -104,9 +106,10 @@ namespace codeharness::tui
 					hbox(std::move(tips)) | color(Color::GrayLight),
 					text(" "),
 				}),
-				hbox({
-					text(" ") | flex,
-					text(activity) | color(activityColor),
+					hbox({
+						text(state->statusMessage.empty() ? " " : state->statusMessage) | dim | color(Color::GrayLight),
+						text(" ") | flex,
+						text(activity) | color(activityColor),
 					text("  "),
 					text(context) | color(Color::GrayLight),
 					text(" "),

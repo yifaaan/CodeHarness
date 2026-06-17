@@ -133,6 +133,7 @@ namespace codeharness::tui
 		tc.name = std::string(name);
 		tc.args = args;
 		tc.status = "running";
+		tc.expanded = state->toolOutputExpanded;
 		state->activeToolCalls[std::string(id)] = std::move(tc);
 		state->toolCallCount++;
 
