@@ -2,6 +2,8 @@
 
 #include <unknwn.h>
 
+#include <memory>
+
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 
@@ -10,6 +12,8 @@
 namespace winrt::CodeHarness::Desktop::implementation
 {
 
+	struct XamlTypeInfoProvider;
+
 	struct XamlMetaDataProvider : XamlMetaDataProviderT<XamlMetaDataProvider>
 	{
 		XamlMetaDataProvider() = default;
@@ -17,6 +21,11 @@ namespace winrt::CodeHarness::Desktop::implementation
 		Microsoft::UI::Xaml::Markup::IXamlType GetXamlType(Windows::UI::Xaml::Interop::TypeName const& type);
 		Microsoft::UI::Xaml::Markup::IXamlType GetXamlType(hstring const& fullName);
 		com_array<Microsoft::UI::Xaml::Markup::XmlnsDefinition> GetXmlnsDefinitions();
+
+	private:
+		std::shared_ptr<XamlTypeInfoProvider> Provider();
+
+		std::shared_ptr<XamlTypeInfoProvider> _provider;
 	};
 
 } // namespace winrt::CodeHarness::Desktop::implementation

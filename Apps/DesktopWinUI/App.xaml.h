@@ -2,7 +2,7 @@
 
 #include <unknwn.h>
 
-#include "App.g.h"
+#include "App.xaml.g.h"
 #include "MainWindow.xaml.h"
 
 namespace winrt::CodeHarness::Desktop::implementation

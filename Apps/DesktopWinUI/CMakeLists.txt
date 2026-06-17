@@ -31,7 +31,6 @@ set(DESKTOP_XAML_FILES
 )
 
 set(DESKTOP_IDL_FILES
-	App.idl
 	MainWindow.idl
 	XamlMetaDataProvider.idl
 	Views/ShellPage.idl
@@ -110,7 +109,22 @@ codeharness_add_xaml_include_shim("Controls.ToolCallView.xaml.g.h" "Controls/Too
 set(DESKTOP_XAML_GENERATED_CPP "${CMAKE_CURRENT_BINARY_DIR}/codeharness_desktop.dir/$<CONFIG>/Generated Files/CodeHarnessDesktop.XamlGenerated.cpp")
 file(GENERATE
   OUTPUT "${DESKTOP_XAML_GENERATED_CPP}"
-  CONTENT [[#include "App.g.cpp"
+  CONTENT [[#include <unknwn.h>
+#include <winrt/base.h>
+#undef GetCurrentTime
+#define DISABLE_XAML_GENERATED_MAIN
+
+#include "App.xaml.h"
+#include "MainWindow.xaml.h"
+#include "XamlMetaDataProvider.h"
+#include "Views/ShellPage.xaml.h"
+#include "Views/ChatPage.xaml.h"
+#include "Views/SettingsPage.xaml.h"
+#include "Controls/Sidebar.xaml.h"
+#include "Controls/ComposerBox.xaml.h"
+#include "Controls/PermissionDialog.xaml.h"
+#include "Controls/ToolCallView.xaml.h"
+
 #include "MainWindow.g.cpp"
 #include "module.g.cpp"
 #include "XamlTypeInfo.g.cpp"
@@ -146,7 +160,6 @@ target_compile_definitions(codeharness_desktop PRIVATE
   WIN32_LEAN_AND_MEAN
   NOMINMAX
   CODEHARNESS_WINDOWS_APP_SDK_MAJOR_MINOR=0x00020000
-  WINRT_FORCE_INCLUDE_APP_XAML_G_H
   WINRT_FORCE_INCLUDE_MAINWINDOW_XAML_G_H
   WINRT_FORCE_INCLUDE_SHELLPAGE_XAML_G_H
   WINRT_FORCE_INCLUDE_CHATPAGE_XAML_G_H
