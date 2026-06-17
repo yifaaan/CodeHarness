@@ -123,6 +123,7 @@ namespace codeharness::tui
 		Approval,
 		Question,
 		Help,
+		ModelPicker,
 		SessionPicker,
 		Settings,
 	};
@@ -156,6 +157,7 @@ namespace codeharness::tui
 		// Available sessions (loaded by SessionPicker)
 		std::vector<session::SessionInfo> availableSessions;
 		std::vector<std::string> availableModels;
+		bool sessionPickerAllScope = false;
 
 		// Transcript
 		std::deque<TranscriptEntry> transcript;

@@ -77,6 +77,7 @@ namespace codeharness::tui
 		ftxui::Component MakeApprovalPanel();
 		ftxui::Component MakeQuestionDialog();
 		ftxui::Component MakeHelpDialog();
+		ftxui::Component MakeModelPicker();
 		ftxui::Component MakeSessionPicker();
 		ftxui::Component MakeSettingsDialog();
 

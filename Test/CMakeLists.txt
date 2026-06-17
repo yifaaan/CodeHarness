@@ -36,6 +36,7 @@ add_executable(codeharness_tests
   Skills/SkillManagerTest.cpp
   Skills/SkillToolTest.cpp
   Tui/ChromeComponentsTest.cpp
+  Tui/DialogComponentsTest.cpp
   Tui/InputComposerLogicTest.cpp
   Tui/MarkdownRendererTest.cpp
   Tui/MessageEntryTest.cpp
@@ -57,3 +58,5 @@ target_link_libraries(codeharness_tests PRIVATE
 target_include_directories(codeharness_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_test(NAME codeharness_tests COMMAND codeharness_tests)
+
+

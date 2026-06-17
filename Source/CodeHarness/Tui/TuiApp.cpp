@@ -7,11 +7,13 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <typeinfo>
 #include <utility>
+#include <vector>
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
@@ -27,12 +29,17 @@
 #include "Rpc/CoreApi.h"
 #include "Rpc/RpcTypes.h"
 #include "Tui/Components/ActivityIndicator.h"
+#include "Tui/Components/ApprovalPanel.h"
 #include "Tui/Components/Banner.h"
 #include "Tui/Components/ChatPane.h"
 #include "Tui/Components/CompactionIndicator.h"
+#include "Tui/Components/HelpDialog.h"
 #include "Tui/Components/InputField.h"
 #include "Tui/Components/MessageEntry.h"
+#include "Tui/Components/QuestionDialog.h"
 #include "Tui/Components/QueuePanel.h"
+#include "Tui/Components/SessionPicker.h"
+#include "Tui/Components/SettingsDialog.h"
 #include "Tui/Components/SidePanel.h"
 #include "Tui/Components/StatusBar.h"
 #include "Tui/Components/ThinkingView.h"
@@ -629,6 +636,7 @@ namespace codeharness::tui
 		auto approval = MakeApprovalPanel();
 		auto question = MakeQuestionDialog();
 		auto help = MakeHelpDialog();
+		auto modelPicker = MakeModelPicker();
 		auto sessionPicker = MakeSessionPicker();
 		auto settings = MakeSettingsDialog();
 
@@ -636,6 +644,7 @@ namespace codeharness::tui
 			Maybe(approval, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Approval; }),
 			Maybe(question, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Question; }),
 			Maybe(help, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Help; }),
+			Maybe(modelPicker, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::ModelPicker; }),
 			Maybe(sessionPicker, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SessionPicker; }),
 			Maybe(settings, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Settings; }),
 		});
@@ -645,473 +654,317 @@ namespace codeharness::tui
 
 	ftxui::Component TuiApp::MakeApprovalPanel()
 	{
-		using namespace ftxui;
-
-		ButtonOption allowStyle = ButtonOption::Border();
-		auto allowBtn = Button(" [A]llow ", [this] {
-		permission::PermissionDecision decision = permission::PermissionDecision::Allow;
-		{
-			std::lock_guard lk(state->mutex);
-			if (state->pendingApproval.has_value() && state->pendingApproval->promise)
-			{
-				state->pendingApproval->promise->set_value(decision);
-				state->pendingApproval.reset();
-			}
-			state->activeModal = ModalKind::None;
-		}
-		PostRender(); }, allowStyle);
-
-		ButtonOption denyStyle = ButtonOption::Border();
-		auto denyBtn = Button(" [D]eny ", [this] {
-		permission::PermissionDecision decision = permission::PermissionDecision::Deny;
-		{
-			std::lock_guard lk(state->mutex);
-			if (state->pendingApproval.has_value() && state->pendingApproval->promise)
-			{
-				state->pendingApproval->promise->set_value(decision);
-				state->pendingApproval.reset();
-			}
-			state->activeModal = ModalKind::None;
-		}
-		PostRender(); }, denyStyle);
-
-		auto container = Container::Horizontal({allowBtn, denyBtn});
-
-		// Keyboard shortcuts: A/a = allow, D/d = deny
-		auto withKeys = CatchEvent(container, [this](Event event) -> bool {
-			if (event == Event::Character("a") || event == Event::Character("A"))
-			{
-				permission::PermissionDecision decision = permission::PermissionDecision::Allow;
+		return ApprovalPanel::Create(ApprovalPanelOptions{
+			.request = [this]() -> std::optional<ApprovalPanelRequest> {
 				std::lock_guard lk(state->mutex);
-				if (state->pendingApproval.has_value() && state->pendingApproval->promise)
+				if (!state->pendingApproval.has_value())
 				{
-					state->pendingApproval->promise->set_value(decision);
-					state->pendingApproval.reset();
+					return std::nullopt;
 				}
-				state->activeModal = ModalKind::None;
+				const auto& approval = *state->pendingApproval;
+				return ApprovalPanelRequest{.toolName = approval.toolName, .args = approval.args, .description = approval.description};
+			},
+			.onResponse = [this](ApprovalPanelResponse response) {
+				{
+					std::lock_guard lk(state->mutex);
+					if (state->pendingApproval.has_value() && state->pendingApproval->promise)
+					{
+						state->pendingApproval->promise->set_value(response.decision);
+						state->pendingApproval.reset();
+					}
+					state->activeModal = ModalKind::None;
+				}
 				PostRender();
-				return true;
-			}
-			if (event == Event::Character("d") || event == Event::Character("D") || event == Event::Character("n"))
-			{
-				permission::PermissionDecision decision = permission::PermissionDecision::Deny;
-				std::lock_guard lk(state->mutex);
-				if (state->pendingApproval.has_value() && state->pendingApproval->promise)
+			},
+			.onToggleToolOutput = [this] {
 				{
-					state->pendingApproval->promise->set_value(decision);
-					state->pendingApproval.reset();
+					std::lock_guard lk(state->mutex);
+					ApplyToolOutputExpanded(*state, !state->toolOutputExpanded);
+					state->statusMessage = state->toolOutputExpanded ? "Expanded tool output" : "Collapsed tool output";
 				}
-				state->activeModal = ModalKind::None;
 				PostRender();
-				return true;
-			}
-			return false;
+			},
 		});
-
-		auto render = Renderer(withKeys, [this, withKeys] {
-			std::lock_guard lk(state->mutex);
-			if (state->activeModal != ModalKind::Approval || !state->pendingApproval.has_value())
-			{
-				return text("");
-			}
-
-			auto& pa = *state->pendingApproval;
-
-			// Truncate args JSON for display
-			std::string argsStr = pa.args.dump(2);
-			if (argsStr.size() > 400)
-			{
-				argsStr = argsStr.substr(0, 397) + "...";
-			}
-
-			// Header with bold icon
-			auto header = hbox({
-				text(" ! ") | bold | color(Color::Yellow),
-				text("Permission Required") | bold | color(Color::Yellow),
-			});
-
-			// Tool name + description
-			Elements body;
-			body.push_back(text(""));
-			body.push_back(hbox({
-				text("  Tool:  ") | bold | color(Color::Cyan),
-				text(pa.toolName) | bold,
-			}));
-			if (!pa.description.empty())
-			{
-				body.push_back(hbox({
-					text("  Desc:  ") | bold | color(Color::Cyan),
-					text(pa.description),
-				}));
-			}
-			body.push_back(text("  Args:") | bold | color(Color::Cyan));
-			{
-				// Split argsStr by newlines using string::find
-				size_t pos = 0;
-				size_t prev = 0;
-				while ((pos = argsStr.find('\n', prev)) != std::string::npos)
-				{
-					body.push_back(text(fmt::format("    {}", argsStr.substr(prev, pos - prev))) | color(Color::GrayLight));
-					prev = pos + 1;
-				}
-				body.push_back(text(fmt::format("    {}", argsStr.substr(prev))) | color(Color::GrayLight));
-			}
-
-			auto window = vbox({
-							  header,
-							  separator(),
-							  vbox(std::move(body)),
-							  separator(),
-							  withKeys->Render() | center,
-							  text(" Press A to allow, D to deny, Esc to cancel") | dim | center,
-						  }) |
-						  borderDouble | color(Color::Yellow) | size(WIDTH, EQUAL, 70) | center;
-
-			return window;
-		});
-
-		return render;
 	}
 
 	ftxui::Component TuiApp::MakeQuestionDialog()
 	{
-		using namespace ftxui;
-
-		// Use a Radiobox for option selection
-		auto selected = std::make_shared<int>(0);
-		std::vector<std::string> options;
-
-		RadioboxOption opt;
-		auto radiobox = Radiobox(&options, selected.get(), opt);
-
-		// Free-form input option (when allowFreeform is true)
-		auto freeInput = std::make_shared<std::string>();
-		InputOption inputOpt;
-		inputOpt.placeholder = "Type your answer...";
-		auto input = Input(freeInput.get(), inputOpt);
-
-		auto container = Container::Vertical({radiobox, input});
-
-		auto render = Renderer(container, [this, container, &options, selected, freeInput, input, radiobox] {
-			std::lock_guard lk(state->mutex);
-			if (state->activeModal != ModalKind::Question || !state->pendingQuestion.has_value())
-			{
-				return text("");
-			}
-
-			auto& pq = *state->pendingQuestion;
-
-			// Sync the options vector (only when changed)
-			if (options.size() != pq.request.options.size())
-			{
-				options = pq.request.options;
-				if (pq.request.allowFreeform)
-				{
-					options.push_back("(custom answer)");
-				}
-				*selected = 0;
-			}
-
-			auto header = hbox({
-				text(" ? ") | bold | color(Color::Cyan),
-				text("Question") | bold | color(Color::Cyan),
-			});
-
-			Elements body;
-			body.push_back(text(""));
-			body.push_back(text(pq.request.question) | bold);
-			body.push_back(text(""));
-
-			// Show radiobox for options
-			body.push_back(radiobox->Render());
-
-			// Show free-form input if (a) freeform allowed AND user picked last option, or (b) no options
-			bool showInput = pq.request.allowFreeform &&
-							 (options.empty() || *selected == static_cast<int>(options.size()) - 1);
-			if (showInput)
-			{
-				body.push_back(text(""));
-				body.push_back(text("Custom answer:") | dim);
-				body.push_back(input->Render());
-			}
-
-			auto window = vbox({
-							  header,
-							  separator(),
-							  vbox(std::move(body)),
-							  separator(),
-							  text(" Enter to confirm, Esc to cancel") | dim | center,
-						  }) |
-						  border | color(Color::Cyan) | size(WIDTH, EQUAL, 70) | center;
-
-			return window;
-		});
-
-		// Wire Enter to confirm
-		auto withEnter = CatchEvent(render, [this, selected, freeInput, &options](Event event) -> bool {
-			if (event == Event::Return)
-			{
-				std::string answer;
-				if (!options.empty() && *selected < static_cast<int>(options.size()))
-				{
-					if (state->pendingQuestion.has_value() && state->pendingQuestion->request.allowFreeform &&
-						*selected == static_cast<int>(options.size()) - 1)
-					{
-						answer = *freeInput;
-					}
-					else
-					{
-						answer = options[*selected];
-					}
-				}
-				else
-				{
-					answer = *freeInput;
-				}
+		return QuestionDialog::Create(QuestionDialogOptions{
+			.request = [this]() -> std::optional<tools::QuestionRequest> {
 				std::lock_guard lk(state->mutex);
-				if (state->pendingQuestion.has_value() && state->pendingQuestion->promise)
+				if (!state->pendingQuestion.has_value())
 				{
-					state->pendingQuestion->promise->set_value(answer);
-					state->pendingQuestion.reset();
+					return std::nullopt;
 				}
-				state->activeModal = ModalKind::None;
-				*freeInput = "";
+				return state->pendingQuestion->request;
+			},
+			.onAnswer = [this](std::string answer) {
+				{
+					std::lock_guard lk(state->mutex);
+					if (state->pendingQuestion.has_value() && state->pendingQuestion->promise)
+					{
+						state->pendingQuestion->promise->set_value(std::move(answer));
+						state->pendingQuestion.reset();
+					}
+					state->activeModal = ModalKind::None;
+				}
 				PostRender();
-				return true;
-			}
-			return false;
+			},
+			.onToggleToolOutput = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					ApplyToolOutputExpanded(*state, !state->toolOutputExpanded);
+					state->statusMessage = state->toolOutputExpanded ? "Expanded tool output" : "Collapsed tool output";
+				}
+				PostRender();
+			},
 		});
-
-		return withEnter;
 	}
 
 	ftxui::Component TuiApp::MakeHelpDialog()
 	{
+		return HelpDialog::Create(HelpDialogOptions{
+			.commands = SlashCommands::All(),
+			.onClose = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::None;
+				}
+				PostRender();
+			},
+			.maxVisible = 24,
+		});
+	}
+
+	ftxui::Component TuiApp::MakeModelPicker()
+	{
 		using namespace ftxui;
-		auto render = Renderer([this] {
-			if (state->activeModal != ModalKind::Help)
+
+		auto selected = std::make_shared<int>(0);
+		auto modelNames = std::make_shared<std::vector<std::string>>();
+		RadioboxOption opt;
+		auto radiobox = Radiobox(modelNames.get(), selected.get(), opt);
+
+		auto render = Renderer(radiobox, [this, radiobox, modelNames, selected] {
+			std::lock_guard lk(state->mutex);
+			if (state->activeModal != ModalKind::ModelPicker)
 			{
 				return text("");
 			}
-			return vbox({
-					   text(" Help ") | bold | center,
-					   separator(),
-					   text("  Keyboard:") | bold,
-					   text("    Enter       Send message"),
-					   text("    Up/Down     Navigate input history"),
-					   text("    Ctrl+C      Cancel streaming"),
-					   text("    Ctrl+B      Toggle side panel"),
-					   text("    Ctrl+O      Toggle tool output"),
-					   text("    Ctrl+L      Redraw screen"),
-					   text("    Escape      Close dialog"),
-					   separator(),
-					   text("  Slash commands:") | bold,
-					   text("    /help, /h, /?  Show this help"),
-					   text("    /clear, /new   Clear context or start fresh"),
-					   text("    /compact        Compact context now"),
-					   text("    /fork           Fork current session"),
-					   text("    /rename, /title Set or rename session title"),
-					   text("    /status         Show session/model/mode"),
-					   text("    /version        Show CodeHarness version"),
-					   text("    /exit, /quit, /q Quit"),
-					   text("    /model          Pick model from list"),
-					   text("    /model X        Switch to model X"),
-					   text("    /sessions, /resume Pick session to resume"),
-					   text("    /mode, /yolo    Toggle YOLO/Manual"),
-					   text("    /permission     Permission selector"),
-					   text("    /settings, /config Settings"),
-					   text("    /usage          Show usage summary"),
-					   text("    /login, /logout Account access"),
-					   text("    /mcp, /plugins, /tasks, /feedback"),
-					   text("    /reload, /reload-tui, /export"),
-					   text("    /plan, /goal, /swarm, /btw, /undo"),
-					   separator(),
-					   text("  Press Escape to close") | dim,
-				   }) |
-				   border | center;
+			*modelNames = state->availableModels;
+			if (*selected >= static_cast<int>(modelNames->size()))
+			{
+				*selected = 0;
+			}
+
+			Elements body;
+			body.push_back(text(" Model ") | bold | color(Color::Cyan));
+			body.push_back(text(" Current: " + state->model) | dim);
+			body.push_back(text(""));
+			if (modelNames->empty())
+			{
+				body.push_back(text("No models configured.") | dim);
+			}
+			else
+			{
+				body.push_back(radiobox->Render());
+			}
+			body.push_back(text(""));
+			body.push_back(text("Enter select, Esc cancel") | dim);
+			return vbox(std::move(body)) | border | size(WIDTH, LESS_THAN, 90) | center;
 		});
-		return render;
+
+		return CatchEvent(render, [this, modelNames, selected](Event event) -> bool {
+			if (event == Event::Escape)
+			{
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::None;
+				}
+				PostRender();
+				return true;
+			}
+			if (event == Event::Return)
+			{
+				if (*selected >= 0 && *selected < static_cast<int>(modelNames->size()))
+				{
+					auto target = (*modelNames)[static_cast<std::size_t>(*selected)];
+					std::thread([this, target] {
+						auto status = api->SetModel(state->sessionId, target);
+						std::lock_guard lk(state->mutex);
+						if (status.ok())
+						{
+							state->model = target;
+							state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Model switched to: {}", target)});
+						}
+						else
+						{
+							state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Error: {}", status.message())});
+						}
+						state->activeModal = ModalKind::None;
+						PostRender();
+					}).detach();
+				}
+				return true;
+			}
+			return false;
+		});
 	}
 
 	ftxui::Component TuiApp::MakeSessionPicker()
 	{
-		using namespace ftxui;
-
-		auto selected = std::make_shared<int>(0);
-		std::vector<std::string> displayLines; // session titles for display
-		std::vector<std::string> sessionIds;   // matching session IDs
-
-		RadioboxOption opt;
-		auto radiobox = Radiobox(&displayLines, selected.get(), opt);
-
-		auto render = Renderer(radiobox, [this, radiobox, &displayLines, &sessionIds, selected] {
-			std::lock_guard lk(state->mutex);
-			if (state->activeModal != ModalKind::SessionPicker)
-			{
-				return text("");
-			}
-
-			// Build display lines from available sessions
-			if (displayLines.size() != state->availableSessions.size())
-			{
-				displayLines.clear();
-				sessionIds.clear();
-				for (const auto& s : state->availableSessions)
-				{
-					std::string title = s.title.empty() ? "(untitled)" : s.title;
-					if (title.size() > 50)
-						title = title.substr(0, 47) + "...";
-					displayLines.push_back(fmt::format("{} [{}]", title, s.sessionId.substr(0, 8)));
-					sessionIds.push_back(s.sessionId);
-				}
-				*selected = 0;
-			}
-
-			Elements body;
-			body.push_back(text("Sessions") | bold | color(Color::Cyan));
-			body.push_back(text(""));
-			if (displayLines.empty())
-			{
-				body.push_back(text("No sessions found.") | dim);
-			}
-			else
-			{
-				body.push_back(radiobox->Render());
-			}
-			body.push_back(text(""));
-			body.push_back(text("Enter to resume, Esc to cancel") | dim);
-
-			return vbox(std::move(body)) | border | size(WIDTH, EQUAL, 70) | center;
-		});
-
-		auto withEnter = CatchEvent(render, [this, &sessionIds, selected](Event event) -> bool {
-			if (event == Event::Return)
-			{
-				if (*selected < static_cast<int>(sessionIds.size()))
-				{
-					auto targetId = sessionIds[*selected];
-					// Resume in a background thread (Prompt is blocking)
-					std::thread([this, targetId] {
-						rpc::CreateSessionOptions so;
-						so.workdir = opts.workdir;
-						so.title = "tui";
-						so.model = opts.model;
-						so.permissionMode = opts.yolo ? config::PermissionMode::Yolo : config::PermissionMode::Manual;
-						auto r = api->ResumeSession(targetId, so);
-						if (r.ok())
-						{
-							std::lock_guard lk(state->mutex);
-							state->sessionId = *r;
-							state->transcript.clear();
-							state->transcript.push_back({
-								.kind = TranscriptEntry::Kind::System,
-								.text = fmt::format("Resumed session: {}", *r),
-							});
-						}
-					}).detach();
-				}
+		return SessionPicker::Create(SessionPickerOptions{
+			.sessions = [this] {
 				std::lock_guard lk(state->mutex);
-				state->activeModal = ModalKind::None;
+				return state->availableSessions;
+			},
+			.currentSessionId = [this] {
+				std::lock_guard lk(state->mutex);
+				return state->sessionId;
+			},
+			.scope = [this] {
+				std::lock_guard lk(state->mutex);
+				return state->sessionPickerAllScope ? SessionPickerScope::All : SessionPickerScope::Cwd;
+			},
+			.onSelect = [this](session::SessionInfo info) {
+				std::thread([this, targetId = info.sessionId] {
+					rpc::CreateSessionOptions so;
+					so.workdir = opts.workdir;
+					so.title = "tui";
+					so.model = opts.model;
+					so.permissionMode = opts.yolo ? config::PermissionMode::Yolo : config::PermissionMode::Manual;
+					auto r = api->ResumeSession(targetId, so);
+					std::lock_guard lk(state->mutex);
+					if (r.ok())
+					{
+						state->sessionId = *r;
+						state->transcript.clear();
+						state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Resumed session: {}", *r)});
+					}
+					else
+					{
+						state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Error: resume failed: {}", r.status().message())});
+					}
+					state->activeModal = ModalKind::None;
+					PostRender();
+				}).detach();
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::None;
+				}
 				PostRender();
-				return true;
-			}
-			return false;
+			},
+			.onToggleScope = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->sessionPickerAllScope = !state->sessionPickerAllScope;
+					state->statusMessage = state->sessionPickerAllScope
+						? "All-session scope is not implemented yet; showing current workspace sessions"
+						: "Showing current workspace sessions";
+				}
+				PostRender();
+			},
+			.onCtrlC = [this] { (void)api->Cancel(state->sessionId); },
+			.onCtrlD = [this] {
+				if (screen)
+				{
+					screen->Exit();
+				}
+			},
 		});
-
-		return withEnter;
 	}
 
 	ftxui::Component TuiApp::MakeSettingsDialog()
 	{
-		using namespace ftxui;
-
-		auto selected = std::make_shared<int>(0);
-		std::vector<std::string> modelNames;
-
-		RadioboxOption opt;
-		auto radiobox = Radiobox(&modelNames, selected.get(), opt);
-
-		auto render = Renderer(radiobox, [this, radiobox, &modelNames, selected] {
-			std::lock_guard lk(state->mutex);
-			if (state->activeModal != ModalKind::Settings)
-			{
-				return text("");
-			}
-
-			// Build model list lazily
-			if (modelNames.empty() && !state->availableModels.empty())
-			{
-				modelNames = state->availableModels;
-				*selected = 0;
-			}
-
-			Elements body;
-			body.push_back(text("Settings - Model Selection") | bold | color(Color::Cyan));
-			body.push_back(text(""));
-			body.push_back(text(fmt::format("Current: {}", state->model)) | dim);
-			body.push_back(text(""));
-			if (modelNames.empty())
-			{
-				body.push_back(text("(no models configured)") | dim);
-			}
-			else
-			{
-				body.push_back(radiobox->Render());
-			}
-			body.push_back(text(""));
-			body.push_back(text("Enter to apply, Esc to cancel") | dim);
-
-			return vbox(std::move(body)) | border | size(WIDTH, EQUAL, 70) | center;
-		});
-
-		auto withEnter = CatchEvent(render, [this, &modelNames, selected](Event event) -> bool {
-			if (event == Event::Return)
-			{
-				if (*selected < static_cast<int>(modelNames.size()))
-				{
-					auto target = modelNames[*selected];
-					std::thread([this, target] {
-						(void)api->SetModel(state->sessionId, target);
-						std::lock_guard lk(state->mutex);
-						state->model = target;
-					}).detach();
-				}
+		return SettingsDialog::Create(SettingsDialogOptions{
+			.currentModel = [this] {
 				std::lock_guard lk(state->mutex);
-				state->activeModal = ModalKind::None;
+				return state->model;
+			},
+			.currentPermissionMode = [this] {
+				std::lock_guard lk(state->mutex);
+				return state->permissionMode;
+			},
+			.onSelect = [this](SettingsSelection selection) {
+				if (selection == SettingsSelection::Model)
+				{
+					std::thread([this] {
+						auto models = api->ListModels();
+						std::lock_guard lk(state->mutex);
+						if (models.ok())
+						{
+							state->availableModels.clear();
+							for (const auto& m : *models)
+							{
+								state->availableModels.push_back(m.alias);
+							}
+							state->activeModal = ModalKind::ModelPicker;
+						}
+						else
+						{
+							state->activeModal = ModalKind::None;
+							state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Error: {}", models.status().message())});
+						}
+						PostRender();
+					}).detach();
+					return;
+				}
+				if (selection == SettingsSelection::Permission)
+				{
+					config::PermissionMode newMode;
+					{
+						std::lock_guard lk(state->mutex);
+						newMode = state->permissionMode == config::PermissionMode::Yolo ? config::PermissionMode::Manual : config::PermissionMode::Yolo;
+						state->permissionMode = newMode;
+						state->activeModal = ModalKind::None;
+						state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Mode: {}", PermissionModeLabel(newMode))});
+					}
+					(void)api->SetPermissionMode(state->sessionId, newMode);
+					PostRender();
+					return;
+				}
+				if (selection == SettingsSelection::Usage)
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::None;
+					state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("usage={} tokens", TotalTokens(state->lastUsage))});
+					PostRender();
+					return;
+				}
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::None;
+					state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = "This settings page is not implemented yet."});
+				}
 				PostRender();
-				return true;
-			}
-			return false;
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::None;
+				}
+				PostRender();
+			},
 		});
-
-		return withEnter;
 	}
-
 	// =======================================================================
 	// Input handling
 	// =======================================================================
 
 	bool TuiApp::HandleInput(ftxui::Event event)
 	{
-		if (event == ftxui::Event::Escape)
 		{
 			std::lock_guard lk(state->mutex);
 			if (state->activeModal != ModalKind::None)
 			{
-				if (state->pendingApproval.has_value() && state->pendingApproval->promise)
-				{
-					state->pendingApproval->promise->set_value(permission::PermissionDecision::Deny);
-					state->pendingApproval.reset();
-				}
-				if (state->pendingQuestion.has_value() && state->pendingQuestion->promise)
-				{
-					state->pendingQuestion->promise->set_value("");
-					state->pendingQuestion.reset();
-				}
-				state->activeModal = ModalKind::None;
-				PostRender();
-				return true;
+				return false;
 			}
+		}
+
+		if (event == ftxui::Event::Escape)
+		{
 			return true;
 		}
 
@@ -1341,7 +1194,7 @@ namespace codeharness::tui
 					{
 						state->availableModels.push_back(m.alias);
 					}
-					state->activeModal = ModalKind::Settings;
+					state->activeModal = ModalKind::ModelPicker;
 				}
 				PostRender();
 			}).detach();
@@ -1517,3 +1370,4 @@ namespace codeharness::tui
 	}
 
 } // namespace codeharness::tui
+
