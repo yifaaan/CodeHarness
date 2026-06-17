@@ -901,6 +901,7 @@ namespace codeharness::tui
 					   text("    Up/Down     Navigate input history"),
 					   text("    Ctrl+C      Cancel streaming"),
 					   text("    Ctrl+B      Toggle side panel"),
+					   text("    Ctrl+O      Toggle tool output"),
 					   text("    Ctrl+L      Redraw screen"),
 					   text("    Escape      Close dialog"),
 					   separator(),
@@ -1123,8 +1124,7 @@ namespace codeharness::tui
 		return true;
 	}
 
-	if (event == ftxui::Event::Character("o") || event == ftxui::Event::Character("O") ||
-		event == ftxui::Event::Character("\x0F"))
+	if (event == ftxui::Event::CtrlO)
 	{
 		std::lock_guard lk(state->mutex);
 		ApplyToolOutputExpanded(*state, !state->toolOutputExpanded);
