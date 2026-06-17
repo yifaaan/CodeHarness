@@ -151,6 +151,8 @@ namespace winrt::CodeHarness::Desktop::implementation
 			return;
 		}
 		this->MessagesPanel().Children().Clear();
+		currentAssistantText.clear();
+		SetEmptyState(true);
 		ShowStatus(L"New session created");
 		LoadSessions();
 	}
@@ -182,6 +184,7 @@ namespace winrt::CodeHarness::Desktop::implementation
 		{
 			NewChat();
 		}
+		SetEmptyState(false);
 		AppendMessage(prompt.c_str());
 		this->PromptBox().Text(L"");
 		SetRunning(true);
@@ -202,22 +205,27 @@ namespace winrt::CodeHarness::Desktop::implementation
 	void MainWindow::AppendMessage(std::wstring const& text, bool subtle)
 	{
 		Border bubble;
-		bubble.CornerRadius(CornerRadius{8});
+		bubble.CornerRadius(CornerRadius{12});
 		bubble.Padding(Thickness{14, 10, 14, 10});
 		bubble.MaxWidth(760);
 		bubble.HorizontalAlignment(subtle ? HorizontalAlignment::Stretch : HorizontalAlignment::Right);
-		bubble.Background(SolidColorBrush(subtle ? Windows::UI::Color{255, 247, 247, 247} : Windows::UI::Color{255, 238, 244, 255}));
+		// User prompts use the green-tinted bubble; assistant / tool lines use a neutral light card.
+		bubble.Background(SolidColorBrush(subtle ? Windows::UI::Color{255, 246, 246, 245}
+		                                        : Windows::UI::Color{255, 234, 247, 239}));
 
 		TextBlock textBlock;
 		textBlock.Text(text);
 		textBlock.TextWrapping(TextWrapping::Wrap);
-		textBlock.Foreground(SolidColorBrush(Windows::UI::Color{255, 32, 32, 32}));
+		textBlock.FontSize(14);
+		textBlock.Foreground(SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
 		bubble.Child(textBlock);
 		this->MessagesPanel().Children().Append(bubble);
 	}
 
 	void MainWindow::AppendAssistantDelta(std::wstring const& text)
 	{
+		// First token of a response flips the main panel out of the welcome state.
+		SetEmptyState(false);
 		currentAssistantText += text;
 		if (this->MessagesPanel().Children().Size() == 0 || currentAssistantText == text)
 		{
@@ -240,6 +248,18 @@ namespace winrt::CodeHarness::Desktop::implementation
 		this->SendButton().IsEnabled(!running);
 		this->CancelButton().IsEnabled(running);
 		ShowStatus(running ? L"Running" : L"Ready");
+	}
+
+	void MainWindow::SetEmptyState(bool empty)
+	{
+		if (auto panel = this->EmptyStatePanel())
+		{
+			panel.Visibility(empty ? Visibility::Visible : Visibility::Collapsed);
+		}
+		if (auto scroll = this->MessagesScroll())
+		{
+			scroll.Visibility(empty ? Visibility::Collapsed : Visibility::Visible);
+		}
 	}
 
 	void MainWindow::ShowStatus(std::wstring const& text)

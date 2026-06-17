@@ -27,6 +27,7 @@ namespace winrt::CodeHarness::Desktop::implementation
 		void AppendMessage(std::wstring const& text, bool subtle = false);
 		void AppendAssistantDelta(std::wstring const& text);
 		void SetRunning(bool running);
+		void SetEmptyState(bool empty);
 		void ShowStatus(std::wstring const& text);
 		std::wstring ToWide(std::string_view text) const;
 		std::string ToUtf8(hstring const& text) const;

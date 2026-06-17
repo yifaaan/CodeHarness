@@ -1,20 +1,86 @@
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
     <Style x:Key="HeroTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="30" />
+        <Setter Property="FontSize" Value="28" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
     </Style>
-    <Style x:Key="SidebarSectionTextStyle" TargetType="TextBlock">
-        <Setter Property="Margin" Value="18,0,18,0" />
-        <Setter Property="FontSize" Value="15" />
+
+    <Style x:Key="HeroSubTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
     </Style>
-    <Style x:Key="ProjectTextStyle" TargetType="TextBlock">
-        <Setter Property="Margin" Value="18,0,18,0" />
-        <Setter Property="FontSize" Value="17" />
+
+    <!-- ===== Sidebar ===== -->
+    <Style x:Key="BrandTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
     </Style>
+
+    <Style x:Key="SidebarSectionTextStyle" TargetType="TextBlock">
+        <Setter Property="Margin" Value="18,0,18,0" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
+    </Style>
+
+    <Style x:Key="ProjectTextStyle" TargetType="TextBlock">
+        <Setter Property="Margin" Value="18,0,18,0" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+    </Style>
+
+    <Style x:Key="SessionItemTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="SessionItemMetaTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <!-- ===== Main toolbar ===== -->
+    <Style x:Key="ToolbarTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+    </Style>
+
+    <!-- ===== Composer ===== -->
+    <Style x:Key="ComposerHintTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessSecondaryTextBrush}" />
+    </Style>
+
+    <!-- ===== Context (right) panel ===== -->
+    <Style x:Key="ContextSectionTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
+    </Style>
+
+    <Style x:Key="ContextItemTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="ContextItemMetaTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
+    </Style>
+
 </ResourceDictionary>
