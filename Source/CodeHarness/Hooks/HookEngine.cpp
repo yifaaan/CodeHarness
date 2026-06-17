@@ -79,34 +79,56 @@ namespace codeharness::hooks
 	{
 		switch (e)
 		{
-		case HookEvent::PreToolUse: return "PreToolUse";
-		case HookEvent::PostToolUse: return "PostToolUse";
-		case HookEvent::PostToolUseFailure: return "PostToolUseFailure";
-		case HookEvent::UserPromptSubmit: return "UserPromptSubmit";
-		case HookEvent::Stop: return "Stop";
-		case HookEvent::StopFailure: return "StopFailure";
-		case HookEvent::SessionStart: return "SessionStart";
-		case HookEvent::SessionEnd: return "SessionEnd";
-		case HookEvent::PreCompact: return "PreCompact";
-		case HookEvent::PostCompact: return "PostCompact";
-		case HookEvent::Notification: return "Notification";
+		case HookEvent::PreToolUse:
+			return "PreToolUse";
+		case HookEvent::PostToolUse:
+			return "PostToolUse";
+		case HookEvent::PostToolUseFailure:
+			return "PostToolUseFailure";
+		case HookEvent::UserPromptSubmit:
+			return "UserPromptSubmit";
+		case HookEvent::Stop:
+			return "Stop";
+		case HookEvent::StopFailure:
+			return "StopFailure";
+		case HookEvent::SessionStart:
+			return "SessionStart";
+		case HookEvent::SessionEnd:
+			return "SessionEnd";
+		case HookEvent::PreCompact:
+			return "PreCompact";
+		case HookEvent::PostCompact:
+			return "PostCompact";
+		case HookEvent::Notification:
+			return "Notification";
 		}
 		return "Notification";
 	}
 
 	std::optional<HookEvent> ParseHookEvent(std::string_view name)
 	{
-		if (name == "PreToolUse") return HookEvent::PreToolUse;
-		if (name == "PostToolUse") return HookEvent::PostToolUse;
-		if (name == "PostToolUseFailure") return HookEvent::PostToolUseFailure;
-		if (name == "UserPromptSubmit") return HookEvent::UserPromptSubmit;
-		if (name == "Stop") return HookEvent::Stop;
-		if (name == "StopFailure") return HookEvent::StopFailure;
-		if (name == "SessionStart") return HookEvent::SessionStart;
-		if (name == "SessionEnd") return HookEvent::SessionEnd;
-		if (name == "PreCompact") return HookEvent::PreCompact;
-		if (name == "PostCompact") return HookEvent::PostCompact;
-		if (name == "Notification") return HookEvent::Notification;
+		if (name == "PreToolUse")
+			return HookEvent::PreToolUse;
+		if (name == "PostToolUse")
+			return HookEvent::PostToolUse;
+		if (name == "PostToolUseFailure")
+			return HookEvent::PostToolUseFailure;
+		if (name == "UserPromptSubmit")
+			return HookEvent::UserPromptSubmit;
+		if (name == "Stop")
+			return HookEvent::Stop;
+		if (name == "StopFailure")
+			return HookEvent::StopFailure;
+		if (name == "SessionStart")
+			return HookEvent::SessionStart;
+		if (name == "SessionEnd")
+			return HookEvent::SessionEnd;
+		if (name == "PreCompact")
+			return HookEvent::PreCompact;
+		if (name == "PostCompact")
+			return HookEvent::PostCompact;
+		if (name == "Notification")
+			return HookEvent::Notification;
 		return std::nullopt;
 	}
 

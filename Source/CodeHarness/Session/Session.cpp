@@ -5,9 +5,9 @@
 
 #include "Agent/Agent.h"
 #include "Agent/AgentTypes.h"
-#include "Host/Host.h"
 #include "Hooks/HookEngine.h"
 #include "Hooks/HookTypes.h"
+#include "Host/Host.h"
 #include "Llm/ChatProvider.h"
 #include "Records/AgentRecords.h"
 #include "Records/FilePersistence.h"

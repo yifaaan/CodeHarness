@@ -520,13 +520,13 @@ namespace codeharness::rpc
 		}
 
 		runtime.skillManager->SetSessionId(runtime.session->Id());
-			agent->SetSkillManager(runtime.skillManager.get());
-			agent->SetPermissionMode(permissionMode);
-			runtime.permissionMode = permissionMode;
-			if (config.approvalCallback)
-			{
-				agent->SetApprovalCallback(config.approvalCallback);
-			}
+		agent->SetSkillManager(runtime.skillManager.get());
+		agent->SetPermissionMode(permissionMode);
+		runtime.permissionMode = permissionMode;
+		if (config.approvalCallback)
+		{
+			agent->SetApprovalCallback(config.approvalCallback);
+		}
 
 		agent->SetEventDispatcher([this, sessionId = runtime.session->Id()](const agent::AgentEvent& ev) {
 			if (config.eventSink)
@@ -680,164 +680,164 @@ namespace codeharness::rpc
 		{
 			return resolvedWorkdir.status();
 		}
-			return sessionStore->List(*resolvedWorkdir);
-		}
+		return sessionStore->List(*resolvedWorkdir);
+	}
 
-		absl::StatusOr<session::SessionDir> CoreApi::FindSessionDir(std::string_view sessionId)
+	absl::StatusOr<session::SessionDir> CoreApi::FindSessionDir(std::string_view sessionId)
+	{
+		auto storeStatus = EnsureSessionStore();
+		if (!storeStatus.ok())
 		{
-			auto storeStatus = EnsureSessionStore();
-			if (!storeStatus.ok())
-			{
-				return storeStatus;
-			}
-			return sessionStore->Find(sessionId);
+			return storeStatus;
 		}
+		return sessionStore->Find(sessionId);
+	}
 
-		absl::StatusOr<CoreSessionInfo> CoreApi::GetSessionInfo(std::string_view sessionId)
+	absl::StatusOr<CoreSessionInfo> CoreApi::GetSessionInfo(std::string_view sessionId)
+	{
+		auto active = sessions.find(std::string(sessionId));
+		if (active != sessions.end())
 		{
-			auto active = sessions.find(std::string(sessionId));
-			if (active != sessions.end())
+			auto* runtime = active->second.get();
+			session::SessionInfo info;
+			info.sessionId = active->first;
+			if (runtime->session)
 			{
-				auto* runtime = active->second.get();
-				session::SessionInfo info;
-				info.sessionId = active->first;
-				if (runtime->session)
-				{
-					const auto& meta = runtime->session->Meta();
-					info.title = meta.title;
-					info.workdir = meta.workdir;
-					info.createdAt = meta.createdAt;
-					info.updatedAt = meta.updatedAt;
-				}
-				else
-				{
-					info.workdir = runtime->workdir;
-				}
-				return CoreSessionInfo{
-					.session = std::move(info),
-					.model = runtime->modelName,
-					.permissionMode = runtime->permissionMode,
-					.planMode = runtime->planMode,
-					.active = !runtime->closed,
-				};
+				const auto& meta = runtime->session->Meta();
+				info.title = meta.title;
+				info.workdir = meta.workdir;
+				info.createdAt = meta.createdAt;
+				info.updatedAt = meta.updatedAt;
 			}
-
-			auto dir = FindSessionDir(sessionId);
-			if (!dir.ok())
+			else
 			{
-				return dir.status();
-			}
-			auto meta = sessionStore->ReadMeta(dir->path);
-			if (!meta.ok())
-			{
-				return meta.status();
+				info.workdir = runtime->workdir;
 			}
 			return CoreSessionInfo{
-				.session =
-					session::SessionInfo{
-						.sessionId = dir->sessionId,
-						.title = meta->title,
-						.workdir = meta->workdir,
-						.createdAt = meta->createdAt,
-						.updatedAt = meta->updatedAt,
-						.agentCount = 1,
-					},
-				.model = {},
-				.permissionMode = config::PermissionMode::Manual,
-				.planMode = false,
-				.active = false,
+				.session = std::move(info),
+				.model = runtime->modelName,
+				.permissionMode = runtime->permissionMode,
+				.planMode = runtime->planMode,
+				.active = !runtime->closed,
 			};
 		}
 
-		absl::Status CoreApi::RenameSession(std::string_view sessionId, std::string_view title)
+		auto dir = FindSessionDir(sessionId);
+		if (!dir.ok())
 		{
-			if (title.empty())
-			{
-				return absl::InvalidArgumentError("session title cannot be empty");
-			}
-			auto dir = FindSessionDir(sessionId);
-			if (!dir.ok())
-			{
-				return dir.status();
-			}
-			auto meta = sessionStore->ReadMeta(dir->path);
-			if (!meta.ok())
-			{
-				return meta.status();
-			}
-			return sessionStore->RenameTitle(meta->workdir, dir->sessionId, title);
+			return dir.status();
+		}
+		auto meta = sessionStore->ReadMeta(dir->path);
+		if (!meta.ok())
+		{
+			return meta.status();
+		}
+		return CoreSessionInfo{
+			.session =
+				session::SessionInfo{
+					.sessionId = dir->sessionId,
+					.title = meta->title,
+					.workdir = meta->workdir,
+					.createdAt = meta->createdAt,
+					.updatedAt = meta->updatedAt,
+					.agentCount = 1,
+				},
+			.model = {},
+			.permissionMode = config::PermissionMode::Manual,
+			.planMode = false,
+			.active = false,
+		};
+	}
+
+	absl::Status CoreApi::RenameSession(std::string_view sessionId, std::string_view title)
+	{
+		if (title.empty())
+		{
+			return absl::InvalidArgumentError("session title cannot be empty");
+		}
+		auto dir = FindSessionDir(sessionId);
+		if (!dir.ok())
+		{
+			return dir.status();
+		}
+		auto meta = sessionStore->ReadMeta(dir->path);
+		if (!meta.ok())
+		{
+			return meta.status();
+		}
+		return sessionStore->RenameTitle(meta->workdir, dir->sessionId, title);
+	}
+
+	absl::StatusOr<std::string> CoreApi::ForkSession(std::string_view sessionId, std::string_view title)
+	{
+		auto dir = FindSessionDir(sessionId);
+		if (!dir.ok())
+		{
+			return dir.status();
+		}
+		auto meta = sessionStore->ReadMeta(dir->path);
+		if (!meta.ok())
+		{
+			return meta.status();
+		}
+		auto forkDir = sessionStore->Create(meta->workdir,
+											title.empty() ? fmt::format("{} (fork)", meta->title) : std::string(title));
+		if (!forkDir.ok())
+		{
+			return forkDir.status();
 		}
 
-		absl::StatusOr<std::string> CoreApi::ForkSession(std::string_view sessionId, std::string_view title)
+		auto oldWire = fmt::format("{}/agents/main/wire.jsonl", dir->path);
+		auto wireBytes = config.host->ReadBytes(oldWire);
+		if (wireBytes.ok())
 		{
-			auto dir = FindSessionDir(sessionId);
-			if (!dir.ok())
-			{
-				return dir.status();
-			}
-			auto meta = sessionStore->ReadMeta(dir->path);
-			if (!meta.ok())
-			{
-				return meta.status();
-			}
-			auto forkDir = sessionStore->Create(meta->workdir,
-												title.empty() ? fmt::format("{} (fork)", meta->title) : std::string(title));
-			if (!forkDir.ok())
-			{
-				return forkDir.status();
-			}
-
-			auto oldWire = fmt::format("{}/agents/main/wire.jsonl", dir->path);
-			auto wireBytes = config.host->ReadBytes(oldWire);
-			if (wireBytes.ok())
-			{
-				auto write = config.host->WriteBytes(forkDir->AgentWirePath("main"), *wireBytes);
-				if (!write.ok())
-				{
-					return write;
-				}
-			}
-			else if (!absl::IsNotFound(wireBytes.status()))
-			{
-				return wireBytes.status();
-			}
-			return forkDir->sessionId;
-		}
-
-		absl::StatusOr<std::string> CoreApi::ExportSessionZip(std::string_view sessionId, std::string_view outputPath)
-		{
-			auto dir = FindSessionDir(sessionId);
-			if (!dir.ok())
-			{
-				return dir.status();
-			}
-			std::vector<ZipEntry> entries;
-			auto collect = CollectFiles(config.host, dir->path, dir->path, entries);
-			if (!collect.ok())
-			{
-				return collect;
-			}
-			auto manifest = nlohmann::json{
-				{"session_id", dir->sessionId},
-				{"source_path", dir->path},
-				{"format", "codeharness-session-export"},
-				{"version", 1},
-			}
-								.dump(2);
-			entries.push_back(ZipEntry{
-				.name = "metadata.json",
-				.data = std::vector<uint8_t>(manifest.begin(), manifest.end()),
-			});
-			auto zip = BuildStoreZip(entries);
-			std::string out = outputPath.empty() ? fmt::format("{}/{}.zip", dir->path, dir->sessionId)
-												 : std::string(outputPath);
-			auto write = config.host->WriteBytes(out, zip);
+			auto write = config.host->WriteBytes(forkDir->AgentWirePath("main"), *wireBytes);
 			if (!write.ok())
 			{
 				return write;
 			}
-			return out;
 		}
+		else if (!absl::IsNotFound(wireBytes.status()))
+		{
+			return wireBytes.status();
+		}
+		return forkDir->sessionId;
+	}
+
+	absl::StatusOr<std::string> CoreApi::ExportSessionZip(std::string_view sessionId, std::string_view outputPath)
+	{
+		auto dir = FindSessionDir(sessionId);
+		if (!dir.ok())
+		{
+			return dir.status();
+		}
+		std::vector<ZipEntry> entries;
+		auto collect = CollectFiles(config.host, dir->path, dir->path, entries);
+		if (!collect.ok())
+		{
+			return collect;
+		}
+		auto manifest = nlohmann::json{
+			{"session_id", dir->sessionId},
+			{"source_path", dir->path},
+			{"format", "codeharness-session-export"},
+			{"version", 1},
+		}
+							.dump(2);
+		entries.push_back(ZipEntry{
+			.name = "metadata.json",
+			.data = std::vector<uint8_t>(manifest.begin(), manifest.end()),
+		});
+		auto zip = BuildStoreZip(entries);
+		std::string out = outputPath.empty() ? fmt::format("{}/{}.zip", dir->path, dir->sessionId)
+											 : std::string(outputPath);
+		auto write = config.host->WriteBytes(out, zip);
+		if (!write.ok())
+		{
+			return write;
+		}
+		return out;
+	}
 
 	absl::StatusOr<CoreApi::CoreSessionRuntime*> CoreApi::FindOpenRuntime(std::string_view sessionId)
 	{
@@ -887,69 +887,69 @@ namespace codeharness::rpc
 		{
 			return runtime.status();
 		}
-			(*runtime)->session->MainAgent()->ClearContext();
+		(*runtime)->session->MainAgent()->ClearContext();
+		return absl::OkStatus();
+	}
+
+	absl::Status CoreApi::CompactNow(std::string_view sessionId)
+	{
+		auto runtime = FindOpenRuntime(sessionId);
+		if (!runtime.ok())
+		{
+			return runtime.status();
+		}
+		return absl::UnimplementedError("manual compaction is not implemented yet");
+	}
+
+	absl::Status CoreApi::SetModel(std::string_view sessionId, std::string_view model)
+	{
+		auto runtime = FindOpenRuntime(sessionId);
+		if (!runtime.ok())
+		{
+			return runtime.status();
+		}
+		if (model.empty())
+		{
+			return absl::InvalidArgumentError("model cannot be empty");
+		}
+		if ((*runtime)->modelName == model)
+		{
 			return absl::OkStatus();
 		}
+		return absl::UnimplementedError("switching the provider of an active session is not implemented yet");
+	}
 
-		absl::Status CoreApi::CompactNow(std::string_view sessionId)
+	absl::Status CoreApi::SetPermissionMode(std::string_view sessionId, config::PermissionMode permissionMode)
+	{
+		auto runtime = FindOpenRuntime(sessionId);
+		if (!runtime.ok())
 		{
-			auto runtime = FindOpenRuntime(sessionId);
-			if (!runtime.ok())
-			{
-				return runtime.status();
-			}
-			return absl::UnimplementedError("manual compaction is not implemented yet");
+			return runtime.status();
 		}
+		auto* agent = (*runtime)->session->MainAgent();
+		if (agent == nullptr)
+		{
+			return absl::InternalError("session has no main agent");
+		}
+		agent->SetPermissionMode(permissionMode);
+		if (config.approvalCallback)
+		{
+			agent->SetApprovalCallback(config.approvalCallback);
+		}
+		(*runtime)->permissionMode = permissionMode;
+		return absl::OkStatus();
+	}
 
-		absl::Status CoreApi::SetModel(std::string_view sessionId, std::string_view model)
+	absl::Status CoreApi::SetPlanMode(std::string_view sessionId, bool enabled)
+	{
+		auto runtime = FindOpenRuntime(sessionId);
+		if (!runtime.ok())
 		{
-			auto runtime = FindOpenRuntime(sessionId);
-			if (!runtime.ok())
-			{
-				return runtime.status();
-			}
-			if (model.empty())
-			{
-				return absl::InvalidArgumentError("model cannot be empty");
-			}
-			if ((*runtime)->modelName == model)
-			{
-				return absl::OkStatus();
-			}
-			return absl::UnimplementedError("switching the provider of an active session is not implemented yet");
+			return runtime.status();
 		}
-
-		absl::Status CoreApi::SetPermissionMode(std::string_view sessionId, config::PermissionMode permissionMode)
-		{
-			auto runtime = FindOpenRuntime(sessionId);
-			if (!runtime.ok())
-			{
-				return runtime.status();
-			}
-			auto* agent = (*runtime)->session->MainAgent();
-			if (agent == nullptr)
-			{
-				return absl::InternalError("session has no main agent");
-			}
-			agent->SetPermissionMode(permissionMode);
-			if (config.approvalCallback)
-			{
-				agent->SetApprovalCallback(config.approvalCallback);
-			}
-			(*runtime)->permissionMode = permissionMode;
-			return absl::OkStatus();
-		}
-
-		absl::Status CoreApi::SetPlanMode(std::string_view sessionId, bool enabled)
-		{
-			auto runtime = FindOpenRuntime(sessionId);
-			if (!runtime.ok())
-			{
-				return runtime.status();
-			}
-			(*runtime)->planMode = enabled;
-			return absl::OkStatus();
-		}
+		(*runtime)->planMode = enabled;
+		return absl::OkStatus();
+	}
 
 	absl::Status CoreApi::ActivateSkill(std::string_view sessionId, std::string_view name, std::string_view args)
 	{
@@ -957,133 +957,133 @@ namespace codeharness::rpc
 		if (!runtime.ok())
 		{
 			return runtime.status();
-			}
-			return (*runtime)->session->MainAgent()->ActivateSkill(name, args);
 		}
+		return (*runtime)->session->MainAgent()->ActivateSkill(name, args);
+	}
 
-		absl::StatusOr<std::vector<ModelInfo>> CoreApi::ListModels()
+	absl::StatusOr<std::vector<ModelInfo>> CoreApi::ListModels()
+	{
+		std::vector<ModelInfo> out;
+		if (config.providerResolver)
 		{
-			std::vector<ModelInfo> out;
-			if (config.providerResolver)
+			for (const auto& [id, runtime] : sessions)
 			{
-				for (const auto& [id, runtime] : sessions)
+				if (runtime && !runtime->modelName.empty())
 				{
-					if (runtime && !runtime->modelName.empty())
-					{
-						out.push_back(ModelInfo{.alias = runtime->modelName,
-												.provider = "injected",
-												.model = runtime->modelName,
-												.isDefault = out.empty()});
-					}
+					out.push_back(ModelInfo{.alias = runtime->modelName,
+											.provider = "injected",
+											.model = runtime->modelName,
+											.isDefault = out.empty()});
 				}
-				return out;
-			}
-
-			config::ConfigManager cm(config.host);
-			auto cfg = cm.Load();
-			if (!cfg.ok())
-			{
-				return cfg.status();
-			}
-			for (const auto& [alias, model] : cfg->models)
-			{
-				std::string providerType = model.provider;
-				if (auto provider = cfg->providers.find(model.provider); provider != cfg->providers.end())
-				{
-					providerType = ProviderTypeName(provider->second.type);
-				}
-				out.push_back(ModelInfo{.alias = alias,
-										.provider = providerType,
-										.model = model.model,
-										.isDefault = alias == cfg->defaultModel});
 			}
 			return out;
 		}
 
-		absl::StatusOr<std::vector<ToolInfo>> CoreApi::ListTools(std::string_view sessionId)
+		config::ConfigManager cm(config.host);
+		auto cfg = cm.Load();
+		if (!cfg.ok())
 		{
-			auto runtime = FindOpenRuntime(sessionId);
-			if (!runtime.ok())
+			return cfg.status();
+		}
+		for (const auto& [alias, model] : cfg->models)
+		{
+			std::string providerType = model.provider;
+			if (auto provider = cfg->providers.find(model.provider); provider != cfg->providers.end())
 			{
-				return runtime.status();
+				providerType = ProviderTypeName(provider->second.type);
 			}
-			std::vector<ToolInfo> out;
-			for (auto* tool : (*runtime)->toolManager->LoopTools())
-			{
-				auto def = tool->GetToolDefinition();
-				out.push_back(ToolInfo{.name = std::move(def.name),
-									   .description = std::move(def.description),
-									   .inputSchema = std::move(def.inputSchema)});
-			}
+			out.push_back(ModelInfo{.alias = alias,
+									.provider = providerType,
+									.model = model.model,
+									.isDefault = alias == cfg->defaultModel});
+		}
+		return out;
+	}
+
+	absl::StatusOr<std::vector<ToolInfo>> CoreApi::ListTools(std::string_view sessionId)
+	{
+		auto runtime = FindOpenRuntime(sessionId);
+		if (!runtime.ok())
+		{
+			return runtime.status();
+		}
+		std::vector<ToolInfo> out;
+		for (auto* tool : (*runtime)->toolManager->LoopTools())
+		{
+			auto def = tool->GetToolDefinition();
+			out.push_back(ToolInfo{.name = std::move(def.name),
+								   .description = std::move(def.description),
+								   .inputSchema = std::move(def.inputSchema)});
+		}
+		return out;
+	}
+
+	absl::StatusOr<std::vector<McpServerInfo>> CoreApi::ListMcpServers()
+	{
+		std::vector<McpServerInfo> out;
+		if (config.providerResolver)
+		{
 			return out;
 		}
-
-		absl::StatusOr<std::vector<McpServerInfo>> CoreApi::ListMcpServers()
+		config::ConfigManager cm(config.host);
+		auto cfg = cm.Load();
+		if (!cfg.ok())
 		{
-			std::vector<McpServerInfo> out;
-			if (config.providerResolver)
+			return cfg.status();
+		}
+		for (const auto& server : cfg->mcpServers)
+		{
+			out.push_back(McpServerInfo{.name = server.name,
+										.command = server.command,
+										.args = server.args,
+										.cwd = server.cwd,
+										.enabled = server.enabled,
+										.connected = false});
+		}
+		return out;
+	}
+
+	absl::StatusOr<std::vector<BackgroundTaskInfo>> CoreApi::ListBackgroundTasks()
+	{
+		return std::vector<BackgroundTaskInfo>{};
+	}
+
+	absl::StatusOr<std::string> CoreApi::ReadTaskOutput(std::string_view taskId)
+	{
+		return absl::NotFoundError(fmt::format("background task not found: {}", taskId));
+	}
+
+	absl::Status CoreApi::StopTask(std::string_view taskId)
+	{
+		return absl::NotFoundError(fmt::format("background task not found: {}", taskId));
+	}
+
+	void CoreApi::SetEventSink(CoreEventSink sink)
+	{
+		config.eventSink = std::move(sink);
+	}
+
+	void CoreApi::SetApprovalCallback(permission::ApprovalCallback callback)
+	{
+		config.approvalCallback = std::move(callback);
+		for (auto& [id, runtime] : sessions)
+		{
+			(void)id;
+			if (runtime && runtime->session && !runtime->closed)
 			{
-				return out;
-			}
-			config::ConfigManager cm(config.host);
-			auto cfg = cm.Load();
-			if (!cfg.ok())
-			{
-				return cfg.status();
-			}
-			for (const auto& server : cfg->mcpServers)
-			{
-				out.push_back(McpServerInfo{.name = server.name,
-											.command = server.command,
-											.args = server.args,
-											.cwd = server.cwd,
-											.enabled = server.enabled,
-											.connected = false});
-			}
-			return out;
-		}
-
-		absl::StatusOr<std::vector<BackgroundTaskInfo>> CoreApi::ListBackgroundTasks()
-		{
-			return std::vector<BackgroundTaskInfo>{};
-		}
-
-		absl::StatusOr<std::string> CoreApi::ReadTaskOutput(std::string_view taskId)
-		{
-			return absl::NotFoundError(fmt::format("background task not found: {}", taskId));
-		}
-
-		absl::Status CoreApi::StopTask(std::string_view taskId)
-		{
-			return absl::NotFoundError(fmt::format("background task not found: {}", taskId));
-		}
-
-		void CoreApi::SetEventSink(CoreEventSink sink)
-		{
-			config.eventSink = std::move(sink);
-		}
-
-		void CoreApi::SetApprovalCallback(permission::ApprovalCallback callback)
-		{
-			config.approvalCallback = std::move(callback);
-			for (auto& [id, runtime] : sessions)
-			{
-				(void)id;
-				if (runtime && runtime->session && !runtime->closed)
+				auto* agent = runtime->session->MainAgent();
+				if (agent != nullptr)
 				{
-					auto* agent = runtime->session->MainAgent();
-					if (agent != nullptr)
-					{
-						agent->SetApprovalCallback(config.approvalCallback);
-					}
+					agent->SetApprovalCallback(config.approvalCallback);
 				}
 			}
 		}
+	}
 
-		void CoreApi::SetQuestionCallback(tools::QuestionCallback callback)
-		{
-			config.questionCallback = std::move(callback);
-		}
+	void CoreApi::SetQuestionCallback(tools::QuestionCallback callback)
+	{
+		config.questionCallback = std::move(callback);
+	}
 
 	absl::StatusOr<std::pair<std::unique_ptr<llm::ChatProvider>, std::string>>
 	ResolveProviderFromConfig(host::Host* host, llm::HttpClient* http, std::string_view modelOverride)

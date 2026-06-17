@@ -41,7 +41,10 @@ namespace codeharness::hooks
 		// failures resolve to Allow (fail-open).
 		std::optional<HookResult> TriggerBlock(HookEvent event, const HookContext& ctx, std::stop_token stopToken = {});
 
-		bool Empty() const { return hooks.empty(); }
+		bool Empty() const
+		{
+			return hooks.empty();
+		}
 
 	private:
 		// True if the hook's event matches and its matcher (if any) matches target.

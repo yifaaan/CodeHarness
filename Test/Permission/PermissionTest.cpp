@@ -1,6 +1,6 @@
+#include "Config/ConfigTypes.h"
 #include "Permission/PermissionGate.h"
 #include "Permission/PermissionTypes.h"
-#include "Config/ConfigTypes.h"
 
 #include <doctest/doctest.h>
 

@@ -57,9 +57,18 @@ namespace
 		std::vector<std::vector<llm::Message>> histories;
 		size_t callCount = 0;
 
-		std::string Name() const override { return "mock"; }
-		std::string ModelName() const override { return "mock-model"; }
-		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override { return std::nullopt; }
+		std::string Name() const override
+		{
+			return "mock";
+		}
+		std::string ModelName() const override
+		{
+			return "mock-model";
+		}
+		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override
+		{
+			return std::nullopt;
+		}
 
 		absl::Status Generate(std::string_view, std::span<const llm::Tool>, std::span<const llm::Message> messages,
 							  const llm::StreamCallbacks& callbacks, std::stop_token = {}) override

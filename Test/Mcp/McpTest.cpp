@@ -89,9 +89,18 @@ namespace
 			return err;
 		}
 
-		absl::StatusOr<int> Pid() const override { return 123; }
-		absl::StatusOr<int> ExitCode() const override { return exited ? exitCode : -1; }
-		absl::StatusOr<int> Wait() override { return exitCode; }
+		absl::StatusOr<int> Pid() const override
+		{
+			return 123;
+		}
+		absl::StatusOr<int> ExitCode() const override
+		{
+			return exited ? exitCode : -1;
+		}
+		absl::StatusOr<int> Wait() override
+		{
+			return exitCode;
+		}
 
 		absl::Status Kill(const std::string& = "SIGTERM") override
 		{
@@ -213,9 +222,18 @@ namespace
 	class OneToolCallProvider : public llm::ChatProvider
 	{
 	public:
-		std::string Name() const override { return "mock"; }
-		std::string ModelName() const override { return "mock-model"; }
-		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override { return std::nullopt; }
+		std::string Name() const override
+		{
+			return "mock";
+		}
+		std::string ModelName() const override
+		{
+			return "mock-model";
+		}
+		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override
+		{
+			return std::nullopt;
+		}
 
 		absl::Status Generate(
 			std::string_view,

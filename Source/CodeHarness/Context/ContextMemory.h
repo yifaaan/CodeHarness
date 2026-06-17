@@ -28,13 +28,25 @@ namespace codeharness::context
 		void ReplaceAll(std::vector<llm::Message> msgs);
 
 		// Read-only access to the underlying messages.
-		const std::vector<llm::Message>& Messages() const { return messages; }
+		const std::vector<llm::Message>& Messages() const
+		{
+			return messages;
+		}
 
 		// Cached estimate (not recomputed on access).
-		int64_t TokenCount() const { return tokens; }
+		int64_t TokenCount() const
+		{
+			return tokens;
+		}
 
-		bool Empty() const { return messages.empty(); }
-		std::size_t Size() const { return messages.size(); }
+		bool Empty() const
+		{
+			return messages.empty();
+		}
+		std::size_t Size() const
+		{
+			return messages.size();
+		}
 
 		void Clear();
 

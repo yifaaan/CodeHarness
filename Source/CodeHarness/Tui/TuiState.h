@@ -3,8 +3,8 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
-#include <future>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -13,8 +13,8 @@
 #include <variant>
 #include <vector>
 
-#include "Config/ConfigTypes.h"
 #include "Agent/AgentTypes.h"
+#include "Config/ConfigTypes.h"
 #include "Llm/Types.h"
 #include "Permission/PermissionTypes.h"
 #include "Session/SessionTypes.h"
@@ -23,194 +23,194 @@
 namespace codeharness::tui
 {
 
-// ─── Forward declarations ───────────────────────────────────────────────
+	// ─── Forward declarations ───────────────────────────────────────────────
 
-struct ToolCallState;
+	struct ToolCallState;
 
-// ─── Todo item (rendered by TodoPanel; populated by TaskCreate tool events) ─
+	// ─── Todo item (rendered by TodoPanel; populated by TaskCreate tool events) ─
 
-struct TodoItem
-{
-	enum class Status
+	struct TodoItem
 	{
-		Pending,
-		InProgress,
-		Done,
-	};
-	Status status = Status::Pending;
-	std::string text;
-};
-
-// ─── Queued tool call (rendered by QueuePanel; populated by ToolScheduler) ─
-
-struct QueuedToolCall
-{
-	std::string name;
-	std::string preview; // short text preview of args
-};
-
-// ─── Message types rendered in the transcript ───────────────────────────
-
-/// One entry in the transcript (user, assistant text, tool call card, etc.)
-struct TranscriptEntry
-{
-	enum class Kind
-	{
-		User,
-		Assistant,
-		ToolCall,
-		System, // compaction notices, errors, status messages
+		enum class Status
+		{
+			Pending,
+			InProgress,
+			Done,
+		};
+		Status status = Status::Pending;
+		std::string text;
 	};
 
-	Kind kind = Kind::Assistant;
+	// ─── Queued tool call (rendered by QueuePanel; populated by ToolScheduler) ─
 
-	// For User / System messages
-	std::string text;
+	struct QueuedToolCall
+	{
+		std::string name;
+		std::string preview; // short text preview of args
+	};
 
-	// For Assistant messages (streaming or completed)
-	std::string assistantText;
+	// ─── Message types rendered in the transcript ───────────────────────────
 
-	// For ToolCall messages — index into activeToolCalls or completedToolCalls
-	std::string toolCallId;
+	/// One entry in the transcript (user, assistant text, tool call card, etc.)
+	struct TranscriptEntry
+	{
+		enum class Kind
+		{
+			User,
+			Assistant,
+			ToolCall,
+			System, // compaction notices, errors, status messages
+		};
 
-	// Whether this entry is still being streamed (active assistant delta)
-	bool streaming = false;
+		Kind kind = Kind::Assistant;
 
-	// Whether this entry is a tool call that's still running
-	bool toolRunning = false;
-};
+		// For User / System messages
+		std::string text;
 
-/// Runtime state of a tool call being tracked by the TUI
-struct ToolCallState
-{
-	std::string id;
-	std::string name;
-	nlohmann::json args;
-	std::string status = "running"; // "running" | "done" | "error"
-	std::string output;
-	std::string error;
-	bool expanded = false; // user-toggled expand/collapse for output
-};
+		// For Assistant messages (streaming or completed)
+		std::string assistantText;
 
-/// Pending approval request awaiting user action
-struct PendingApproval
-{
-	std::string toolName;
-	nlohmann::json args;
-	std::string description;
-	std::shared_ptr<std::promise<permission::PermissionDecision>> promise;
-};
+		// For ToolCall messages — index into activeToolCalls or completedToolCalls
+		std::string toolCallId;
 
-/// Pending question awaiting user answer
-struct PendingQuestion
-{
-	tools::QuestionRequest request;
-	std::shared_ptr<std::promise<std::string>> promise;
-};
+		// Whether this entry is still being streamed (active assistant delta)
+		bool streaming = false;
 
-/// Pending user text input (for when modal captures input)
-struct PendingInput
-{
-	std::string placeholder;
-	std::shared_ptr<std::promise<std::string>> promise;
-};
+		// Whether this entry is a tool call that's still running
+		bool toolRunning = false;
+	};
 
-// ─── Active modal kind ──────────────────────────────────────────────────
+	/// Runtime state of a tool call being tracked by the TUI
+	struct ToolCallState
+	{
+		std::string id;
+		std::string name;
+		nlohmann::json args;
+		std::string status = "running"; // "running" | "done" | "error"
+		std::string output;
+		std::string error;
+		bool expanded = false; // user-toggled expand/collapse for output
+	};
 
-enum class ModalKind
-{
-	None,
-	Approval,
-	Question,
-	Help,
-	SessionPicker,
-	Settings,
-};
+	/// Pending approval request awaiting user action
+	struct PendingApproval
+	{
+		std::string toolName;
+		nlohmann::json args;
+		std::string description;
+		std::shared_ptr<std::promise<permission::PermissionDecision>> promise;
+	};
 
-// ─── Theme palette ──────────────────────────────────────────────────────
+	/// Pending question awaiting user answer
+	struct PendingQuestion
+	{
+		tools::QuestionRequest request;
+		std::shared_ptr<std::promise<std::string>> promise;
+	};
 
-struct ColorPalette
-{
-	// Terminal colors
-	int fg = 15;  // white
-	int bg = 0;   // black
-	int accent = 4; // blue
-	int success = 2; // green
-	int error = 1; // red
-	int warning = 3; // yellow
-	int muted = 8; // bright black (gray)
-	int highlight = 6; // cyan
-};
+	/// Pending user text input (for when modal captures input)
+	struct PendingInput
+	{
+		std::string placeholder;
+		std::shared_ptr<std::promise<std::string>> promise;
+	};
 
-// ─── TuiState (mutex-protected, shared between UI thread and event thread) ─
+	// ─── Active modal kind ──────────────────────────────────────────────────
 
-struct TuiState
-{
-	// Session info
-	std::string sessionId;
-	std::string model;
-	std::string workdir;
-	std::string version = "CodeHarness v0.1.0";
-	config::PermissionMode permissionMode = config::PermissionMode::Manual;
+	enum class ModalKind
+	{
+		None,
+		Approval,
+		Question,
+		Help,
+		SessionPicker,
+		Settings,
+	};
 
-	// Available sessions (loaded by SessionPicker)
-	std::vector<session::SessionInfo> availableSessions;
-	std::vector<std::string> availableModels;
+	// ─── Theme palette ──────────────────────────────────────────────────────
 
-	// Transcript
-	std::deque<TranscriptEntry> transcript;
-	std::string currentAssistantBuffer; // accumulating streaming text
-	std::string currentThinking;		 // extended-thinking stream (if any)
+	struct ColorPalette
+	{
+		// Terminal colors
+		int fg = 15;	   // white
+		int bg = 0;		   // black
+		int accent = 4;	   // blue
+		int success = 2;   // green
+		int error = 1;	   // red
+		int warning = 3;   // yellow
+		int muted = 8;	   // bright black (gray)
+		int highlight = 6; // cyan
+	};
 
-	// Tool tracking
-	std::unordered_map<std::string, ToolCallState> activeToolCalls;
-	std::unordered_map<std::string, ToolCallState> completedToolCalls;
-	std::vector<QueuedToolCall> pendingToolCalls; // awaiting ToolScheduler
-	int toolCallCount = 0;
+	// ─── TuiState (mutex-protected, shared between UI thread and event thread) ─
 
-	// Todo list (drives TodoPanel). Empty by default until TaskCreate fires.
-	std::vector<TodoItem> todos;
+	struct TuiState
+	{
+		// Session info
+		std::string sessionId;
+		std::string model;
+		std::string workdir;
+		std::string version = "CodeHarness v0.1.0";
+		config::PermissionMode permissionMode = config::PermissionMode::Manual;
 
-	// Streaming state
-	bool streaming = false;
-	bool compacting = false;
-	int compactingCount = 0;
-	std::string currentActivity; // human-readable one-liner for ActivityIndicator
+		// Available sessions (loaded by SessionPicker)
+		std::vector<session::SessionInfo> availableSessions;
+		std::vector<std::string> availableModels;
 
-	// Token usage
-	llm::TokenUsage lastUsage;
-	std::string lastError;
+		// Transcript
+		std::deque<TranscriptEntry> transcript;
+		std::string currentAssistantBuffer; // accumulating streaming text
+		std::string currentThinking;		// extended-thinking stream (if any)
 
-	// Modal
-	ModalKind activeModal = ModalKind::None;
-	std::optional<PendingApproval> pendingApproval;
-	std::optional<PendingQuestion> pendingQuestion;
+		// Tool tracking
+		std::unordered_map<std::string, ToolCallState> activeToolCalls;
+		std::unordered_map<std::string, ToolCallState> completedToolCalls;
+		std::vector<QueuedToolCall> pendingToolCalls; // awaiting ToolScheduler
+		int toolCallCount = 0;
 
-	// Theme
-	ColorPalette colors;
-	bool darkMode = true;
+		// Todo list (drives TodoPanel). Empty by default until TaskCreate fires.
+		std::vector<TodoItem> todos;
 
-	// Navigation / UI
-	int scrollOffset = 0;
-	int visibleHeight = 0;
-	bool userScrolledUp = false; // suppress auto-scroll-to-bottom while user browses history
-	std::string statusMessage;
-	agent::AgentStatus agentStatus = agent::AgentStatus::Idle;
+		// Streaming state
+		bool streaming = false;
+		bool compacting = false;
+		int compactingCount = 0;
+		std::string currentActivity; // human-readable one-liner for ActivityIndicator
 
-	// Visibility toggles (driven by keyboard shortcuts like Ctrl+B)
-	bool sidePanelVisible = false;
-	bool todoPanelVisible = true; // shown by default; can be toggled off
+		// Token usage
+		llm::TokenUsage lastUsage;
+		std::string lastError;
 
-	// Mutex for thread-safe access
-	mutable std::mutex mutex;
-};
+		// Modal
+		ModalKind activeModal = ModalKind::None;
+		std::optional<PendingApproval> pendingApproval;
+		std::optional<PendingQuestion> pendingQuestion;
 
-// ─── Free functions ─────────────────────────────────────────────────────
+		// Theme
+		ColorPalette colors;
+		bool darkMode = true;
 
-/// Determine whether the terminal is using a dark or light background.
-bool DetectDarkMode();
+		// Navigation / UI
+		int scrollOffset = 0;
+		int visibleHeight = 0;
+		bool userScrolledUp = false; // suppress auto-scroll-to-bottom while user browses history
+		std::string statusMessage;
+		agent::AgentStatus agentStatus = agent::AgentStatus::Idle;
 
-/// Build a default ColorPalette for the given mode.
-ColorPalette MakePalette(bool darkMode);
+		// Visibility toggles (driven by keyboard shortcuts like Ctrl+B)
+		bool sidePanelVisible = false;
+		bool todoPanelVisible = true; // shown by default; can be toggled off
+
+		// Mutex for thread-safe access
+		mutable std::mutex mutex;
+	};
+
+	// ─── Free functions ─────────────────────────────────────────────────────
+
+	/// Determine whether the terminal is using a dark or light background.
+	bool DetectDarkMode();
+
+	/// Build a default ColorPalette for the given mode.
+	ColorPalette MakePalette(bool darkMode);
 
 } // namespace codeharness::tui

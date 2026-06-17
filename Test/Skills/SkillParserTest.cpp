@@ -158,5 +158,4 @@ TEST_SUITE("SkillParser")
 		REQUIRE(result.ok());
 		CHECK_EQ(result->name, "spaced-skill");
 	}
-
 }

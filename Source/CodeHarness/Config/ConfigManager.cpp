@@ -15,8 +15,8 @@
 #include <utility>
 #include <vector>
 
-#include "Host/Host.h"
 #include "Hooks/HookTypes.h"
+#include "Host/Host.h"
 #include "Mcp/McpTypes.h"
 
 namespace codeharness::config

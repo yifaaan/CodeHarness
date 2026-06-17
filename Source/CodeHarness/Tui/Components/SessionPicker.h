@@ -5,10 +5,10 @@
 namespace codeharness::tui
 {
 
-class SessionPicker
-{
-public:
-	static ftxui::Component Create();
-};
+	class SessionPicker
+	{
+	public:
+		static ftxui::Component Create();
+	};
 
 } // namespace codeharness::tui

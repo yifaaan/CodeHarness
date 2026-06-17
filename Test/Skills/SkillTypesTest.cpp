@@ -83,5 +83,4 @@ TEST_SUITE("SkillTypes")
 		CHECK_EQ(root.path, "/path/to/skills");
 		CHECK_EQ(root.source, SkillSource::User);
 	}
-
 }

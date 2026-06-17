@@ -5,10 +5,10 @@
 namespace codeharness::tui
 {
 
-class ApprovalPanel
-{
-public:
-	static ftxui::Component Create();
-};
+	class ApprovalPanel
+	{
+	public:
+		static ftxui::Component Create();
+	};
 
 } // namespace codeharness::tui

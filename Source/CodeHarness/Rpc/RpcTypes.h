@@ -23,7 +23,7 @@ namespace codeharness::llm
 {
 	class ChatProvider;
 	class HttpClient;
-}
+} // namespace codeharness::llm
 
 namespace codeharness::rpc
 {

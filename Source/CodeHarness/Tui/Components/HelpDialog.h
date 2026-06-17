@@ -5,10 +5,10 @@
 namespace codeharness::tui
 {
 
-class HelpDialog
-{
-public:
-	static ftxui::Component Create();
-};
+	class HelpDialog
+	{
+	public:
+		static ftxui::Component Create();
+	};
 
 } // namespace codeharness::tui

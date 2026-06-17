@@ -63,7 +63,7 @@ namespace codeharness::skills
 			result.append(str, prev, std::string::npos);
 			return result;
 		}
-	}
+	} // namespace
 
 	void SkillRegistry::LoadRoots(const std::vector<SkillRoot>& roots, host::Host* host)
 	{

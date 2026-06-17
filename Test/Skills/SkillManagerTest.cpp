@@ -275,5 +275,4 @@ TEST_SUITE("SkillManager")
 		CHECK(status.ok());
 		CHECK_EQ(messageSink, "Fallback body");
 	}
-
 }

@@ -5,12 +5,12 @@
 namespace codeharness::tui
 {
 
-/// Theme management.
-class Theme
-{
-public:
-	static ColorPalette Detect();
-	static ColorPalette MakePalette(bool darkMode);
-};
+	/// Theme management.
+	class Theme
+	{
+	public:
+		static ColorPalette Detect();
+		static ColorPalette MakePalette(bool darkMode);
+	};
 
 } // namespace codeharness::tui

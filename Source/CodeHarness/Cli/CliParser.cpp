@@ -51,7 +51,8 @@ namespace codeharness::cli
 		}
 		catch (const CLI::ParseError& e)
 		{
-			std::cout << e.what() << "\n\n" << app.help();
+			std::cout << e.what() << "\n\n"
+					  << app.help();
 			return absl::InvalidArgumentError(e.what());
 		}
 

@@ -5,9 +5,9 @@
 namespace codeharness::tui
 {
 
-bool TerminalTheme::IsDark()
-{
-	return DetectDarkMode();
-}
+	bool TerminalTheme::IsDark()
+	{
+		return DetectDarkMode();
+	}
 
 } // namespace codeharness::tui

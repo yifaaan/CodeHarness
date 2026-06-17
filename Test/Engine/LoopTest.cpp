@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <climits>
+#include <condition_variable>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -231,9 +231,18 @@ namespace
 		bool executeCalled = false;
 		std::function<eng::ToolResult(const json&)> handler;
 
-		std::string Name() const override { return toolName; }
-		std::string Description() const override { return toolDesc; }
-		json Parameters() const override { return json::object(); }
+		std::string Name() const override
+		{
+			return toolName;
+		}
+		std::string Description() const override
+		{
+			return toolDesc;
+		}
+		json Parameters() const override
+		{
+			return json::object();
+		}
 
 		absl::StatusOr<eng::ToolExecution> ResolveExecution(const json&) override
 		{

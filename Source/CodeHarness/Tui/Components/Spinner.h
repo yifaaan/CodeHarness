@@ -5,10 +5,10 @@
 namespace codeharness::tui
 {
 
-class Spinner
-{
-public:
-	static ftxui::Component Create();
-};
+	class Spinner
+	{
+	public:
+		static ftxui::Component Create();
+	};
 
 } // namespace codeharness::tui

@@ -70,8 +70,14 @@ namespace codeharness::session
 		// Append one line to session_index.jsonl.
 		absl::Status AppendIndex(const SessionInfo& info);
 
-		host::Host* HostPtr() const { return host_; }
-		const std::string& Root() const { return root_; }
+		host::Host* HostPtr() const
+		{
+			return host_;
+		}
+		const std::string& Root() const
+		{
+			return root_;
+		}
 
 	private:
 		// <root>/<workdir-key>

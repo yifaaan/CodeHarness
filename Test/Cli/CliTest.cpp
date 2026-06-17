@@ -49,8 +49,14 @@ namespace
 			data.push_back(nullptr);
 			ptrs = data;
 		}
-		int argc() const { return static_cast<int>(ptrs.size() - 1); }
-		char** argv() { return ptrs.data(); }
+		int argc() const
+		{
+			return static_cast<int>(ptrs.size() - 1);
+		}
+		char** argv()
+		{
+			return ptrs.data();
+		}
 	};
 
 	// Minimal mock provider emitting one canned text response.
@@ -61,9 +67,18 @@ namespace
 		size_t callCount = 0;
 		std::vector<size_t> messageCounts;
 
-		std::string Name() const override { return "mock"; }
-		std::string ModelName() const override { return "mock-model"; }
-		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override { return std::nullopt; }
+		std::string Name() const override
+		{
+			return "mock";
+		}
+		std::string ModelName() const override
+		{
+			return "mock-model";
+		}
+		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override
+		{
+			return std::nullopt;
+		}
 
 		absl::Status Generate(std::string_view, std::span<const llm::Tool>, std::span<const llm::Message> messages,
 							  const llm::StreamCallbacks& callbacks, std::stop_token = {}) override

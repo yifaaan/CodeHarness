@@ -112,20 +112,20 @@ namespace codeharness::skills
 				ScanDirectory(JoinPath(dirPath, subdir), depth + 1, host, results, source);
 			}
 		}
-	}
+	} // namespace
 
-std::vector<SkillDefinition> SkillScanner::Scan(std::span<const SkillRoot> roots, host::Host* host)
-{
-	std::vector<SkillDefinition> allSkills;
-
-	for (const auto& root : roots)
+	std::vector<SkillDefinition> SkillScanner::Scan(std::span<const SkillRoot> roots, host::Host* host)
 	{
-		auto rootSkills = ScanRoot(root, host);
-		allSkills.insert(allSkills.end(), rootSkills.begin(), rootSkills.end());
-	}
+		std::vector<SkillDefinition> allSkills;
 
-	return allSkills;
-}
+		for (const auto& root : roots)
+		{
+			auto rootSkills = ScanRoot(root, host);
+			allSkills.insert(allSkills.end(), rootSkills.begin(), rootSkills.end());
+		}
+
+		return allSkills;
+	}
 
 	std::vector<SkillDefinition> SkillScanner::ScanRoot(const SkillRoot& root, host::Host* host)
 	{

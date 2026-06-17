@@ -44,7 +44,7 @@ namespace codeharness::skills
 {
 	class SkillManager;
 	class SkillRegistry;
-}
+} // namespace codeharness::skills
 
 namespace codeharness::agent
 {

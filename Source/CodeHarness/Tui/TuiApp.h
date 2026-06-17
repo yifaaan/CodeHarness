@@ -29,92 +29,92 @@ namespace codeharness::llm
 namespace codeharness::tui
 {
 
-/// Top-level TUI application orchestrator.
-///
-/// Owns the FTXUI screen, component tree, CoreApi, and manages the
-/// event flow between the worker thread (Agent) and the UI thread.
-///
-/// Analogous to KimiTUI class in the Kimi Code TypeScript codebase.
-class TuiApp
-{
-public:
-	/// Construct the TUI app with a CoreApi and parsed CLI options.
-	TuiApp(std::unique_ptr<rpc::CoreApi> api, const cli::CliOptions& opts);
-	~TuiApp();
+	/// Top-level TUI application orchestrator.
+	///
+	/// Owns the FTXUI screen, component tree, CoreApi, and manages the
+	/// event flow between the worker thread (Agent) and the UI thread.
+	///
+	/// Analogous to KimiTUI class in the Kimi Code TypeScript codebase.
+	class TuiApp
+	{
+	public:
+		/// Construct the TUI app with a CoreApi and parsed CLI options.
+		TuiApp(std::unique_ptr<rpc::CoreApi> api, const cli::CliOptions& opts);
+		~TuiApp();
 
-	TuiApp(const TuiApp&) = delete;
-	TuiApp& operator=(const TuiApp&) = delete;
+		TuiApp(const TuiApp&) = delete;
+		TuiApp& operator=(const TuiApp&) = delete;
 
-	/// Enter the TUI event loop. Blocks until the user exits.
-	absl::Status Run();
+		/// Enter the TUI event loop. Blocks until the user exits.
+		absl::Status Run();
 
-	/// Request a re-render (thread-safe, called from worker thread).
-	void PostRender();
+		/// Request a re-render (thread-safe, called from worker thread).
+		void PostRender();
 
-private:
-	// Lifecycle
+	private:
+		// Lifecycle
 
-	absl::Status InitializeSession();
-	absl::Status Shutdown();
+		absl::Status InitializeSession();
+		absl::Status Shutdown();
 
-	// CoreApi callbacks (called from worker thread)
+		// CoreApi callbacks (called from worker thread)
 
-	void OnCoreEvent(const rpc::CoreEvent& event);
-	permission::PermissionDecision OnApproval(std::string_view toolName,
-											  const nlohmann::json& args,
-											  std::string_view description);
-	std::string OnQuestion(const tools::QuestionRequest& request);
+		void OnCoreEvent(const rpc::CoreEvent& event);
+		permission::PermissionDecision OnApproval(std::string_view toolName,
+												  const nlohmann::json& args,
+												  std::string_view description);
+		std::string OnQuestion(const tools::QuestionRequest& request);
 
-	// FTXUI component construction
+		// FTXUI component construction
 
-	ftxui::Component MakeLayout();
-	ftxui::Component MakeMainContainer();
-	ftxui::Component MakeChatPane();
-	ftxui::Component MakeInputField();
-	ftxui::Component MakeStatusBar();
-	ftxui::Component MakeModalOverlay();
-	ftxui::Component MakeApprovalPanel();
-	ftxui::Component MakeQuestionDialog();
-	ftxui::Component MakeHelpDialog();
-	ftxui::Component MakeSessionPicker();
-	ftxui::Component MakeSettingsDialog();
+		ftxui::Component MakeLayout();
+		ftxui::Component MakeMainContainer();
+		ftxui::Component MakeChatPane();
+		ftxui::Component MakeInputField();
+		ftxui::Component MakeStatusBar();
+		ftxui::Component MakeModalOverlay();
+		ftxui::Component MakeApprovalPanel();
+		ftxui::Component MakeQuestionDialog();
+		ftxui::Component MakeHelpDialog();
+		ftxui::Component MakeSessionPicker();
+		ftxui::Component MakeSettingsDialog();
 
-	// Input handlers
+		// Input handlers
 
-	bool HandleInput(ftxui::Event event);
-	bool HandleSlashCommand(std::string_view cmd);
-	void SubmitPrompt(std::string text);
+		bool HandleInput(ftxui::Event event);
+		bool HandleSlashCommand(std::string_view cmd);
+		void SubmitPrompt(std::string text);
 
-	// Data
+		// Data
 
-	std::unique_ptr<rpc::CoreApi> api;
-	std::shared_ptr<TuiState> state;
-	std::string inputContent; // shared with FTXUI Input component
-	ftxui::ScreenInteractive* screen = nullptr; // borrowed; owned by Run()
-	cli::CliOptions opts;
+		std::unique_ptr<rpc::CoreApi> api;
+		std::shared_ptr<TuiState> state;
+		std::string inputContent;					// shared with FTXUI Input component
+		ftxui::ScreenInteractive* screen = nullptr; // borrowed; owned by Run()
+		cli::CliOptions opts;
 
-	// Event router (stateless, just mutates state)
-	EventRouter router;
+		// Event router (stateless, just mutates state)
+		EventRouter router;
 
-	// Modal tab index used by Container::Tab
-	int activeModalIndex = 0;
+		// Modal tab index used by Container::Tab
+		int activeModalIndex = 0;
 
-	// Spinner animation frame counter (incremented each render)
-	size_t spinnerFrame = 0;
+		// Spinner animation frame counter (incremented each render)
+		size_t spinnerFrame = 0;
 
-	// Input history navigation state
-	InputHistory history;
-	size_t historyCursor = 0;
-	std::string savedInput; // current input before navigating history
+		// Input history navigation state
+		InputHistory history;
+		size_t historyCursor = 0;
+		std::string savedInput; // current input before navigating history
 
-	// Atomic flag to signal re-render from worker thread
-	std::atomic<bool> dirty{false};
+		// Atomic flag to signal re-render from worker thread
+		std::atomic<bool> dirty{false};
 
-	// Shutdown flag: once set, event callbacks are no-ops
-	std::atomic<bool> stopped{false};
-};
+		// Shutdown flag: once set, event callbacks are no-ops
+		std::atomic<bool> stopped{false};
+	};
 
-/// Top-level entry point: create CoreApi, wire callbacks, run the TUI.
-absl::Status Run(host::Host* host, llm::HttpClient* http, const cli::CliOptions& opts);
+	/// Top-level entry point: create CoreApi, wire callbacks, run the TUI.
+	absl::Status Run(host::Host* host, llm::HttpClient* http, const cli::CliOptions& opts);
 
 } // namespace codeharness::tui

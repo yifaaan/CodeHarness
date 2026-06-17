@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "Skills/SkillTool.h"
+#include "Engine/Tool.h"
 #include "Skills/SkillManager.h"
 #include "Skills/SkillRegistry.h"
-#include "Engine/Tool.h"
+#include "Skills/SkillTool.h"
 
 using namespace codeharness::skills;
 using namespace codeharness::tools;
@@ -162,5 +162,4 @@ TEST_SUITE("SkillTool")
 		CHECK_FALSE(def.description.empty());
 		CHECK(def.inputSchema.is_object());
 	}
-
 }

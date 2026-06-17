@@ -63,8 +63,8 @@ namespace codeharness::config
 		std::map<std::string, ProviderConfig> providers;
 		std::map<std::string, ModelAlias> models;
 		std::optional<ThinkingConfig> thinking;
-		std::vector<hooks::HookDef> hooks; // [[hooks]] entries; empty by default
-		SkillConfig skills;				// [skills] entries; defaults enabled
+		std::vector<hooks::HookDef> hooks;			  // [[hooks]] entries; empty by default
+		SkillConfig skills;							  // [skills] entries; defaults enabled
 		std::vector<mcp::McpServerConfig> mcpServers; // [[mcp.servers]] entries; empty by default
 	};
 

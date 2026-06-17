@@ -11,14 +11,14 @@
 namespace
 {
 
-// Render an Element to a fixed-width screen and return the rendered string.
-// Used to verify the Element tree contains expected substrings.
-std::string RenderToString(const ftxui::Element& el, int width = 40)
-{
-	ftxui::Screen screen(width, 5);
-	ftxui::Render(screen, el);
-	return screen.ToString();
-}
+	// Render an Element to a fixed-width screen and return the rendered string.
+	// Used to verify the Element tree contains expected substrings.
+	std::string RenderToString(const ftxui::Element& el, int width = 40)
+	{
+		ftxui::Screen screen(width, 5);
+		ftxui::Render(screen, el);
+		return screen.ToString();
+	}
 
 } // namespace
 

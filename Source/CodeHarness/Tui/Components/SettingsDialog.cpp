@@ -3,10 +3,10 @@
 namespace codeharness::tui
 {
 
-ftxui::Component SettingsDialog::Create()
-{
-	using namespace ftxui;
-	return Renderer([] { return text(""); });
-}
+	ftxui::Component SettingsDialog::Create()
+	{
+		using namespace ftxui;
+		return Renderer([] { return text(""); });
+	}
 
 } // namespace codeharness::tui

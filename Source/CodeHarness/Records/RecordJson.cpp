@@ -47,31 +47,31 @@ namespace codeharness::records
 		{
 			return {{"type", "text"}, {"text", text->text}};
 		}
-			if (auto* think = std::get_if<llm::ThinkPart>(&part))
-			{
-				nlohmann::json obj = {{"type", "think"}, {"think", think->think}};
-				if (think->encrypted)
-					obj["encrypted"] = *think->encrypted;
-				return obj;
-			}
-			if (auto* image = std::get_if<llm::ImagePart>(&part))
-			{
-				nlohmann::json obj = {{"type", "image"}, {"url", image->url}};
-				if (!image->mimeType.empty())
-					obj["mime_type"] = image->mimeType;
-				if (!image->detail.empty())
-					obj["detail"] = image->detail;
-				return obj;
-			}
-			if (auto* video = std::get_if<llm::VideoPart>(&part))
-			{
-				nlohmann::json obj = {{"type", "video"}, {"url", video->url}};
-				if (!video->mimeType.empty())
-					obj["mime_type"] = video->mimeType;
-				return obj;
-			}
-			return {{"type", "text"}, {"text", ""}};
+		if (auto* think = std::get_if<llm::ThinkPart>(&part))
+		{
+			nlohmann::json obj = {{"type", "think"}, {"think", think->think}};
+			if (think->encrypted)
+				obj["encrypted"] = *think->encrypted;
+			return obj;
 		}
+		if (auto* image = std::get_if<llm::ImagePart>(&part))
+		{
+			nlohmann::json obj = {{"type", "image"}, {"url", image->url}};
+			if (!image->mimeType.empty())
+				obj["mime_type"] = image->mimeType;
+			if (!image->detail.empty())
+				obj["detail"] = image->detail;
+			return obj;
+		}
+		if (auto* video = std::get_if<llm::VideoPart>(&part))
+		{
+			nlohmann::json obj = {{"type", "video"}, {"url", video->url}};
+			if (!video->mimeType.empty())
+				obj["mime_type"] = video->mimeType;
+			return obj;
+		}
+		return {{"type", "text"}, {"text", ""}};
+	}
 
 	absl::StatusOr<llm::ContentPart> ContentPartFromJson(const nlohmann::json& j)
 	{
@@ -87,32 +87,32 @@ namespace codeharness::records
 				p.text = j["text"].get<std::string>();
 			return p;
 		}
-			if (type == "think")
-			{
-				llm::ThinkPart p;
-				if (j.contains("think"))
-					p.think = j["think"].get<std::string>();
+		if (type == "think")
+		{
+			llm::ThinkPart p;
+			if (j.contains("think"))
+				p.think = j["think"].get<std::string>();
 			if (j.contains("encrypted"))
-					p.encrypted = j["encrypted"].get<std::string>();
-				return p;
-			}
-			if (type == "image")
-			{
-				llm::ImagePart p;
-				p.url = j.value("url", "");
-				p.mimeType = j.value("mime_type", "");
-				p.detail = j.value("detail", "");
-				return p;
-			}
-			if (type == "video")
-			{
-				llm::VideoPart p;
-				p.url = j.value("url", "");
-				p.mimeType = j.value("mime_type", "");
-				return p;
-			}
-			return absl::InvalidArgumentError(fmt::format("unknown content part type: {}", type));
+				p.encrypted = j["encrypted"].get<std::string>();
+			return p;
 		}
+		if (type == "image")
+		{
+			llm::ImagePart p;
+			p.url = j.value("url", "");
+			p.mimeType = j.value("mime_type", "");
+			p.detail = j.value("detail", "");
+			return p;
+		}
+		if (type == "video")
+		{
+			llm::VideoPart p;
+			p.url = j.value("url", "");
+			p.mimeType = j.value("mime_type", "");
+			return p;
+		}
+		return absl::InvalidArgumentError(fmt::format("unknown content part type: {}", type));
+	}
 
 	nlohmann::json MessageToJson(const llm::Message& msg)
 	{

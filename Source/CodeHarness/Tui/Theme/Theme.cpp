@@ -5,14 +5,14 @@
 namespace codeharness::tui
 {
 
-ColorPalette Theme::Detect()
-{
-	return MakePalette(DetectDarkMode());
-}
+	ColorPalette Theme::Detect()
+	{
+		return MakePalette(DetectDarkMode());
+	}
 
-ColorPalette Theme::MakePalette(bool darkMode)
-{
-	return tui::MakePalette(darkMode);
-}
+	ColorPalette Theme::MakePalette(bool darkMode)
+	{
+		return tui::MakePalette(darkMode);
+	}
 
 } // namespace codeharness::tui

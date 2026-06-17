@@ -26,7 +26,10 @@ namespace codeharness::tools
 	public:
 		explicit AskUserTool(QuestionCallback callback = {});
 
-		std::string Name() const override { return "AskUser"; }
+		std::string Name() const override
+		{
+			return "AskUser";
+		}
 		std::string Description() const override;
 		nlohmann::json Parameters() const override;
 		absl::StatusOr<engine::ToolExecution> ResolveExecution(const nlohmann::json& args) override;

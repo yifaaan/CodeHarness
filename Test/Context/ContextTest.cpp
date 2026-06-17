@@ -40,9 +40,18 @@ namespace
 		int generateCalls = 0;
 		int summarizationCalls = 0;
 
-		std::string Name() const override { return "mock"; }
-		std::string ModelName() const override { return "mock-model"; }
-		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override { return std::nullopt; }
+		std::string Name() const override
+		{
+			return "mock";
+		}
+		std::string ModelName() const override
+		{
+			return "mock-model";
+		}
+		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override
+		{
+			return std::nullopt;
+		}
 
 		absl::Status Generate(std::string_view systemPrompt, std::span<const llm::Tool>, std::span<const llm::Message> history,
 							  const llm::StreamCallbacks& callbacks, std::stop_token = {}) override
@@ -76,9 +85,9 @@ TEST_CASE("TokenEstimate: empty string is 0 tokens")
 
 TEST_CASE("TokenEstimate: chars/4 rounding up")
 {
-	CHECK(ctx::EstimateTokens(std::string_view{"hi"}) == 1);   // 2 chars -> 1
-	CHECK(ctx::EstimateTokens(std::string_view{"abcd"}) == 1); // 4 chars -> 1
-	CHECK(ctx::EstimateTokens(std::string_view{"abcde"}) == 2); // 5 chars -> 2
+	CHECK(ctx::EstimateTokens(std::string_view{"hi"}) == 1);	   // 2 chars -> 1
+	CHECK(ctx::EstimateTokens(std::string_view{"abcd"}) == 1);	   // 4 chars -> 1
+	CHECK(ctx::EstimateTokens(std::string_view{"abcde"}) == 2);	   // 5 chars -> 2
 	CHECK(ctx::EstimateTokens(std::string_view{"abcdefgh"}) == 2); // 8 chars -> 2
 }
 
@@ -86,7 +95,7 @@ TEST_CASE("TokenEstimate: message counts text + overhead")
 {
 	auto msg = TextMessage(llm::Role::User, "abcdefgh"); // 2 text tokens + per-msg overhead
 	auto tokens = ctx::EstimateTokens(msg);
-	CHECK(tokens >= 2); // at least the text portion
+	CHECK(tokens >= 2);	 // at least the text portion
 	CHECK(tokens < 100); // but not absurdly large
 }
 

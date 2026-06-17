@@ -38,7 +38,10 @@ namespace codeharness::skills
 
 		absl::Status Activate(const SkillActivationPayload& payload);
 
-		SkillRegistry* GetRegistry() const { return registry; }
+		SkillRegistry* GetRegistry() const
+		{
+			return registry;
+		}
 
 		static constexpr int MAX_DEPTH = 3;
 

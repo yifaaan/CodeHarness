@@ -21,7 +21,10 @@ namespace codeharness::tools
 	public:
 		explicit SkillTool(skills::SkillManager* manager);
 
-		std::string Name() const override { return "skill"; }
+		std::string Name() const override
+		{
+			return "skill";
+		}
 		std::string Description() const override;
 		nlohmann::json Parameters() const override;
 

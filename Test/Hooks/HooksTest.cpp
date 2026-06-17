@@ -45,7 +45,8 @@ namespace
 		{
 			auto path = tmpDir / (name + ".cmd");
 			std::ofstream f(path, std::ios::binary);
-			f << "@echo off\n" << body << "\n";
+			f << "@echo off\n"
+			  << body << "\n";
 			f.close();
 			return {"cmd", "/c", path.string()};
 		}
@@ -55,7 +56,8 @@ namespace
 		{
 			auto path = tmpDir / (name + ".sh");
 			std::ofstream f(path, std::ios::binary);
-			f << "#!/bin/sh\n" << body << "\n";
+			f << "#!/bin/sh\n"
+			  << body << "\n";
 			f.close();
 			std::filesystem::permissions(path, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
 			return {path.string()};
@@ -90,11 +92,16 @@ namespace
 TEST_CASE("HookEventName / ParseHookEvent round-trip")
 {
 	for (auto e : {
-			 hooks_ns::HookEvent::PreToolUse, hooks_ns::HookEvent::PostToolUse,
-			 hooks_ns::HookEvent::PostToolUseFailure, hooks_ns::HookEvent::UserPromptSubmit,
-			 hooks_ns::HookEvent::Stop, hooks_ns::HookEvent::StopFailure,
-			 hooks_ns::HookEvent::SessionStart, hooks_ns::HookEvent::SessionEnd,
-			 hooks_ns::HookEvent::PreCompact, hooks_ns::HookEvent::PostCompact,
+			 hooks_ns::HookEvent::PreToolUse,
+			 hooks_ns::HookEvent::PostToolUse,
+			 hooks_ns::HookEvent::PostToolUseFailure,
+			 hooks_ns::HookEvent::UserPromptSubmit,
+			 hooks_ns::HookEvent::Stop,
+			 hooks_ns::HookEvent::StopFailure,
+			 hooks_ns::HookEvent::SessionStart,
+			 hooks_ns::HookEvent::SessionEnd,
+			 hooks_ns::HookEvent::PreCompact,
+			 hooks_ns::HookEvent::PostCompact,
 			 hooks_ns::HookEvent::Notification,
 		 })
 	{

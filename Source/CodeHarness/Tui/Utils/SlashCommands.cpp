@@ -73,61 +73,62 @@ namespace codeharness::tui
 			}
 			return std::find(command.aliases.begin(), command.aliases.end(), name) != command.aliases.end();
 		}
-	}
+	} // namespace
 
-/*static*/ bool SlashCommands::IsSlashCommand(std::string_view text)
-{
-	return !text.empty() && text[0] == '/';
-}
-
-/*static*/ std::optional<SlashCommands::ParsedCommand> SlashCommands::Parse(std::string_view text)
-{
-	if (text.empty() || text[0] != '/') return std::nullopt;
-	auto rest = Trim(text.substr(1));
-	if (rest.empty())
+	/*static*/ bool SlashCommands::IsSlashCommand(std::string_view text)
 	{
-		return std::nullopt;
+		return !text.empty() && text[0] == '/';
 	}
 
-	ParsedCommand cmd;
-	auto space = rest.find(' ');
-	if (space == std::string_view::npos)
+	/*static*/ std::optional<SlashCommands::ParsedCommand> SlashCommands::Parse(std::string_view text)
 	{
-		cmd.name = std::string(rest);
-	}
-	else
-	{
-		cmd.name = std::string(rest.substr(0, space));
-		cmd.args = std::string(Trim(rest.substr(space + 1)));
-	}
-	if (cmd.name.find('/') != std::string::npos)
-	{
-		return std::nullopt;
-	}
-	return cmd;
-}
+		if (text.empty() || text[0] != '/')
+			return std::nullopt;
+		auto rest = Trim(text.substr(1));
+		if (rest.empty())
+		{
+			return std::nullopt;
+		}
 
-/*static*/ std::vector<SlashCommands::Command> SlashCommands::All()
-{
-	return Catalog();
-}
-
-/*static*/ const SlashCommands::Command* SlashCommands::Find(std::string_view name)
-{
-	const auto& commands = Catalog();
-	auto it = std::find_if(commands.begin(), commands.end(), [name](const Command& command) {
-		return Matches(command, name);
-	});
-	return it == commands.end() ? nullptr : &*it;
-}
-
-/*static*/ std::string SlashCommands::CanonicalName(std::string_view name)
-{
-	if (const auto* command = Find(name))
-	{
-		return command->name;
+		ParsedCommand cmd;
+		auto space = rest.find(' ');
+		if (space == std::string_view::npos)
+		{
+			cmd.name = std::string(rest);
+		}
+		else
+		{
+			cmd.name = std::string(rest.substr(0, space));
+			cmd.args = std::string(Trim(rest.substr(space + 1)));
+		}
+		if (cmd.name.find('/') != std::string::npos)
+		{
+			return std::nullopt;
+		}
+		return cmd;
 	}
-	return std::string(name);
-}
+
+	/*static*/ std::vector<SlashCommands::Command> SlashCommands::All()
+	{
+		return Catalog();
+	}
+
+	/*static*/ const SlashCommands::Command* SlashCommands::Find(std::string_view name)
+	{
+		const auto& commands = Catalog();
+		auto it = std::find_if(commands.begin(), commands.end(), [name](const Command& command) {
+			return Matches(command, name);
+		});
+		return it == commands.end() ? nullptr : &*it;
+	}
+
+	/*static*/ std::string SlashCommands::CanonicalName(std::string_view name)
+	{
+		if (const auto* command = Find(name))
+		{
+			return command->name;
+		}
+		return std::string(name);
+	}
 
 } // namespace codeharness::tui

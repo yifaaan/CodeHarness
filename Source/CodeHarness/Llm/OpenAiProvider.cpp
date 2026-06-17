@@ -150,10 +150,10 @@ namespace codeharness::llm
 				if (chunk->toolCallIndex)
 				{
 					spdlog::debug("openai: tool delta index={} has_id={} has_name={} args_bytes={}",
-							  *chunk->toolCallIndex,
-							  chunk->toolCallId.has_value(),
-							  chunk->toolCallName.has_value(),
-							  chunk->toolCallArgs ? chunk->toolCallArgs->size() : 0);
+								  *chunk->toolCallIndex,
+								  chunk->toolCallId.has_value(),
+								  chunk->toolCallName.has_value(),
+								  chunk->toolCallArgs ? chunk->toolCallArgs->size() : 0);
 					if (chunk->toolCallId && chunk->toolCallName && callbacks.onToolCallStart)
 					{
 						callbacks.onToolCallStart(*chunk->toolCallIndex, *chunk->toolCallId, *chunk->toolCallName);

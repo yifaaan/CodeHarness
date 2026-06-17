@@ -13,17 +13,17 @@ namespace codeharness::hooks
 	// subagent module exists.
 	enum class HookEvent
 	{
-		PreToolUse,		  // blocking: before a tool runs
-		PostToolUse,	  // after a successful tool result
+		PreToolUse,			// blocking: before a tool runs
+		PostToolUse,		// after a successful tool result
 		PostToolUseFailure, // after a tool error
-		UserPromptSubmit,   // blocking: before the prompt reaches the agent
-		Stop,				  // agent completed a turn normally
-		StopFailure,		  // agent turn ended in error
-		SessionStart,		  // session created/resumed
-		SessionEnd,		  // session closing
-		PreCompact,		  // before context compaction
-		PostCompact,		  // after context compaction
-		Notification,		  // general-purpose glue event
+		UserPromptSubmit,	// blocking: before the prompt reaches the agent
+		Stop,				// agent completed a turn normally
+		StopFailure,		// agent turn ended in error
+		SessionStart,		// session created/resumed
+		SessionEnd,			// session closing
+		PreCompact,			// before context compaction
+		PostCompact,		// after context compaction
+		Notification,		// general-purpose glue event
 	};
 
 	// Decision returned by a blocking hook (PreToolUse / UserPromptSubmit).
@@ -43,9 +43,9 @@ namespace codeharness::hooks
 	struct HookDef
 	{
 		HookEvent event = HookEvent::Notification;
-		std::string command;					   // shell command to execute
+		std::string command;				// shell command to execute
 		std::optional<std::string> matcher; // regex against the event target (empty = match all)
-		int timeoutSeconds = 30;			   // clamped to 1..600 at parse time
+		int timeoutSeconds = 30;			// clamped to 1..600 at parse time
 	};
 
 	// Outcome of running a single hook command.

@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "Skills/SkillRegistry.h"
 #include "Skills/SkillParser.h"
+#include "Skills/SkillRegistry.h"
 
 using namespace codeharness::skills;
 
@@ -284,5 +284,4 @@ TEST_SUITE("SkillRegistry")
 		CHECK_FALSE(rendered.empty());
 		CHECK(rendered.find("inline") != std::string::npos);
 	}
-
 }

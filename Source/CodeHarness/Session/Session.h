@@ -47,7 +47,7 @@ namespace codeharness::session
 		llm::ChatProvider* provider = nullptr;
 		tools::ToolManager* toolManager = nullptr;
 		std::string workdir; // absolute cwd the session is bound to (Create only)
-		std::string title;	  // human-readable; written to state.json (Create only)
+		std::string title;	 // human-readable; written to state.json (Create only)
 		// Optional hook engine. When set, Session fires SessionStart/SessionEnd
 		// and hands the engine to the Agent for its 8 events. Non-owning.
 		hooks::HookEngine* hookEngine = nullptr;
@@ -80,11 +80,23 @@ namespace codeharness::session
 		Session& operator=(const Session&) = delete;
 
 		// Non-owning access to the main Agent. Valid until Close(); nullptr after.
-		agent::Agent* MainAgent() const { return agent.get(); }
+		agent::Agent* MainAgent() const
+		{
+			return agent.get();
+		}
 
-		const std::string& Id() const { return sessionId; }
-		const SessionMeta& Meta() const { return meta; }
-		bool IsClosed() const { return closed; }
+		const std::string& Id() const
+		{
+			return sessionId;
+		}
+		const SessionMeta& Meta() const
+		{
+			return meta;
+		}
+		bool IsClosed() const
+		{
+			return closed;
+		}
 
 		// Flush records and write the updated state.json (updatedAt=now).
 		// Idempotent.

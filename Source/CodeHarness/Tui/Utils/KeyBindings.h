@@ -12,24 +12,24 @@ namespace ftxui
 namespace codeharness::tui
 {
 
-/// Defines and describes keyboard shortcuts.
-class KeyBindings
-{
-public:
-	enum class Action
+	/// Defines and describes keyboard shortcuts.
+	class KeyBindings
 	{
-		Submit,
-		Cancel,
-		NewSession,
-		ClearContext,
-		Help,
-		Exit,
-		Up,
-		Down,
-	};
+	public:
+		enum class Action
+		{
+			Submit,
+			Cancel,
+			NewSession,
+			ClearContext,
+			Help,
+			Exit,
+			Up,
+			Down,
+		};
 
-	static std::optional<Action> MapEvent(const ftxui::Event& event);
-	static std::string Describe(Action action);
-};
+		static std::optional<Action> MapEvent(const ftxui::Event& event);
+		static std::string Describe(Action action);
+	};
 
 } // namespace codeharness::tui

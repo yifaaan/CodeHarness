@@ -7,12 +7,12 @@
 namespace codeharness::tui
 {
 
-struct TuiState;
+	struct TuiState;
 
-class WelcomePanel
-{
-public:
-	static ftxui::Component Create(std::shared_ptr<TuiState> state);
-};
+	class WelcomePanel
+	{
+	public:
+		static ftxui::Component Create(std::shared_ptr<TuiState> state);
+	};
 
 } // namespace codeharness::tui

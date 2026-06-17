@@ -15,7 +15,7 @@ namespace codeharness::session
 		std::string title;
 		std::int64_t createdAt = 0; // unix epoch ms
 		std::int64_t updatedAt = 0; // unix epoch ms
-		std::string workdir;		  // absolute working dir the session was created in
+		std::string workdir;		// absolute working dir the session was created in
 	};
 
 	// Lightweight view of a session dir on disk, returned by Create/Get/Find.

@@ -10,51 +10,51 @@
 namespace codeharness::tui
 {
 
-namespace
-{
-
-using ftxui::Color;
-using ftxui::Element;
-using ftxui::Elements;
-using ftxui::text;
-
-std::vector<std::string_view> SplitLines(std::string_view s)
-{
-	std::vector<std::string_view> out;
-	size_t start = 0;
-	while (true)
+	namespace
 	{
-		auto pos = s.find('\n', start);
-		if (pos == std::string_view::npos)
+
+		using ftxui::Color;
+		using ftxui::Element;
+		using ftxui::Elements;
+		using ftxui::text;
+
+		std::vector<std::string_view> SplitLines(std::string_view s)
 		{
-			out.push_back(s.substr(start));
-			break;
+			std::vector<std::string_view> out;
+			size_t start = 0;
+			while (true)
+			{
+				auto pos = s.find('\n', start);
+				if (pos == std::string_view::npos)
+				{
+					out.push_back(s.substr(start));
+					break;
+				}
+				out.push_back(s.substr(start, pos - start));
+				start = pos + 1;
+			}
+			return out;
 		}
-		out.push_back(s.substr(start, pos - start));
-		start = pos + 1;
-	}
-	return out;
-}
 
-} // namespace
+	} // namespace
 
-Element ThinkingView::Render(const std::string& thinking)
-{
-	if (thinking.empty())
+	Element ThinkingView::Render(const std::string& thinking)
 	{
-		return ftxui::text("");
-	}
+		if (thinking.empty())
+		{
+			return ftxui::text("");
+		}
 
-	Elements rows;
-	rows.push_back(text(" 💭 thinking") | ftxui::bold | ftxui::color(Color::Magenta));
-	for (auto line : SplitLines(thinking))
-	{
-		rows.push_back(ftxui::hbox({
-			text("     "),
-			text(std::string(line)) | ftxui::dim | ftxui::color(Color::GrayLight),
-		}));
+		Elements rows;
+		rows.push_back(text(" 💭 thinking") | ftxui::bold | ftxui::color(Color::Magenta));
+		for (auto line : SplitLines(thinking))
+		{
+			rows.push_back(ftxui::hbox({
+				text("     "),
+				text(std::string(line)) | ftxui::dim | ftxui::color(Color::GrayLight),
+			}));
+		}
+		return ftxui::vbox(std::move(rows));
 	}
-	return ftxui::vbox(std::move(rows));
-}
 
 } // namespace codeharness::tui

@@ -4,9 +4,9 @@
 #include <string>
 #include <utility>
 
-#include "Llm/ChatProvider.h"
 #include "Hooks/HookEngine.h"
 #include "Hooks/HookTypes.h"
+#include "Llm/ChatProvider.h"
 #include "ToolScheduler.h"
 #include "absl/status/status.h"
 #include "fmt/format.h"

@@ -18,10 +18,10 @@
 #include <string_view>
 #include <vector>
 
+#include "Agent/Agent.h"
 #include "Host/LocalHost.h"
 #include "Llm/ChatProvider.h"
 #include "Llm/Types.h"
-#include "Agent/Agent.h"
 #include "absl/status/status.h"
 
 namespace sess = codeharness::session;
@@ -61,9 +61,18 @@ namespace
 		std::string text = "hello back";
 		size_t callCount = 0;
 
-		std::string Name() const override { return "mock"; }
-		std::string ModelName() const override { return "mock-model"; }
-		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override { return std::nullopt; }
+		std::string Name() const override
+		{
+			return "mock";
+		}
+		std::string ModelName() const override
+		{
+			return "mock-model";
+		}
+		std::optional<llm::ThinkingEffort> ThinkingEffortLevel() const override
+		{
+			return std::nullopt;
+		}
 
 		absl::Status Generate(std::string_view, std::span<const llm::Tool>, std::span<const llm::Message>,
 							  const llm::StreamCallbacks& callbacks, std::stop_token = {}) override
@@ -79,16 +88,22 @@ namespace
 
 	// Adapter so CHECK_OK works for both absl::Status and absl::StatusOr<T>.
 	template <typename T>
-	absl::string_view StatusMessage(const absl::StatusOr<T>& s) { return s.status().message(); }
-	inline absl::string_view StatusMessage(const absl::Status& s) { return s.message(); }
+	absl::string_view StatusMessage(const absl::StatusOr<T>& s)
+	{
+		return s.status().message();
+	}
+	inline absl::string_view StatusMessage(const absl::Status& s)
+	{
+		return s.message();
+	}
 
-#define CHECK_OK(expr)                       \
-	do                                       \
-	{                                        \
-		auto _s = (expr);                    \
-		CHECK(_s.ok());                      \
-		if (!_s.ok())                        \
-			MESSAGE(StatusMessage(_s));      \
+#define CHECK_OK(expr)                  \
+	do                                  \
+	{                                   \
+		auto _s = (expr);               \
+		CHECK(_s.ok());                 \
+		if (!_s.ok())                   \
+			MESSAGE(StatusMessage(_s)); \
 	} while (0)
 
 } // namespace

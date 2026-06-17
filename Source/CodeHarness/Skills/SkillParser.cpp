@@ -20,7 +20,7 @@ namespace codeharness::skills
 			auto end = sv.find_last_not_of(" \t\r\n");
 			return std::string(sv.substr(start, end - start + 1));
 		}
-	}
+	} // namespace
 
 	absl::StatusOr<SkillDefinition> SkillParser::Parse(std::string_view content, const std::string& filePath, SkillSource source)
 	{

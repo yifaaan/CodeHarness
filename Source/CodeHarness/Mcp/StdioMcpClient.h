@@ -34,7 +34,10 @@ namespace codeharness::mcp
 			std::stop_token stopToken = {}) override;
 		absl::Status Shutdown() override;
 
-		const std::string& ServerName() const { return config.name; }
+		const std::string& ServerName() const
+		{
+			return config.name;
+		}
 
 	private:
 		absl::Status EnsureStarted();

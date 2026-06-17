@@ -16,22 +16,22 @@
 namespace
 {
 
-std::string RenderComponent(ftxui::Component component, int width = 100, int height = 12)
-{
-	ftxui::Screen screen(width, height);
-	ftxui::Render(screen, component->Render());
-	return screen.ToString();
-}
+	std::string RenderComponent(ftxui::Component component, int width = 100, int height = 12)
+	{
+		ftxui::Screen screen(width, height);
+		ftxui::Render(screen, component->Render());
+		return screen.ToString();
+	}
 
-std::shared_ptr<codeharness::tui::TuiState> MakeState()
-{
-	auto state = std::make_shared<codeharness::tui::TuiState>();
-	state->sessionId = "sess_1234567890abcdef";
-	state->model = "gpt-5.5";
-	state->workdir = "D:\\code\\CodeHarness";
-	state->version = "CodeHarness v0.1.0";
-	return state;
-}
+	std::shared_ptr<codeharness::tui::TuiState> MakeState()
+	{
+		auto state = std::make_shared<codeharness::tui::TuiState>();
+		state->sessionId = "sess_1234567890abcdef";
+		state->model = "gpt-5.5";
+		state->workdir = "D:\\code\\CodeHarness";
+		state->version = "CodeHarness v0.1.0";
+		return state;
+	}
 
 } // namespace
 

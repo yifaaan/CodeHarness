@@ -14,22 +14,21 @@
 namespace codeharness::tui
 {
 
-ftxui::Component CompactionIndicator::Create(std::shared_ptr<TuiState> state)
-{
-	using namespace ftxui;
-	return Renderer([state = std::move(state)] {
-		std::lock_guard<std::mutex> lk(state->mutex);
-		if (!state->compacting)
-		{
-			return text("");
-		}
-		return hbox({
-				   text(" ⏳ ") | color(Color::Magenta) | bold,
-				   text(fmt::format("Compacting context ({} messages)...", state->compactingCount))
-					   | color(Color::Magenta),
-			   }) |
-			   borderRounded | color(Color::Magenta);
-	});
-}
+	ftxui::Component CompactionIndicator::Create(std::shared_ptr<TuiState> state)
+	{
+		using namespace ftxui;
+		return Renderer([state = std::move(state)] {
+			std::lock_guard<std::mutex> lk(state->mutex);
+			if (!state->compacting)
+			{
+				return text("");
+			}
+			return hbox({
+					   text(" ⏳ ") | color(Color::Magenta) | bold,
+					   text(fmt::format("Compacting context ({} messages)...", state->compactingCount)) | color(Color::Magenta),
+				   }) |
+				   borderRounded | color(Color::Magenta);
+		});
+	}
 
 } // namespace codeharness::tui
