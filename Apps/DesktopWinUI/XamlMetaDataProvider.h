@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unknwn.h>
+
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 

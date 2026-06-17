@@ -25,6 +25,9 @@ set(DESKTOP_XAML_FILES
   Controls/ComposerBox.xaml
   Controls/PermissionDialog.xaml
   Controls/ToolCallView.xaml
+  Themes/Colors.xaml
+  Themes/Typography.xaml
+  Themes/Controls.xaml
 )
 
 set(DESKTOP_IDL_FILES
@@ -89,12 +92,49 @@ foreach(desktop_config Debug Release MinSizeRel RelWithDebInfo)
 	file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/codeharness_desktop.dir/${desktop_config}/Generated Files")
 endforeach()
 
+function(codeharness_add_xaml_include_shim shim_file generated_file)
+  file(GENERATE
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/codeharness_desktop.dir/$<CONFIG>/Generated Files/${shim_file}"
+    CONTENT "#pragma once\n#include \"${generated_file}\"\n"
+  )
+endfunction()
+
+codeharness_add_xaml_include_shim("Views.ShellPage.xaml.g.h" "Views/ShellPage.xaml.g.h")
+codeharness_add_xaml_include_shim("Views.ChatPage.xaml.g.h" "Views/ChatPage.xaml.g.h")
+codeharness_add_xaml_include_shim("Views.SettingsPage.xaml.g.h" "Views/SettingsPage.xaml.g.h")
+codeharness_add_xaml_include_shim("Controls.Sidebar.xaml.g.h" "Controls/Sidebar.xaml.g.h")
+codeharness_add_xaml_include_shim("Controls.ComposerBox.xaml.g.h" "Controls/ComposerBox.xaml.g.h")
+codeharness_add_xaml_include_shim("Controls.PermissionDialog.xaml.g.h" "Controls/PermissionDialog.xaml.g.h")
+codeharness_add_xaml_include_shim("Controls.ToolCallView.xaml.g.h" "Controls/ToolCallView.xaml.g.h")
+
+set(DESKTOP_XAML_GENERATED_CPP "${CMAKE_CURRENT_BINARY_DIR}/codeharness_desktop.dir/$<CONFIG>/Generated Files/CodeHarnessDesktop.XamlGenerated.cpp")
+file(GENERATE
+  OUTPUT "${DESKTOP_XAML_GENERATED_CPP}"
+  CONTENT [[#include "App.g.cpp"
+#include "MainWindow.g.cpp"
+#include "module.g.cpp"
+#include "XamlTypeInfo.g.cpp"
+#include "XamlTypeInfo.Impl.g.cpp"
+#include "XamlLibMetadataProvider.g.cpp"
+#include "Views.ShellPage.g.cpp"
+#include "Views.ChatPage.g.cpp"
+#include "Views.SettingsPage.g.cpp"
+#include "Controls.Sidebar.g.cpp"
+#include "Controls.ComposerBox.g.cpp"
+#include "Controls.PermissionDialog.g.cpp"
+#include "Controls.ToolCallView.g.cpp"
+]]
+)
+
 add_executable(codeharness_desktop WIN32
   ${DESKTOP_SOURCE_FILES}
   ${DESKTOP_HEADER_FILES}
+  ${DESKTOP_XAML_FILES}
   ${DESKTOP_IDL_FILES}
   ${DESKTOP_RESOURCE_FILES}
 )
+
+target_sources(codeharness_desktop PRIVATE "${DESKTOP_XAML_GENERATED_CPP}")
 
 target_compile_features(codeharness_desktop PRIVATE cxx_std_20)
 target_include_directories(codeharness_desktop PRIVATE
@@ -106,7 +146,17 @@ target_compile_definitions(codeharness_desktop PRIVATE
   WIN32_LEAN_AND_MEAN
   NOMINMAX
   CODEHARNESS_WINDOWS_APP_SDK_MAJOR_MINOR=0x00020000
+  WINRT_FORCE_INCLUDE_APP_XAML_G_H
+  WINRT_FORCE_INCLUDE_MAINWINDOW_XAML_G_H
+  WINRT_FORCE_INCLUDE_SHELLPAGE_XAML_G_H
+  WINRT_FORCE_INCLUDE_CHATPAGE_XAML_G_H
+  WINRT_FORCE_INCLUDE_SETTINGSPAGE_XAML_G_H
+  WINRT_FORCE_INCLUDE_SIDEBAR_XAML_G_H
+  WINRT_FORCE_INCLUDE_COMPOSERBOX_XAML_G_H
+  WINRT_FORCE_INCLUDE_PERMISSIONDIALOG_XAML_G_H
+  WINRT_FORCE_INCLUDE_TOOLCALLVIEW_XAML_G_H
 )
+target_compile_options(codeharness_desktop PRIVATE /FS)
 set(CODEHARNESS_WINDOWS_APP_SDK_NUGET_ROOT "$ENV{USERPROFILE}/.nuget/packages" CACHE PATH "NuGet package root used to locate Windows App SDK native libraries")
 set(CODEHARNESS_WINDOWS_APP_SDK_NATIVE_PLATFORM "${CMAKE_VS_PLATFORM_NAME}")
 if(CODEHARNESS_WINDOWS_APP_SDK_NATIVE_PLATFORM STREQUAL "Win32")
@@ -128,7 +178,19 @@ target_link_libraries(codeharness_desktop PRIVATE
   windowsapp
 )
 
-set_source_files_properties(${DESKTOP_XAML_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+set(DESKTOP_XAML_VS_SETTINGS "Generator=MSBuild:Compile;XamlRuntime=WinUI;SubType=Designer")
+set_source_files_properties(App.xaml PROPERTIES
+  VS_TOOL_OVERRIDE "ApplicationDefinition"
+  VS_SETTINGS "${DESKTOP_XAML_VS_SETTINGS}"
+)
+foreach(xaml_file IN LISTS DESKTOP_XAML_FILES)
+  if(NOT xaml_file STREQUAL "App.xaml")
+    set_source_files_properties(${xaml_file} PROPERTIES
+      VS_TOOL_OVERRIDE "Page"
+      VS_SETTINGS "${DESKTOP_XAML_VS_SETTINGS}"
+    )
+  endif()
+endforeach()
 set(DESKTOP_GENERATED_FILES_DIR "codeharness_desktop.dir\\$(Configuration)\\Generated Files\\")
 set(DESKTOP_IDL_VS_SETTINGS "OutputDirectory=$(ProjectDir)$(IntDir);HeaderFileName=%(Filename).h;TypeLibraryName=%(Filename).tlb;MetadataFileName=%(Filename).winmd")
 foreach(idl_file IN LISTS DESKTOP_IDL_FILES)
@@ -149,6 +211,7 @@ set_target_properties(codeharness_desktop PROPERTIES
   VS_GLOBAL_CppWinRTRootNamespaceAutoMerge "true"
   VS_GLOBAL_CppWinRTGenerateWindowsMetadata "true"
   VS_GLOBAL_CppWinRTUsePrefixes "true"
+  VS_GLOBAL_ForceImportAfterCppTargets "${CMAKE_CURRENT_SOURCE_DIR}\\CodeHarnessDesktop.Xaml.targets"
   VS_GLOBAL_GeneratedFilesDir "${DESKTOP_GENERATED_FILES_DIR}"
   VS_GLOBAL_IsNativeLanguage "true"
   VS_GLOBAL_ManagedAssembly "false"
@@ -159,9 +222,12 @@ set_target_properties(codeharness_desktop PROPERTIES
   VS_GLOBAL_TargetPlatformIdentifier "Windows"
   VS_GLOBAL_TargetPlatformMinVersion "10.0.19041.0"
   VS_GLOBAL_TargetPlatformVersion "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}"
+  VS_GLOBAL_XamlGeneratedOutputPath "${DESKTOP_GENERATED_FILES_DIR}"
   VS_GLOBAL_WindowsAppSdkBootstrapInitialize "false"
   VS_GLOBAL_WindowsPackageType "None"
+  VS_GLOBAL_WinMDAssembly "true"
   VS_GLOBAL_XamlLanguage "CppWinRT"
+  VS_GLOBAL_XamlNamespace "Microsoft.UI.Xaml"
   VS_GLOBAL_XamlTypeInfoProviderName "XamlMetaDataProvider"
 )
 

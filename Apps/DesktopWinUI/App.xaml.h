@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unknwn.h>
+
 #include "App.g.h"
 #include "MainWindow.xaml.h"
 

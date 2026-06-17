@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unknwn.h>
+
 #include "Views.SettingsPage.g.h"
 
 namespace winrt::CodeHarness::Desktop::Views::implementation

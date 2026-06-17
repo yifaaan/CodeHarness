@@ -1,5 +1,7 @@
+#include <unknwn.h>
 #include <Windows.h>
 #include <MddBootstrap.h>
+#undef GetCurrentTime
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/base.h>
 

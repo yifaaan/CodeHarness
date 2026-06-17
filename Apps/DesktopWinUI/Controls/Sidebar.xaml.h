@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unknwn.h>
+
 #include "Controls.Sidebar.g.h"
 
 namespace winrt::CodeHarness::Desktop::Controls::implementation

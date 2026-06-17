@@ -1,11 +1,11 @@
 #pragma once
 
+#include <unknwn.h>
+
 #include "MainWindow.g.h"
 
 #include <memory>
 #include <string>
-
-#include <winrt/Microsoft.UI.Xaml.Controls.h>
 
 #include "Services/DesktopCoreService.h"
 
@@ -19,7 +19,6 @@ namespace winrt::CodeHarness::Desktop::implementation
 
 	private:
 		void InitializeUi();
-		void BuildContent();
 		void LoadSessions();
 		void NewChat();
 		void ResumeSelectedSession();
@@ -33,13 +32,6 @@ namespace winrt::CodeHarness::Desktop::implementation
 		std::string ToUtf8(hstring const& text) const;
 
 		std::unique_ptr<::codeharness::desktop_app::DesktopCoreService> core;
-		Microsoft::UI::Xaml::Controls::Button newChatButton{nullptr};
-		Microsoft::UI::Xaml::Controls::Button sendButton{nullptr};
-		Microsoft::UI::Xaml::Controls::Button cancelButton{nullptr};
-		Microsoft::UI::Xaml::Controls::ListView sessionsList{nullptr};
-		Microsoft::UI::Xaml::Controls::StackPanel messagesPanel{nullptr};
-		Microsoft::UI::Xaml::Controls::TextBox promptBox{nullptr};
-		Microsoft::UI::Xaml::Controls::TextBlock statusText{nullptr};
 		std::wstring currentAssistantText;
 		bool running = false;
 	};

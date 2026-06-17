@@ -5,6 +5,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 	SettingsPage::SettingsPage()
 	{
+		this->InitializeComponent();
 	}
 
 } // namespace winrt::CodeHarness::Desktop::Views::implementation
