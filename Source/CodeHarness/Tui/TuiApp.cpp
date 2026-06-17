@@ -490,9 +490,13 @@ namespace codeharness::tui
 		using namespace ftxui;
 
 		ftxui::InputOption opt;
-		opt.placeholder = "Type a message... (Enter to send)";
+		opt.placeholder = "Type a message... (Enter to send, Shift+Enter newline)";
 		opt.multiline = false;
-		opt.on_enter = [this] {
+		opt.on_change = [this] {
+			historyNav.cursor = history.Entries().size();
+		};
+
+		auto submitCurrent = [this] {
 			if (inputContent.empty())
 			{
 				return;
@@ -500,14 +504,16 @@ namespace codeharness::tui
 			std::string text = inputContent;
 			inputContent.clear();
 			history.Add(text);
-			historyCursor = history.Entries().size();
+			historyNav.cursor = history.Entries().size();
+			historyNav.savedInput.clear();
 			SubmitPrompt(text);
 		};
+		opt.on_enter = submitCurrent;
 
 		auto input = Input(&inputContent, opt);
 		input->TakeFocus();
 
-		auto withEnter = CatchEvent(input, [this](Event event) -> bool {
+		auto withEnter = CatchEvent(input, [this, submitCurrent](Event event) -> bool {
 			if (event == Event::CtrlC && state->streaming)
 			{
 				(void)api->Cancel(state->sessionId);
@@ -518,36 +524,97 @@ namespace codeharness::tui
 				PostRender();
 				return true;
 			}
-			// History navigation: Up/Down arrows
-			if (event == Event::ArrowUp && historyCursor > 0)
+
+			if (event == Event::Tab)
 			{
-				if (historyCursor == history.Entries().size())
+				auto slash = BuildSlashSuggestions(inputContent, 1);
+				if (!slash.empty())
 				{
-					savedInput = inputContent;
+					inputContent = "/" + slash.front().command.name + " ";
+					return true;
 				}
-				--historyCursor;
-				inputContent = history.Entries()[historyCursor];
+				auto mention = FindFileMentionQuery(inputContent, inputContent.size());
+				if (mention.has_value())
+				{
+					auto files = BuildFileMentionSuggestions(opts.workdir, mention->prefix, 1);
+					if (!files.empty())
+					{
+						inputContent = ApplyFileMentionCompletion(inputContent, *mention, files.front().insertText);
+						return true;
+					}
+				}
+			}
+
+			if (IsShiftEnterInputSequence(event.input()))
+			{
+				inputContent.push_back('\n');
 				return true;
+			}
+
+			if (event == Event::Return || event == Event::Character("\n"))
+			{
+				auto slash = BuildSlashSuggestions(inputContent, 1);
+				if (!slash.empty() && inputContent == "/" + slash.front().command.name)
+				{
+					// Exact command: fall through to normal submit so /help opens immediately.
+				}
+				else if (!slash.empty())
+				{
+					inputContent = "/" + slash.front().command.name + " ";
+					return true;
+				}
+				else if (auto mention = FindFileMentionQuery(inputContent, inputContent.size()); mention.has_value())
+				{
+					auto files = BuildFileMentionSuggestions(opts.workdir, mention->prefix, 1);
+					if (!files.empty())
+					{
+						inputContent = ApplyFileMentionCompletion(inputContent, *mention, files.front().insertText);
+						return true;
+					}
+				}
+				if (auto action = SubmitAction(false, inputContent.empty()); action == ComposerSubmitAction::Submit)
+				{
+					submitCurrent();
+					return true;
+				}
+				return true;
+			}
+
+			// History navigation: Up/Down arrows
+			if (event == Event::ArrowUp)
+			{
+				return ApplyHistoryUp(history.Entries(), historyNav, inputContent);
 			}
 			if (event == Event::ArrowDown)
 			{
-				if (historyCursor + 1 < history.Entries().size())
-				{
-					++historyCursor;
-					inputContent = history.Entries()[historyCursor];
-				}
-				else if (historyCursor + 1 == history.Entries().size())
-				{
-					++historyCursor;
-					inputContent = savedInput;
-					savedInput.clear();
-				}
-				return true;
+				return ApplyHistoryDown(history.Entries(), historyNav, inputContent);
 			}
 			return false;
 		});
 
-		return withEnter;
+		auto render = Renderer(withEnter, [this, withEnter] {
+			Elements rows;
+			auto slash = BuildSlashSuggestions(inputContent, 6);
+			if (!slash.empty())
+			{
+				for (const auto& suggestion : slash)
+				{
+					rows.push_back(text("  " + suggestion.display) | dim | color(Color::GrayLight));
+				}
+			}
+			else if (auto mention = FindFileMentionQuery(inputContent, inputContent.size()); mention.has_value())
+			{
+				auto files = BuildFileMentionSuggestions(opts.workdir, mention->prefix, 6);
+				for (const auto& file : files)
+				{
+					rows.push_back(text("  " + file.display + (file.isDirectory ? "  dir" : "")) | dim | color(Color::GrayLight));
+				}
+			}
+			rows.push_back(withEnter->Render());
+			return vbox(std::move(rows));
+		});
+
+		return render;
 	}
 
 	ftxui::Component TuiApp::MakeStatusBar()

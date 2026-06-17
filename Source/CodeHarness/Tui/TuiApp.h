@@ -15,6 +15,7 @@
 #include "Rpc/RpcTypes.h"
 #include "Tui/EventRouter.h"
 #include "Tui/TuiState.h"
+#include "Tui/Utils/InputComposerLogic.h"
 #include "Tui/Utils/InputHistory.h"
 
 namespace codeharness::host
@@ -104,8 +105,7 @@ namespace codeharness::tui
 
 		// Input history navigation state
 		InputHistory history;
-		size_t historyCursor = 0;
-		std::string savedInput; // current input before navigating history
+		HistoryNavigationState historyNav;
 
 		// Atomic flag to signal re-render from worker thread
 		std::atomic<bool> dirty{false};

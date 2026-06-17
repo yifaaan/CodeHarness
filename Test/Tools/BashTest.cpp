@@ -15,7 +15,7 @@ namespace engine = codeharness::engine;
 using json = nlohmann::json;
 
 #ifdef _WIN32
-const char* kSlowCmd = "ping -n 30 127.0.0.1 > nul";
+const char* kSlowCmd = "ping -n 30 127.0.0.1";
 #else
 const char* kSlowCmd = "sleep 30";
 #endif

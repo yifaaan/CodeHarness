@@ -32,6 +32,7 @@ add_library(codeharness_tui
   Renderers/CodeHighlighter.cpp
   Renderers/DiffRenderer.cpp
   Utils/TerminalUtils.cpp
+  Utils/InputComposerLogic.cpp
   Utils/InputHistory.cpp
   Utils/KeyBindings.cpp
   Utils/SlashCommands.cpp
