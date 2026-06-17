@@ -1,4 +1,5 @@
 #include "App.xaml.h"
+#include "MainWindow.xaml.h"
 
 #include <winrt/Microsoft.UI.Xaml.h>
 
@@ -13,6 +14,7 @@ namespace winrt::CodeHarness::Desktop::implementation
 	void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&)
 	{
 		window = make<MainWindow>();
+		window.as<implementation::MainWindow>()->ApplyDefaultWindowSize();
 		window.Activate();
 	}
 

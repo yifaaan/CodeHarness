@@ -19,6 +19,9 @@ namespace winrt::CodeHarness::Desktop::implementation
 		MainWindow();
 		~MainWindow();
 
+		// Position/size the window for the 3-column layout (HWND-only API).
+		void ApplyDefaultWindowSize();
+
 	private:
 		void InitializeUi();
 		void LoadSessions();

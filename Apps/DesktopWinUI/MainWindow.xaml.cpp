@@ -5,6 +5,9 @@
 #include <memory>
 #include <utility>
 
+#include <Windows.h>
+#include <microsoft.ui.xaml.window.h>
+
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
@@ -33,6 +36,27 @@ namespace winrt::CodeHarness::Desktop::implementation
 		this->InitializeComponent();
 		InitializeUi();
 		LoadSessions();
+	}
+
+	void MainWindow::ApplyDefaultWindowSize()
+	{
+		// Called from App::OnLaunched where the projected Microsoft::UI::Xaml::Window
+		// base is directly available; HWND is exposed via the raw COM IWindowNative.
+		auto baseWindow = (*this).try_as<winrt::Microsoft::UI::Xaml::Window>();
+		if (!baseWindow)
+		{
+			return;
+		}
+		winrt::com_ptr<::IWindowNative> windowNative;
+		baseWindow.as(windowNative);
+		if (windowNative)
+		{
+			HWND hwnd = nullptr;
+			if (SUCCEEDED(windowNative->get_WindowHandle(&hwnd)) && hwnd)
+			{
+				SetWindowPos(hwnd, nullptr, 120, 90, 1280, 820, SWP_NOZORDER);
+			}
+		}
 	}
 
 	MainWindow::~MainWindow()
