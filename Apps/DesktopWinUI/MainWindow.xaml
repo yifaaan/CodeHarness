@@ -63,20 +63,26 @@
                 </StackPanel>
 
                 <!-- Sessions list -->
-                <Grid Grid.Row="3" Margin="0,4,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="CHATS" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,8" />
-                    <ListView x:Name="SessionsList"
-                              Grid.Row="1"
-                              Margin="4,0,4,8"
-                              SelectionMode="Single"
-                              Background="Transparent"
-                              BorderThickness="0"
-                              Padding="0" />
-                </Grid>
+                <ScrollViewer Grid.Row="3" Margin="0,4,0,0"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="TODAY" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,8" />
+                        <ListView x:Name="SessionsList"
+                                  Margin="4,0,4,4"
+                                  SelectionMode="Single"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  Padding="0" />
+
+                        <TextBlock Text="PREVIOUS 7 DAYS" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,14,18,8" />
+                        <StackPanel x:Name="Previous7Group" Margin="4,0,4,4" />
+
+                        <TextBlock Text="PREVIOUS 30 DAYS" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,14,18,8" />
+                        <StackPanel x:Name="Previous30Group" Margin="4,0,4,4" />
+                    </StackPanel>
+                </ScrollViewer>
 
                 <!-- Footer -->
                 <Border Grid.Row="4"

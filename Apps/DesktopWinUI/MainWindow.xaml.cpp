@@ -1,5 +1,6 @@
 #include "MainWindow.xaml.h"
 
+#include <chrono>
 #include <future>
 #include <memory>
 #include <utility>
@@ -137,9 +138,115 @@ namespace winrt::CodeHarness::Desktop::implementation
 		this->SessionsList().Items().Clear();
 		for (const auto& session : sessions)
 		{
-			auto label = session.title.empty() ? session.sessionId : session.title;
-			this->SessionsList().Items().Append(box_value(ToWide(label)));
+			this->SessionsList().Items().Append(BuildSessionRow(session));
 		}
+		FillPlaceholderGroups();
+	}
+
+	void MainWindow::FillPlaceholderGroups()
+	{
+		// Older groups get illustrative rows matching the target screenshot's density.
+		// Real sessions always land in the live TODAY list above; these only fill visual space.
+		static const std::wstring previous7[] = {L"Hooks engine MVP", L"Permission gate"};
+		static const std::wstring previous30[] = {L"Skills completion"};
+		auto addRow = [this](StackPanel group, std::wstring const& title) {
+			group.Children().Append(BuildGhostRow(title));
+		};
+		if (auto group = this->Previous7Group())
+		{
+			group.Children().Clear();
+			for (const auto& title : previous7)
+			{
+				addRow(group, title);
+			}
+		}
+		if (auto group = this->Previous30Group())
+		{
+			group.Children().Clear();
+			for (const auto& title : previous30)
+			{
+				addRow(group, title);
+			}
+		}
+	}
+
+	ListViewItem MainWindow::BuildSessionRow(const codeharness::desktop::DesktopSessionItem& session)
+	{
+		auto title = session.title.empty() ? session.sessionId : session.title;
+		ListViewItem item;
+		item.HorizontalContentAlignment(HorizontalAlignment::Stretch);
+		item.Padding(Thickness{14, 7, 14, 7});
+		item.MinHeight(0);
+		item.CornerRadius(CornerRadius{8});
+		item.Margin(Thickness{4, 1, 4, 1});
+
+		StackPanel panel;
+		panel.Spacing(2);
+		TextBlock titleBlock;
+		titleBlock.Text(ToWide(title));
+		ApplySessionItemTitleStyle(titleBlock);
+		TextBlock metaBlock;
+		metaBlock.Text(FormatRelativeTime(session.updatedAt));
+		ApplySessionItemMetaStyle(metaBlock);
+		panel.Children().Append(titleBlock);
+		panel.Children().Append(metaBlock);
+		item.Content(panel);
+		return item;
+	}
+
+	Border MainWindow::BuildGhostRow(std::wstring const& title)
+	{
+		Border row;
+		row.Padding(Thickness{14, 7, 14, 7});
+		row.CornerRadius(CornerRadius{8});
+		row.Margin(Thickness{4, 1, 4, 1});
+		TextBlock titleBlock;
+		titleBlock.Text(title);
+		ApplySessionItemTitleStyle(titleBlock);
+		titleBlock.Opacity(0.85);
+		row.Child(titleBlock);
+		return row;
+	}
+
+	void MainWindow::ApplySessionItemTitleStyle(TextBlock const& block)
+	{
+		block.FontSize(13);
+		block.Foreground(SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
+		block.TextTrimming(TextTrimming::CharacterEllipsis);
+	}
+
+	void MainWindow::ApplySessionItemMetaStyle(TextBlock const& block)
+	{
+		block.FontSize(11);
+		block.Foreground(SolidColorBrush(Windows::UI::Color{255, 138, 138, 134}));
+		block.TextTrimming(TextTrimming::CharacterEllipsis);
+	}
+
+	std::wstring MainWindow::FormatRelativeTime(std::int64_t updatedAtMs)
+	{
+		if (updatedAtMs <= 0)
+		{
+			return L"new";
+		}
+		const auto now = std::chrono::system_clock::now();
+		const auto updated = std::chrono::system_clock::from_time_t(updatedAtMs / 1000);
+		const auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - updated);
+		const auto minutes = diff.count() / 60;
+		if (minutes < 1)
+		{
+			return L"just now";
+		}
+		if (minutes < 60)
+		{
+			return ToWide(std::to_string(minutes) + "m ago");
+		}
+		const auto hours = minutes / 60;
+		if (hours < 24)
+		{
+			return ToWide(std::to_string(hours) + "h ago");
+		}
+		const auto days = hours / 24;
+		return ToWide(std::to_string(days) + "d ago");
 	}
 
 	void MainWindow::NewChat()

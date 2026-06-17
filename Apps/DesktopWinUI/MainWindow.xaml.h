@@ -9,6 +9,8 @@
 
 #include "Services/DesktopCoreService.h"
 
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
+
 namespace winrt::CodeHarness::Desktop::implementation
 {
 
@@ -20,6 +22,12 @@ namespace winrt::CodeHarness::Desktop::implementation
 	private:
 		void InitializeUi();
 		void LoadSessions();
+		void FillPlaceholderGroups();
+		Microsoft::UI::Xaml::Controls::ListViewItem BuildSessionRow(const codeharness::desktop::DesktopSessionItem& session);
+		Microsoft::UI::Xaml::Controls::Border BuildGhostRow(std::wstring const& title);
+		void ApplySessionItemTitleStyle(Microsoft::UI::Xaml::Controls::TextBlock const& block);
+		void ApplySessionItemMetaStyle(Microsoft::UI::Xaml::Controls::TextBlock const& block);
+		std::wstring FormatRelativeTime(std::int64_t updatedAtMs);
 		void NewChat();
 		void ResumeSelectedSession();
 		void SendPrompt();
