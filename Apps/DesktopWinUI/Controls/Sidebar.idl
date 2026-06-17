@@ -1,0 +1,8 @@
+namespace CodeHarness.Desktop.Controls
+{
+	[default_interface]
+	runtimeclass Sidebar : Microsoft.UI.Xaml.Controls.UserControl
+	{
+		Sidebar();
+	}
+}

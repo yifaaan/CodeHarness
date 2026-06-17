@@ -25,6 +25,7 @@ add_executable(codeharness_tests
   Records/RecordsTest.cpp
   Permission/PermissionTest.cpp
   Session/SessionTest.cpp
+  Desktop/DesktopEventJsonTest.cpp
   Rpc/RpcTest.cpp
   Cli/CliTest.cpp
   Context/ContextTest.cpp

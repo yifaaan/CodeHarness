@@ -44,6 +44,7 @@ add_library(codeharness
   Session/WorkdirKey.cpp
   Session/SessionStore.cpp
   Session/Session.cpp
+  Desktop/DesktopEventJson.cpp
   Rpc/CoreApi.cpp
   Cli/CliParser.cpp
   Cli/RunPrompt.cpp
