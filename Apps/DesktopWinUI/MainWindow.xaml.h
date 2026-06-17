@@ -1,0 +1,56 @@
+#pragma once
+
+#include "MainWindow.g.h"
+
+#include <memory>
+#include <string>
+
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
+
+#include "Services/DesktopCoreService.h"
+
+namespace winrt::CodeHarness::Desktop::implementation
+{
+
+	struct MainWindow : MainWindowT<MainWindow>
+	{
+		MainWindow();
+		~MainWindow();
+
+	private:
+		void InitializeUi();
+		void BuildContent();
+		void LoadSessions();
+		void NewChat();
+		void ResumeSelectedSession();
+		void SendPrompt();
+		void CancelPrompt();
+		void AppendMessage(std::wstring const& text, bool subtle = false);
+		void AppendAssistantDelta(std::wstring const& text);
+		void SetRunning(bool running);
+		void ShowStatus(std::wstring const& text);
+		std::wstring ToWide(std::string_view text) const;
+		std::string ToUtf8(hstring const& text) const;
+
+		std::unique_ptr<::codeharness::desktop_app::DesktopCoreService> core;
+		Microsoft::UI::Xaml::Controls::Button newChatButton{nullptr};
+		Microsoft::UI::Xaml::Controls::Button sendButton{nullptr};
+		Microsoft::UI::Xaml::Controls::Button cancelButton{nullptr};
+		Microsoft::UI::Xaml::Controls::ListView sessionsList{nullptr};
+		Microsoft::UI::Xaml::Controls::StackPanel messagesPanel{nullptr};
+		Microsoft::UI::Xaml::Controls::TextBox promptBox{nullptr};
+		Microsoft::UI::Xaml::Controls::TextBlock statusText{nullptr};
+		std::wstring currentAssistantText;
+		bool running = false;
+	};
+
+} // namespace winrt::CodeHarness::Desktop::implementation
+
+namespace winrt::CodeHarness::Desktop::factory_implementation
+{
+
+	struct MainWindow : MainWindowT<MainWindow, implementation::MainWindow>
+	{
+	};
+
+} // namespace winrt::CodeHarness::Desktop::factory_implementation

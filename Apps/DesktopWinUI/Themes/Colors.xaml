@@ -1,0 +1,11 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="CodeHarnessBackgroundBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="CodeHarnessSidebarBrush" Color="#FFF8F8F7" />
+    <SolidColorBrush x:Key="CodeHarnessComposerBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="CodeHarnessBorderBrush" Color="#FFE4E4E2" />
+    <SolidColorBrush x:Key="CodeHarnessMutedTextBrush" Color="#FF8A8A86" />
+    <SolidColorBrush x:Key="CodeHarnessPrimaryTextBrush" Color="#FF20201F" />
+    <SolidColorBrush x:Key="CodeHarnessAccentBrush" Color="#FFFF4F1F" />
+</ResourceDictionary>

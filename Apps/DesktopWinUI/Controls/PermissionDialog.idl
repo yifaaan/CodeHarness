@@ -1,0 +1,8 @@
+namespace CodeHarness.Desktop.Controls
+{
+	[default_interface]
+	runtimeclass PermissionDialog : Microsoft.UI.Xaml.Controls.UserControl
+	{
+		PermissionDialog();
+	}
+}

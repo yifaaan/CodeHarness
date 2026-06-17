@@ -1,0 +1,1 @@
+#include "ViewModels/MessageViewModel.h"
