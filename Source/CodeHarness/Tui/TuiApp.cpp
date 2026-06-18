@@ -33,6 +33,7 @@
 #include "Tui/Components/Banner.h"
 #include "Tui/Components/ChatPane.h"
 #include "Tui/Components/CompactionIndicator.h"
+#include "Tui/Components/ModalOverlay.h"
 #include "Tui/Components/HelpDialog.h"
 #include "Tui/Components/InputField.h"
 #include "Tui/Components/MessageEntry.h"
@@ -343,9 +344,21 @@ namespace codeharness::tui
 			status,
 		});
 
-		auto app = Container::Stacked({root, modal});
+		auto gatedRoot = Maybe(root, [this] {
+			std::lock_guard lk(state->mutex);
+			return state->activeModal == ModalKind::None;
+		});
+		auto app = Container::Stacked({gatedRoot, modal});
 
 		auto withInput = CatchEvent(app, [this](Event event) -> bool {
+			std::lock_guard lk(state->mutex);
+			if (state->activeModal != ModalKind::None)
+			{
+				if (event == Event::Escape || event == Event::CtrlC || event == Event::CtrlD)
+				{
+					return true;
+				}
+			}
 			return HandleInput(event);
 		});
 
@@ -640,16 +653,44 @@ namespace codeharness::tui
 		auto sessionPicker = MakeSessionPicker();
 		auto settings = MakeSettingsDialog();
 
-		auto modalWithGuard = Container::Stacked({
+		auto modalWithGuard = Container::Tab({
 			Maybe(approval, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Approval; }),
 			Maybe(question, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Question; }),
 			Maybe(help, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Help; }),
 			Maybe(modelPicker, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::ModelPicker; }),
 			Maybe(sessionPicker, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SessionPicker; }),
 			Maybe(settings, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Settings; }),
-		});
+		}, &activeModalIndex);
 
-		return modalWithGuard;
+		return ModalOverlay::Create(
+			modalWithGuard,
+			ModalOverlayOptions{.visible = [this] {
+				std::lock_guard lk(state->mutex);
+				switch (state->activeModal)
+				{
+				case ModalKind::Approval:
+					activeModalIndex = 0;
+					return true;
+				case ModalKind::Question:
+					activeModalIndex = 1;
+					return true;
+				case ModalKind::Help:
+					activeModalIndex = 2;
+					return true;
+				case ModalKind::ModelPicker:
+					activeModalIndex = 3;
+					return true;
+				case ModalKind::SessionPicker:
+					activeModalIndex = 4;
+					return true;
+				case ModalKind::Settings:
+					activeModalIndex = 5;
+					return true;
+				case ModalKind::None:
+				default:
+					return false;
+				}
+			}});
 	}
 
 	ftxui::Component TuiApp::MakeApprovalPanel()

@@ -1,5 +1,6 @@
 #include "Tui/Components/ApprovalPanel.h"
 #include "Tui/Components/HelpDialog.h"
+#include "Tui/Components/ModalOverlay.h"
 #include "Tui/Components/QuestionDialog.h"
 #include "Tui/Components/SessionPicker.h"
 #include "Tui/Components/SettingsDialog.h"
@@ -76,6 +77,22 @@ TEST_CASE("ApprovalPanel: reject with feedback and ctrl-o forwarding")
 	REQUIRE(response.has_value());
 	CHECK(response->decision == codeharness::permission::PermissionDecision::Deny);
 	CHECK(response->feedback == "no");
+}
+
+TEST_CASE("ModalOverlay: hides when inactive and paints backdrop when visible")
+{
+	auto inner = ftxui::Renderer([] { return ftxui::text("modal body"); });
+	bool visible = false;
+	auto overlay = codeharness::tui::ModalOverlay::Create(inner, {
+		.visible = [&] { return visible; },
+	});
+
+	CHECK(RenderComponent(overlay).find("modal body") == std::string::npos);
+	visible = true;
+	auto out = RenderComponent(overlay, 40, 10);
+	CHECK(out.find("modal body") != std::string::npos);
+	CHECK(out.find(" ") != std::string::npos);
+	CHECK(out.find("modal body") != std::string::npos);
 }
 
 TEST_CASE("HelpDialog: closes and scrolls command window")

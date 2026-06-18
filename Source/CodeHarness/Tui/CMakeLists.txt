@@ -22,6 +22,7 @@ add_library(codeharness_tui
   Components/HelpDialog.cpp
   Components/SessionPicker.cpp
   Components/SettingsDialog.cpp
+  Components/ModalOverlay.cpp
   Components/Spinner.cpp
   Components/ActivityIndicator.cpp
   Components/TodoPanel.cpp
