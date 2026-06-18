@@ -1,13 +1,11 @@
 #pragma once
 
-#include <functional>
-#include <string>
-#include <vector>
-
-#include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <unknwn.h>
 
 #include "Controls.Sidebar.g.h"
-#include "Desktop/DesktopModels.h"
+
+#include <functional>
+#include <string>
 
 namespace winrt::CodeHarness::Desktop::Controls::implementation
 {
@@ -16,36 +14,30 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 	{
 		Sidebar();
 
-		void LoadSessions(std::vector<codeharness::desktop::DesktopSessionItem> const& sessions);
-		void SetWorkdir(std::wstring const& path);
+		// IDL-projected surface.
+		void SetSessions(winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> sessions);
+		void SetSessionsWithTimestamps(winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> titles,
+		                               winrt::Windows::Foundation::Collections::IVectorView<std::int64_t> createdAtMs);
+		void SetWorkdir(winrt::hstring workdir);
+		void Focus();
 
-		void SetNewChatCallback(std::function<void()> callback);
-		void SetResumeCallback(std::function<void(std::string sessionId)> callback);
-		void SetSearchCallback(std::function<void(std::wstring query)> callback);
-		void SetSettingsCallback(std::function<void()> callback);
+		// C++-only callbacks (sibling XAML pages set these directly).
+		void OnNewChat(std::function<void()> cb) { m_onNewChat = std::move(cb); }
+		void OnResume(std::function<void(std::wstring)> cb) { m_onResume = std::move(cb); }
+		void OnOpenSettings(std::function<void()> cb) { m_onOpenSettings = std::move(cb); }
+
+		// XAML-wired handlers.
+		void OnNewChatClick(winrt::Windows::Foundation::IInspectable const& sender,
+		                    winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+		void OnSessionDoubleTapped(winrt::Windows::Foundation::IInspectable const& sender,
+		                           winrt::Microsoft::UI::Xaml::Input::DoubleTappedRoutedEventArgs const& args);
+		void OnSettingsClick(winrt::Windows::Foundation::IInspectable const& sender,
+		                     winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
 
 	private:
-		void OnNewChat();
-		void OnSearchToggle();
-		void OnSearchClose();
-		void OnSearchTextChanged();
-		void OnOpenSettings();
-
-		void BuildSessionGroups();
-		void PopulateGroup(Microsoft::UI::Xaml::Controls::StackPanel panel,
-						   std::vector<codeharness::desktop::DesktopSessionItem> const& sessions);
-		Microsoft::UI::Xaml::Controls::Border BuildSessionRow(codeharness::desktop::DesktopSessionItem const& session);
-		std::wstring FormatRelativeTime(std::int64_t updatedAtMs);
-		static std::wstring ToWide(std::string_view text);
-
-		std::vector<codeharness::desktop::DesktopSessionItem> allSessions;
-
-		std::function<void()> newChatCallback;
-		std::function<void(std::string)> resumeCallback;
-		std::function<void(std::wstring)> searchCallback;
-		std::function<void()> settingsCallback;
-
-		bool searchVisible = false;
+		std::function<void()> m_onNewChat;
+		std::function<void(std::wstring)> m_onResume;
+		std::function<void()> m_onOpenSettings;
 	};
 
 } // namespace winrt::CodeHarness::Desktop::Controls::implementation

@@ -20,11 +20,11 @@
     <SolidColorBrush x:Key="CodeHarnessMutedTextBrush" Color="#FF8A8A86" />
     <SolidColorBrush x:Key="CodeHarnessFaintTextBrush" Color="#FFAEACA7" />
 
-    <!-- ===== ChatGLM green accent (brand, per image) ===== -->
-    <SolidColorBrush x:Key="CodeHarnessAccentBrush" Color="#FF16A34A" />
-    <SolidColorBrush x:Key="CodeHarnessAccentHoverBrush" Color="#FF128A3F" />
-    <SolidColorBrush x:Key="CodeHarnessAccentSoftBrush" Color="#FFDCFCE7" />
-    <SolidColorBrush x:Key="CodeHarnessAccentTintBrush" Color="#FFF0FDF4" />
+    <!-- ===== CodeHarness blue accent (brand) ===== -->
+    <SolidColorBrush x:Key="CodeHarnessAccentBrush" Color="#FF2563EB" />
+    <SolidColorBrush x:Key="CodeHarnessAccentHoverBrush" Color="#FF1D4ED8" />
+    <SolidColorBrush x:Key="CodeHarnessAccentSoftBrush" Color="#FFDBEAFE" />
+    <SolidColorBrush x:Key="CodeHarnessAccentTintBrush" Color="#FFEFF6FF" />
 
     <!-- ===== Interactive: hover/press surfaces ===== -->
     <SolidColorBrush x:Key="CodeHarnessHoverBrush" Color="#FFEFEEEC" />
@@ -32,12 +32,17 @@
     <SolidColorBrush x:Key="CodeHarnessSelectedBrush" Color="#FFE8EAE7" />
 
     <!-- ===== Message bubbles ===== -->
-    <SolidColorBrush x:Key="CodeHarnessUserBubbleBrush" Color="#FFEAF7EF" />
+    <SolidColorBrush x:Key="CodeHarnessUserBubbleBrush" Color="#FFEFF6FF" />
     <SolidColorBrush x:Key="CodeHarnessAssistantBubbleBrush" Color="#FFF6F6F5" />
     <SolidColorBrush x:Key="CodeHarnessToolBubbleBrush" Color="#FFFAFAF9" />
 
     <!-- ===== Status ===== -->
-    <SolidColorBrush x:Key="CodeHarnessReadyDotBrush" Color="#FF16A34A" />
+    <SolidColorBrush x:Key="CodeHarnessReadyDotBrush" Color="#FF2563EB" />
     <SolidColorBrush x:Key="CodeHarnessBusyDotBrush" Color="#FFD97706" />
+
+    <!-- ===== Git panel helpers ===== -->
+    <SolidColorBrush x:Key="GitAddedBrush" Color="#FF16A34A" />
+    <SolidColorBrush x:Key="GitModifiedBrush" Color="#FFCA8A04" />
+    <SolidColorBrush x:Key="GitDeletedBrush" Color="#FFDC2626" />
 
 </ResourceDictionary>

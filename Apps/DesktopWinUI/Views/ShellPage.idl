@@ -4,5 +4,8 @@ namespace CodeHarness.Desktop.Views
 	runtimeclass ShellPage : Microsoft.UI.Xaml.Controls.Page
 	{
 		ShellPage();
+
+		void Initialize();
+		void FocusComposer();
 	}
 }

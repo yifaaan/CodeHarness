@@ -4,5 +4,12 @@ namespace CodeHarness.Desktop.Controls
 	runtimeclass ComposerBox : Microsoft.UI.Xaml.Controls.UserControl
 	{
 		ComposerBox();
+
+		void SetRunning(Boolean running);
+		void FocusPrompt();
+
+		String SelectedModel{ get; };
+		void SetSelectedModel(String model);
+		Boolean IsThinkingEnabled{ get; };
 	}
 }

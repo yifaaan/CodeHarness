@@ -4,5 +4,11 @@ namespace CodeHarness.Desktop.Controls
 	runtimeclass Sidebar : Microsoft.UI.Xaml.Controls.UserControl
 	{
 		Sidebar();
+
+		void SetSessions(Windows.Foundation.Collections.IVectorView<String> sessions);
+		void SetSessionsWithTimestamps(Windows.Foundation.Collections.IVectorView<String> titles,
+		                               Windows.Foundation.Collections.IVectorView<Int64> createdAtMs);
+		void SetWorkdir(String workdir);
+		void Focus();
 	}
 }

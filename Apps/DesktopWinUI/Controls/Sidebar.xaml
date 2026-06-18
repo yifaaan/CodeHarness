@@ -23,7 +23,7 @@
                         <TextBlock Text="C" Foreground="#FFFFFFFF" FontSize="15" FontWeight="Bold"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
-                    <TextBlock Text="ChatGLM" Style="{StaticResource BrandTextStyle}" VerticalAlignment="Center" />
+                    <TextBlock Text="CodeHarness" Style="{StaticResource BrandTextStyle}" VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
 
@@ -36,7 +36,7 @@
                         <TextBlock Text="+" FontSize="16" FontWeight="Bold"
                                    Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
                                    VerticalAlignment="Center" />
-                        <TextBlock Text="New chat" VerticalAlignment="Center" />
+                        <TextBlock Text="新建会话" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
@@ -48,7 +48,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="&#xE71D;" FontFamily="Segoe MDL2 Assets" FontSize="13"
                                    VerticalAlignment="Center" />
-                        <TextBlock Text="Search sessions" VerticalAlignment="Center" />
+                        <TextBlock Text="搜索" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
@@ -73,7 +73,7 @@
                                    VerticalAlignment="Center" Margin="4,0,6,0" />
                         <TextBox x:Name="SearchBox"
                                  Grid.Column="1"
-                                 PlaceholderText="Search sessions..."
+                                 PlaceholderText="搜索会话..."
                                  BorderThickness="0"
                                  Background="Transparent"
                                  FontSize="13"
@@ -92,7 +92,7 @@
 
             <!-- Project -->
             <StackPanel Grid.Row="2" Margin="0,14,0,6">
-                <TextBlock Text="PROJECT" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,4" />
+                <TextBlock Text="工作区" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,4" />
                 <TextBlock x:Name="WorkdirText" Text="CodeHarness" Style="{StaticResource ProjectTextStyle}" />
             </StackPanel>
 
@@ -104,14 +104,14 @@
                 <StackPanel>
                     <!-- TODAY -->
                     <TextBlock x:Name="TodayHeader"
-                               Text="TODAY"
+                               Text="今天"
                                Style="{StaticResource SidebarSectionTextStyle}"
                                Margin="18,0,18,8" />
                     <StackPanel x:Name="TodayGroup" Margin="4,0,4,4" />
 
                     <!-- PREVIOUS 7 DAYS -->
                     <TextBlock x:Name="WeekHeader"
-                               Text="PREVIOUS 7 DAYS"
+                               Text="最近7天"
                                Style="{StaticResource SidebarSectionTextStyle}"
                                Margin="18,14,18,8"
                                Visibility="Collapsed" />
@@ -119,7 +119,7 @@
 
                     <!-- PREVIOUS 30 DAYS -->
                     <TextBlock x:Name="MonthHeader"
-                               Text="PREVIOUS 30 DAYS"
+                               Text="最近30天"
                                Style="{StaticResource SidebarSectionTextStyle}"
                                Margin="18,14,18,8"
                                Visibility="Collapsed" />
@@ -127,7 +127,7 @@
 
                     <!-- EARLIER -->
                     <TextBlock x:Name="EarlierHeader"
-                               Text="EARLIER"
+                               Text="更早"
                                Style="{StaticResource SidebarSectionTextStyle}"
                                Margin="18,14,18,8"
                                Visibility="Collapsed" />
@@ -150,9 +150,9 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <StackPanel Spacing="-1">
-                            <TextBlock Text="Guest" FontSize="12" FontWeight="SemiBold"
+                            <TextBlock Text="用户" FontSize="12" FontWeight="SemiBold"
                                        Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" />
-                            <TextBlock Text="Manual mode" FontSize="11"
+                            <TextBlock Text="手动模式" FontSize="11"
                                        Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
                         </StackPanel>
                     </StackPanel>

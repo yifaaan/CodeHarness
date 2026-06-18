@@ -4,5 +4,22 @@ namespace CodeHarness.Desktop.Views
 	runtimeclass ChatPage : Microsoft.UI.Xaml.Controls.Page
 	{
 		ChatPage();
+
+		void SetRunning(Boolean running);
+		void SetEmptyState(Boolean empty);
+		void SetStatus(String status);
+
+		void AppendUserMessage(String text);
+		void AppendStatusMessage(String text);
+		void AppendAssistantDelta(String text);
+		void AppendAssistantComplete();
+		void AppendThinkingBlock(String content, Int64 durationMs);
+		void AppendToolCard(String name, String detail, Boolean isError, String fullOutput);
+		void AppendTimestamp(String text);
+		void ResetTranscript();
+		void FocusComposer();
+
+		void SetPageTitle(String title);
+		void SetBranchName(String branch);
 	}
 }
