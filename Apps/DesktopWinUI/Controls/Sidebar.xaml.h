@@ -16,6 +16,8 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 
 		// IDL-projected surface.
 		void SetSessions(winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> sessions);
+		void SetSessionsWithTimestamps(winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> titles,
+		                               winrt::Windows::Foundation::Collections::IVectorView<std::int64_t> createdAtMs);
 		void SetWorkdir(winrt::hstring workdir);
 		void Focus();
 

@@ -12,8 +12,14 @@ namespace CodeHarness.Desktop.Views
 		void AppendUserMessage(String text);
 		void AppendStatusMessage(String text);
 		void AppendAssistantDelta(String text);
-		void AppendToolCard(String name, String detail, Boolean isError);
+		void AppendAssistantComplete();
+		void AppendThinkingBlock(String content, Int64 durationMs);
+		void AppendToolCard(String name, String detail, Boolean isError, String fullOutput);
+		void AppendTimestamp(String text);
 		void ResetTranscript();
 		void FocusComposer();
+
+		void SetPageTitle(String title);
+		void SetBranchName(String branch);
 	}
 }

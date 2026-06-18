@@ -3,15 +3,15 @@
 #include "Views/ChatPage.xaml.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cwchar>
-#include <cwctype>
 #include <future>
+#include <sstream>
 #include <utility>
 
 #include <winrt/base.h>
 #include <winrt/CodeHarness.Desktop.Controls.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
+#include <winrt/Microsoft.UI.Text.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
@@ -65,7 +65,6 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 					}
 					else if (loop.contains("StepStarted"))
 					{
-						// Live step counter for the active turn.
 						m_currentSteps = loop["StepStarted"].value("step", m_currentSteps);
 						RefreshUsage();
 					}
@@ -73,19 +72,12 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 					{
 						auto tool = loop["ToolCallStarted"];
 						auto name = ToWide(tool.value("name", ""));
-						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ L"running\u2026" }, false);
-						// Track activity + open files for the Context panel.
+						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ L"running\u2026" }, false, winrt::hstring{});
+						// Collect git-related file changes for the Git panel.
 						if (tool.contains("args"))
 						{
-							CollectFilePath(tool["args"]);
+							CollectGitChange(tool["args"]);
 						}
-						m_activity.insert(m_activity.begin(), ToolActivityEntry{ name, L"running", false });
-						if (m_activity.size() > 20)
-						{
-							m_activity.resize(20);
-						}
-						RefreshActivity();
-						RefreshOpenFiles();
 					}
 					else if (loop.contains("ToolResult"))
 					{
@@ -94,34 +86,15 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 						auto detail = status == "error" ? L"failed" : L"completed";
 						auto name = ToWide(tool.value("name", ""));
 						bool isError = (status == "error");
-						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ detail }, isError);
-						// Flip the most recent matching activity entry's status.
-						for (auto& entry : m_activity)
-						{
-							if (entry.name == name && entry.status == L"running")
-							{
-								entry.status = detail;
-								entry.isError = isError;
-								break;
-							}
-						}
-						RefreshActivity();
+						auto output = ToWide(tool.value("output", ""));
+						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ detail }, isError, winrt::hstring{ output });
+						RefreshGitChanges();
 					}
 					else if (loop.contains("PermissionDenied"))
 					{
 						auto permission = loop["PermissionDenied"];
 						auto name = ToWide(permission.value("name", ""));
-						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ L"permission denied" }, true);
-						for (auto& entry : m_activity)
-						{
-							if (entry.name == name && entry.status == L"running")
-							{
-								entry.status = L"denied";
-								entry.isError = true;
-								break;
-							}
-						}
-						RefreshActivity();
+						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ L"denied" }, true, winrt::hstring{});
 					}
 				}
 				else if (event.type == "turn_started")
@@ -135,7 +108,6 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 				{
 					m_running = false;
 					chat.SetRunning(false);
-					// Accumulate token usage for this turn into the running total.
 					auto result = event.payload.value("result", nlohmann::json::object());
 					auto usage = result.value("usage", nlohmann::json::object());
 					std::int64_t turnTokens = 0;
@@ -149,7 +121,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 				}
 				else if (event.type == "error")
 				{
-					chat.AppendStatusMessage(winrt::hstring{ L"Error: " + ToWide(event.payload.value("message", "")) });
+					chat.AppendStatusMessage(winrt::hstring{ L"\u9519\u8BEF: " + ToWide(event.payload.value("message", "")) });
 					m_running = false;
 					chat.SetRunning(false);
 				}
@@ -162,10 +134,10 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 			queue.TryEnqueue([this, request, promise]() {
 				ContentDialog dialog;
 				dialog.XamlRoot(this->XamlRoot());
-				dialog.Title(box_value(L"Allow tool execution?"));
+				dialog.Title(box_value(L"\u5141\u8BB8\u6267\u884C\u5DE5\u5177\uFF1F"));
 				dialog.Content(box_value(winrt::hstring{ ToWide(request.description) }));
-				dialog.PrimaryButtonText(L"Allow");
-				dialog.CloseButtonText(L"Deny");
+				dialog.PrimaryButtonText(L"\u5141\u8BB8");
+				dialog.CloseButtonText(L"\u62D2\u7EDD");
 				auto op = dialog.ShowAsync();
 				op.Completed([promise](auto const& async, auto) {
 					promise->set_value(async.GetResults() == ContentDialogResult::Primary);
@@ -180,10 +152,10 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 			queue.TryEnqueue([this, request, promise]() {
 				ContentDialog dialog;
 				dialog.XamlRoot(this->XamlRoot());
-				dialog.Title(box_value(L"CodeHarness question"));
+				dialog.Title(box_value(L"CodeHarness \u63D0\u95EE"));
 				dialog.Content(box_value(winrt::hstring{ ToWide(request.question) }));
-				dialog.PrimaryButtonText(request.options.empty() ? L"OK" : winrt::hstring{ ToWide(request.options.front()) });
-				dialog.CloseButtonText(L"Cancel");
+				dialog.PrimaryButtonText(request.options.empty() ? L"\u786E\u5B9A" : winrt::hstring{ ToWide(request.options.front()) });
+				dialog.CloseButtonText(L"\u53D6\u6D88");
 				auto op = dialog.ShowAsync();
 				op.Completed([choice = request.options.empty() ? std::string{} : request.options.front(),
 				              promise](auto const& async, auto) {
@@ -246,7 +218,6 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		chat.AppendUserMessage(winrt::hstring{ text.c_str(), static_cast<uint32_t>(text.size()) });
 		chat.SetRunning(true);
 		m_running = true;
-		// Convert UTF-16 prompt to UTF-8 for the core.
 		winrt::hstring wide{ text.c_str(), static_cast<uint32_t>(text.size()) };
 		std::string utf8 = winrt::to_string(wide);
 		m_core->Prompt(std::move(utf8), [this, chat](std::string message) {
@@ -256,7 +227,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 				return;
 			}
 			queue.TryEnqueue([this, chat, message = std::move(message)]() {
-				chat.AppendStatusMessage(winrt::hstring{ L"Error: " + ToWide(message) });
+				chat.AppendStatusMessage(winrt::hstring{ L"\u9519\u8BEF: " + ToWide(message) });
 				chat.SetRunning(false);
 				m_running = false;
 			});
@@ -268,26 +239,24 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		auto sessionId = m_core->CreateSession("desktop");
 		if (sessionId.empty())
 		{
-			this->Chat().SetStatus(winrt::hstring{ L"Could not create session. Check config.toml." });
+			this->Chat().SetStatus(winrt::hstring{ L"\u65E0\u6CD5\u521B\u5EFA\u4F1A\u8BDD\uFF0C\u8BF7\u68C0\u67E5 config.toml" });
 			return;
 		}
 		this->Chat().ResetTranscript();
-		this->Chat().SetStatus(winrt::hstring{ L"New session created" });
-		// Reset the Context panel accumulated state for the fresh session.
+		this->Chat().SetStatus(winrt::hstring{ L"\u65B0\u5EFA\u4F1A\u8BDD\u5DF2\u521B\u5EFA" });
+		// Reset accumulated state for the fresh session.
 		m_totalTokens = 0;
 		m_currentSteps = 0;
-		m_activity.clear();
-		m_openFiles.clear();
+		m_currentBranch = L"main";
+		m_gitChanges.clear();
 		RefreshUsage();
-		RefreshActivity();
-		RefreshOpenFiles();
+		RefreshGitChanges();
+		RefreshBranchInfo();
 		LoadSessions();
 	}
 
 	void ShellPage::ResumeSession(std::wstring titleHint)
 	{
-		// The Sidebar reports the selected session title; resolve it to a
-		// session id in the live list and resume that session.
 		auto sessions = m_core->ListSessions();
 		std::string targetId;
 		for (const auto& session : sessions)
@@ -301,20 +270,20 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		}
 		if (targetId.empty() && !sessions.empty())
 		{
-			targetId = sessions.front().sessionId; // best-effort fallback
+			targetId = sessions.front().sessionId;
 		}
 		if (targetId.empty())
 		{
 			return;
 		}
 		auto resumed = m_core->ResumeSession(targetId);
-		this->Chat().SetStatus(winrt::hstring{ resumed.empty() ? L"Resume failed" : L"Session resumed" });
+		this->Chat().SetStatus(winrt::hstring{ resumed.empty() ? L"\u6062\u590D\u5931\u8D25" : L"\u4F1A\u8BDD\u5DF2\u6062\u590D" });
 	}
 
 	void ShellPage::CancelPrompt()
 	{
 		m_core->Cancel();
-		this->Chat().SetStatus(winrt::hstring{ L"Cancelling" });
+		this->Chat().SetStatus(winrt::hstring{ L"\u6B63\u5728\u53D6\u6D88\u2026" });
 	}
 
 	void ShellPage::OpenSettings()
@@ -324,20 +293,20 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		panel.Padding(Thickness{0, 8, 0, 0});
 
 		TextBlock model;
-		model.Text(L"Model: ChatGLM");
+		model.Text(L"\u6A21\u578B: ChatGLM");
 		model.FontSize(14);
 		model.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
 		panel.Children().Append(model);
 
 		TextBlock perm;
-		perm.Text(L"Permission mode: Manual (approve each tool)");
+		perm.Text(L"\u6743\u9650\u6A21\u5F0F: \u624B\u52A8\u5BA1\u6279\u6BCF\u4E2A\u5DE5\u5177");
 		perm.FontSize(14);
 		perm.TextWrapping(TextWrapping::Wrap);
 		perm.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
 		panel.Children().Append(perm);
 
 		TextBlock hint;
-		hint.Text(L"Edit ~/.codeharness/config.toml to change models, providers, hooks, and skills.");
+		hint.Text(L"\u7F16\u8F91 ~/.codeharness/config.toml \u4EE5\u66F4\u6539\u6A21\u578B\u3001\u63D0\u4F9B\u5546\u3001\u94A9\u5B50\u548C\u6280\u80FD\u3002");
 		hint.FontSize(12);
 		hint.TextWrapping(TextWrapping::Wrap);
 		hint.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 138, 138, 134}));
@@ -345,9 +314,9 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 		ContentDialog dialog;
 		dialog.XamlRoot(this->XamlRoot());
-		dialog.Title(box_value(L"Settings"));
+		dialog.Title(box_value(L"\u8BBE\u7F6E"));
 		dialog.Content(panel);
-		dialog.CloseButtonText(L"Done");
+		dialog.CloseButtonText(L"\u5B8C\u6210");
 		dialog.DefaultButton(ContentDialogButton::Close);
 		(void)dialog.ShowAsync();
 	}
@@ -360,168 +329,132 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 	void ShellPage::RefreshUsage()
 	{
-		// The 128k denominator is a hardcoded stand-in; the core does not yet
-		// surface per-model maxContextTokens to the desktop layer.
-		constexpr std::int64_t kContextWindow = 128 * 1024;
-		auto contextText = FormatTokenCount(m_totalTokens) + L" / 128k";
-		this->ContextValueText().Text(winrt::hstring{ contextText });
-		// Clamp the progress bar so it never exceeds the visible band.
-		double ratio = kContextWindow > 0 ? static_cast<double>(m_totalTokens) / static_cast<double>(kContextWindow) : 0.0;
-		if (ratio < 0.0) ratio = 0.0;
-		if (ratio > 1.0) ratio = 1.0;
-		this->ContextProgressBar().Value(ratio * 100.0);
-		this->StepsValueText().Text(winrt::hstring{ std::to_wstring(m_currentSteps) });
+		// Usage display removed from the right panel (Git tools only).
+		// Token counting is kept internally for future use.
 	}
 
-	void ShellPage::RefreshActivity()
+	void ShellPage::RefreshGitChanges()
 	{
-		auto list = this->ActivityList();
+		auto list = this->GitFileList();
 		auto children = list.Children();
 		children.Clear();
-		if (m_activity.empty())
+
+		if (m_gitChanges.empty())
 		{
 			TextBlock empty;
-			empty.Text(L"No recent activity. Start a chat to see tool calls and updates here.");
+			empty.Text(L"\u6682\u65E0\u6587\u4EF6\u53D8\u66F4\u3002\u5F00\u59CB\u5BF9\u8BDD\u540E\uFF0CGit \u547D\u4EE4\u7684\u7ED3\u679C\u5C06\u5728\u6B64\u663E\u793A\u3002");
 			empty.Style(this->Resources().Lookup(winrt::box_value(L"ContextItemMetaTextStyle"))
 			               .try_as<winrt::Microsoft::UI::Xaml::Style>());
 			empty.TextWrapping(TextWrapping::Wrap);
 			children.Append(empty);
 			return;
 		}
-		for (auto const& entry : m_activity)
+
+		for (auto const& entry : m_gitChanges)
 		{
 			Grid row;
-			ColumnDefinition iconCol;
-			iconCol.Width(GridLength{16, GridUnitType::Pixel});
-			ColumnDefinition nameCol;
-			nameCol.Width(GridLength{1, GridUnitType::Star});
 			ColumnDefinition statusCol;
-			statusCol.Width(GridLength{0, GridUnitType::Auto});
-			row.ColumnDefinitions().Append(iconCol);
-			row.ColumnDefinitions().Append(nameCol);
+			statusCol.Width(GridLength{20, GridUnitType::Pixel});
+			ColumnDefinition pathCol;
+			pathCol.Width(GridLength{1, GridUnitType::Star});
+			ColumnDefinition deltaCol;
+			deltaCol.Width(GridLength{0, GridUnitType::Auto});
 			row.ColumnDefinitions().Append(statusCol);
+			row.ColumnDefinitions().Append(pathCol);
+			row.ColumnDefinitions().Append(deltaCol);
 			row.ColumnSpacing(6);
+			row.Padding(Thickness{0, 2, 0, 2});
 
-			TextBlock icon;
-			icon.Text(entry.isError ? L"\uE783" : (entry.status == L"running" ? L"\uEB1F" : L"\uE73E"));
-			icon.FontFamily(Media::FontFamily(L"Segoe MDL2 Assets"));
-			icon.FontSize(11);
-			icon.Foreground(Media::SolidColorBrush(entry.isError ? Windows::UI::Color{255, 191, 22, 22}
-			                                                    : (entry.status == L"running" ? Windows::UI::Color{255, 138, 138, 134}
-			                                                                                  : Windows::UI::Color{255, 22, 163, 74})));
-			icon.VerticalAlignment(VerticalAlignment::Center);
-			Grid::SetColumn(icon, 0);
-			row.Children().Append(icon);
+			// Status indicator glyph.
+			TextBlock statusIcon;
+			statusIcon.FontFamily(Media::FontFamily(L"Consolas"));
+			statusIcon.FontSize(11);
+			statusIcon.FontWeight(Microsoft::UI::Text::FontWeights::Bold());
+			statusIcon.VerticalAlignment(VerticalAlignment::Center);
+			wchar_t statusChar = entry.status;
+			statusIcon.Text(winrt::hstring{ &statusChar, 1 });
+			statusIcon.Foreground(Media::SolidColorBrush(
+				statusChar == L'A' ? Windows::UI::Color{255, 22, 163, 74}
+				: statusChar == L'D' ? Windows::UI::Color{255, 191, 22, 22}
+				: Windows::UI::Color{255, 234, 179, 8})); // modified = yellow
+			Grid::SetColumn(statusIcon, 0);
+			row.Children().Append(statusIcon);
 
-			TextBlock nameBlock;
-			nameBlock.Text(winrt::hstring{ entry.name });
-			nameBlock.FontSize(12);
-			nameBlock.TextTrimming(TextTrimming::CharacterEllipsis);
-			nameBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
-			nameBlock.VerticalAlignment(VerticalAlignment::Center);
-			Grid::SetColumn(nameBlock, 1);
-			row.Children().Append(nameBlock);
+			// File path.
+			TextBlock pathBlock;
+			pathBlock.Text(winrt::hstring{ entry.path });
+			pathBlock.FontSize(12);
+			pathBlock.TextTrimming(TextTrimming::CharacterEllipsis);
+			pathBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
+			pathBlock.VerticalAlignment(VerticalAlignment::Center);
+			Grid::SetColumn(pathBlock, 1);
+			row.Children().Append(pathBlock);
 
-			TextBlock statusBlock;
-			statusBlock.Text(winrt::hstring{ entry.status });
-			statusBlock.FontSize(11);
-			statusBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 138, 138, 134}));
-			statusBlock.VerticalAlignment(VerticalAlignment::Center);
-			Grid::SetColumn(statusBlock, 2);
-			row.Children().Append(statusBlock);
-
-			children.Append(row);
-		}
-	}
-
-	void ShellPage::RefreshOpenFiles()
-	{
-		auto list = this->OpenFilesList();
-		auto children = list.Children();
-		children.Clear();
-		if (m_openFiles.empty())
-		{
-			TextBlock empty;
-			empty.Text(L"No files opened yet. Tools that read or write files will appear here.");
-			empty.Style(this->Resources().Lookup(winrt::box_value(L"ContextItemMetaTextStyle"))
-			               .try_as<winrt::Microsoft::UI::Xaml::Style>());
-			empty.TextWrapping(TextWrapping::Wrap);
-			children.Append(empty);
-			return;
-		}
-		for (auto const& path : m_openFiles)
-		{
-			Grid row;
-			ColumnDefinition iconCol;
-			iconCol.Width(GridLength{16, GridUnitType::Pixel});
-			ColumnDefinition nameCol;
-			nameCol.Width(GridLength{1, GridUnitType::Star});
-			ColumnDefinition extCol;
-			extCol.Width(GridLength{0, GridUnitType::Auto});
-			row.ColumnDefinitions().Append(iconCol);
-			row.ColumnDefinitions().Append(nameCol);
-			row.ColumnDefinitions().Append(extCol);
-			row.ColumnSpacing(9);
-
-			TextBlock icon;
-			icon.Text(L"\uE8A5"); // file glyph
-			icon.FontFamily(Media::FontFamily(L"Segoe MDL2 Assets"));
-			icon.FontSize(13);
-			icon.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 22, 163, 74}));
-			icon.VerticalAlignment(VerticalAlignment::Center);
-			Grid::SetColumn(icon, 0);
-			row.Children().Append(icon);
-
-			TextBlock nameBlock;
-			nameBlock.Text(winrt::hstring{ BaseName(path) });
-			nameBlock.FontSize(12);
-			nameBlock.TextTrimming(TextTrimming::CharacterEllipsis);
-			nameBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
-			nameBlock.VerticalAlignment(VerticalAlignment::Center);
-			Grid::SetColumn(nameBlock, 1);
-			row.Children().Append(nameBlock);
-
-			TextBlock extBlock;
-			extBlock.Text(winrt::hstring{ ExtensionLabel(path) });
-			extBlock.FontSize(11);
-			extBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 138, 138, 134}));
-			extBlock.VerticalAlignment(VerticalAlignment::Center);
-			Grid::SetColumn(extBlock, 2);
-			row.Children().Append(extBlock);
+			// +/- delta counts.
+			TextBlock deltaBlock;
+			std::wstringstream deltaStream;
+			if (entry.additions > 0) deltaStream << L"+" << entry.additions << L" ";
+			if (entry.deletions > 0) deltaStream << L"-" << entry.deletions;
+			deltaBlock.Text(winrt::hstring{ deltaStream.str() });
+			deltaBlock.FontSize(11);
+			deltaBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 138, 138, 134}));
+			deltaBlock.VerticalAlignment(VerticalAlignment::Center);
+			Grid::SetColumn(deltaBlock, 2);
+			row.Children().Append(deltaBlock);
 
 			children.Append(row);
 		}
 	}
 
-	void ShellPage::CollectFilePath(nlohmann::json const& args)
+	void ShellPage::RefreshBranchInfo()
 	{
-		// Tools carry their target file in one of a few common arg keys.
-		// We dedupe and move the most-recently-touched path to the front.
-		static const std::vector<std::string> kPathKeys = { "file_path", "path", "filename" };
+		this->GitBranchText().Text(winrt::hstring{ L"\u5206\u652F: " + m_currentBranch });
+	}
+
+	void ShellPage::CollectGitChange(nlohmann::json const& args)
+	{
+		// Try to extract a file path from common argument keys used by git tools.
+		static const std::vector<std::string> kPathKeys = {"file_path", "path", "filename"};
+		std::wstring wide;
 		for (auto const& key : kPathKeys)
 		{
 			if (args.contains(key) && args[key].is_string())
 			{
-				std::wstring wide = ToWide(args[key].get<std::string>());
-				if (wide.empty())
-				{
-					continue;
-				}
-				// Dedupe: remove any existing entry, then prepend.
-				m_openFiles.erase(std::remove(m_openFiles.begin(), m_openFiles.end(), wide), m_openFiles.end());
-				m_openFiles.insert(m_openFiles.begin(), std::move(wide));
-				if (m_openFiles.size() > 20)
-				{
-					m_openFiles.resize(20);
-				}
-				return; // one path per event
+				wide = ToWide(args[key].get<std::string>());
+				if (!wide.empty()) break;
 			}
 		}
+		if (wide.empty()) return;
+
+		// Extract the subcommand to determine status letter.
+		wchar_t statusLetter = L'M'; // default: modified
+		if (args.contains("subcommand") && args["subcommand"].is_string())
+		{
+			auto sub = args["subcommand"].get<std::string>();
+			if (sub == "add") statusLetter = L'A';
+			else if (sub == "rm" || sub == "delete") statusLetter = L'D';
+		}
+
+		// Upsert: if the same path is already tracked, update it; otherwise prepend.
+		auto it = std::find_if(m_gitChanges.begin(), m_gitChanges.end(),
+		                       [&wide](GitChangeEntry const& e) { return e.path == wide; });
+		if (it != m_gitChanges.end())
+		{
+			it->status = statusLetter;
+		}
+		else
+		{
+			m_gitChanges.insert(m_gitChanges.begin(), GitChangeEntry{std::move(wide), statusLetter, 0, 0});
+			if (m_gitChanges.size() > 50)
+			{
+				m_gitChanges.resize(50);
+			}
+		}
+		RefreshGitChanges();
 	}
 
 	std::wstring ShellPage::FormatTokenCount(std::int64_t tokens)
 	{
-		// e.g. 0, 1234, 12.3k, 1.2M
 		if (tokens < 1000)
 		{
 			return std::to_wstring(tokens);
@@ -535,27 +468,6 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		wchar_t buf[16];
 		std::swprintf(buf, std::size(buf), L"%.1fM", static_cast<double>(tokens) / 1000000.0);
 		return buf;
-	}
-
-	std::wstring ShellPage::BaseName(std::wstring const& path)
-	{
-		// Handle both / and \ separators (paths may arrive POSIX- or Win-style).
-		auto pos = path.find_last_of(L"\\/");
-		return pos == std::wstring::npos ? path : path.substr(pos + 1);
-	}
-
-	std::wstring ShellPage::ExtensionLabel(std::wstring const& path)
-	{
-		auto base = BaseName(path);
-		auto pos = base.find_last_of(L'.');
-		if (pos == std::wstring::npos || pos == 0)
-		{
-			return L"FILE";
-		}
-		// Uppercase the extension (without the dot) for the tag, e.g. "XAML".
-		auto ext = base.substr(pos + 1);
-		std::transform(ext.begin(), ext.end(), ext.begin(), ::towupper);
-		return ext;
 	}
 
 } // namespace winrt::CodeHarness::Desktop::Views::implementation

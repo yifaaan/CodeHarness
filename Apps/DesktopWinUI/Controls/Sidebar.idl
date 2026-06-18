@@ -6,6 +6,8 @@ namespace CodeHarness.Desktop.Controls
 		Sidebar();
 
 		void SetSessions(Windows.Foundation.Collections.IVectorView<String> sessions);
+		void SetSessionsWithTimestamps(Windows.Foundation.Collections.IVectorView<String> titles,
+		                               Windows.Foundation.Collections.IVectorView<Int64> createdAtMs);
 		void SetWorkdir(String workdir);
 		void Focus();
 	}

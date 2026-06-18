@@ -18,7 +18,7 @@
             </Grid.RowDefinitions>
 
             <TextBox x:Name="PromptBox"
-                     PlaceholderText="Ask ChatGLM anything. Type @ to mention files or plugins."
+                     PlaceholderText="请描述您想要的操作..."
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      MinHeight="24"
@@ -34,9 +34,38 @@
                     <Border CornerRadius="999" Padding="9,3,9,3"
                             VerticalAlignment="Center"
                             Background="{ThemeResource CodeHarnessAccentTintBrush}">
-                        <TextBlock Text="Manual permission mode" FontSize="11"
+                        <TextBlock Text="手动授权模式" FontSize="11"
                                    Foreground="{ThemeResource CodeHarnessAccentHoverBrush}" />
                     </Border>
+
+                    <!-- Model selector button -->
+                    <Button x:Name="ModelSelectorButton"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            Click="OnModelSelectorClick">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock x:Name="ModelNameText"
+                                       Text="GLM 5.2"
+                                       FontSize="12"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                       Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Thinking toggle -->
+                    <Button x:Name="ThinkingToggle"
+                            Style="{StaticResource ToolbarButtonStyle}"
+                            Click="OnThinkingClick">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Ellipse x:Name="ThinkingDot"
+                                     Width="7" Height="7"
+                                     Fill="{ThemeResource CodeHarnessMutedTextBrush}"
+                                     VerticalAlignment="Center" />
+                            <TextBlock Text="思考" FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                     <Button x:Name="CancelButton"

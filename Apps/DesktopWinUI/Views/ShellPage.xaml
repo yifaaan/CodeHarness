@@ -20,79 +20,142 @@
         <!-- COLUMN 1 · CHAT -->
         <views:ChatPage x:Name="Chat" Grid.Column="1" />
 
-        <!-- COLUMN 2 · RIGHT CONTEXT PANEL -->
+        <!-- COLUMN 2 · GIT TOOLS PANEL -->
         <Border Grid.Column="2"
                 Background="{ThemeResource CodeHarnessContextPanelBrush}"
                 BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
                 BorderThickness="1,0,0,0">
-            <Grid Padding="18,16,18,14">
+            <Grid Padding="0,0,0,14">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
                 <!-- Header -->
-                <Grid Grid.Row="0" Margin="0,0,0,18">
-                    <TextBlock Text="Context" FontSize="14" FontWeight="SemiBold"
-                               Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" VerticalAlignment="Center" />
+                <Grid Grid.Row="0" Padding="18,16,18,12">
+                    <TextBlock Text="Git 工具" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
+                               VerticalAlignment="Center" />
                     <Button Style="{StaticResource IconButtonStyle}"
                             HorizontalAlignment="Right"
                             Content="&#xE713;" FontFamily="Segoe MDL2 Assets"
                             Width="28" Height="28" />
                 </Grid>
 
-                <!-- Open files -->
-                <StackPanel Grid.Row="1" Margin="0,0,0,18" Spacing="8">
-                    <TextBlock Text="OPEN FILES" Style="{StaticResource ContextSectionTextStyle}" />
-                    <StackPanel x:Name="OpenFilesList" Spacing="8">
-                        <TextBlock Text="No files opened yet. Tools that read or write files will appear here."
-                                   Style="{StaticResource ContextItemMetaTextStyle}"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
-                </StackPanel>
+                <!-- Tab Headers: 变更 / 文件 -->
+                <Grid Grid.Row="1" Margin="18,0,18,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="ChangesTabHeader" Grid.Column="0"
+                            Padding="0,8,0,8"
+                            BorderBrush="{ThemeResource CodeHarnessAccentBrush}"
+                            BorderThickness="0,0,0,2">
+                        <TextBlock Text="变更" HorizontalAlignment="Center"
+                                   FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+                    </Border>
+                    <Border x:Name="FilesTabHeader" Grid.Column="1"
+                            Padding="0,8,0,8"
+                            BorderBrush="Transparent"
+                            BorderThickness="0,0,0,2">
+                        <TextBlock Text="文件" HorizontalAlignment="Center"
+                                   FontSize="13"
+                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
+                    </Border>
+                </Grid>
 
-                <!-- Usage -->
-                <StackPanel Grid.Row="2" Margin="0,0,0,18" Spacing="8">
-                    <TextBlock Text="USAGE" Style="{StaticResource ContextSectionTextStyle}" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Context" Style="{StaticResource ContextItemTextStyle}" />
-                        <TextBlock x:Name="ContextValueText"
-                                   Grid.Column="1" Text="0 / 128k"
-                                   Style="{StaticResource ContextItemMetaTextStyle}" />
-                    </Grid>
-                    <ProgressBar x:Name="ContextProgressBar"
-                                 Value="0" Maximum="100"
-                                 CornerRadius="3"
-                                 Height="6"
-                                 Foreground="{ThemeResource CodeHarnessAccentBrush}"
-                                 Background="{ThemeResource CodeHarnessHoverBrush}" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Steps" Style="{StaticResource ContextItemTextStyle}" />
-                        <TextBlock x:Name="StepsValueText"
-                                   Grid.Column="1" Text="0"
-                                   Style="{StaticResource ContextItemMetaTextStyle}" />
-                    </Grid>
-                </StackPanel>
+                <!-- Content: Changes tab (default visible) / Files tab (hidden) -->
+                <ScrollViewer Grid.Row="2"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollMode="Disabled"
+                              HorizontalScrollBarVisibility="Disabled">
 
-                <!-- Activity -->
-                <StackPanel Grid.Row="3" Spacing="8">
-                    <TextBlock Text="ACTIVITY" Style="{StaticResource ContextSectionTextStyle}" />
-                    <StackPanel x:Name="ActivityList" Spacing="4">
-                        <TextBlock Text="No recent activity. Start a chat to see tool calls and updates here."
-                                   Style="{StaticResource ContextItemMetaTextStyle}"
+                    <StackPanel>
+                    <!-- CHANGES TAB -->
+                    <StackPanel x:Name="ChangesTabContent" Margin="18,0,18,0">
+
+                        <!-- Branch pill + merge/commit/push/pull buttons -->
+                        <Border Margin="0,12,0,12"
+                                CornerRadius="8"
+                                Padding="10,8,10,8"
+                                Background="{ThemeResource CodeHarnessCardBrush}"
+                                BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+                                BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="&#xE727;"
+                                           FontFamily="Segoe MDL2 Assets" FontSize="13"
+                                           Foreground="{ThemeResource CodeHarnessAccentBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBlock x:Name="GitBranchText" Grid.Column="1"
+                                           Text="分支: main"
+                                           FontSize="12" FontWeight="Medium"
+                                           Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                                    <Button x:Name="GitAddButton"
+                                            Style="{StaticResource ToolbarButtonStyle}"
+                                            Content="Add"
+                                            FontSize="11"
+                                            Padding="6,3,6,3"
+                                            CornerRadius="6" />
+                                    <Button x:Name="GitCommitButton"
+                                            Style="{StaticResource ToolbarButtonStyle}"
+                                            Content="Commit"
+                                            FontSize="11"
+                                            Padding="6,3,6,3"
+                                            CornerRadius="6" />
+                                    <Button x:Name="GitPushButton"
+                                            Style="{StaticResource ToolbarButtonStyle}"
+                                            Content="Push"
+                                            FontSize="11"
+                                            Padding="6,3,6,3"
+                                            CornerRadius="6" />
+                                    <Button x:Name="GitPullButton"
+                                            Style="{StaticResource ToolbarButtonStyle}"
+                                            Content="Pull"
+                                            FontSize="11"
+                                            Padding="6,3,6,3"
+                                            CornerRadius="6" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Diff summary text (populated by C++) -->
+                        <TextBlock x:Name="GitDiffText"
+                                   Text=""
+                                   FontSize="12"
+                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                   Margin="0,0,0,8"
                                    TextWrapping="Wrap" />
+
+                        <!-- File change list (populated by C++) -->
+                        <StackPanel x:Name="GitFileList" Spacing="2">
+                            <!-- Empty state -->
+                            <TextBlock Text="暂无变更"
+                                       Style="{StaticResource ContextItemMetaTextStyle}"
+                                       Margin="0,8,0,0" />
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
+
+                    <!-- FILES TAB (hidden by default) -->
+                    <StackPanel x:Name="FilesTabContent"
+                                Visibility="Collapsed"
+                                Margin="18,12,18,0"
+                                Spacing="4">
+                        <TextBlock Text="工作区文件"
+                                   Style="{StaticResource ContextItemMetaTextStyle}" />
+                    </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
             </Grid>
         </Border>
     </Grid>

@@ -2,10 +2,6 @@
 
 #include <unknwn.h>
 
-// Projected types for the XAML-hosted child controls (Sidebar / ChatPage). The
-// generated ShellPage.g.h references winrt::CodeHarness::Desktop::Controls::Sidebar
-// and ::Views::ChatPage, so their full projections must be visible BEFORE the
-// generated ShellPage.g.h is included.
 #include <winrt/CodeHarness.Desktop.Controls.h>
 #include <winrt/CodeHarness.Desktop.Views.h>
 
@@ -21,19 +17,19 @@
 namespace winrt::CodeHarness::Desktop::Views::implementation
 {
 
-	// One row of the right-column ACTIVITY list.
-	struct ToolActivityEntry
+	// One file change entry in the Git panel.
+	struct GitChangeEntry
 	{
-		std::wstring name;
-		std::wstring status;
-		bool isError = false;
+		std::wstring path;
+		wchar_t status = L'M'; // M = modified, A = added, D = deleted, R = renamed, C = copied
+		std::int64_t additions = 0;
+		std::int64_t deletions = 0;
 	};
 
 	struct ShellPage : ShellPageT<ShellPage>
 	{
 		ShellPage();
 
-		// Called by MainWindow once the page is hosted so XamlRoot is ready.
 		void Initialize();
 		void FocusComposer();
 
@@ -48,12 +44,12 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		void CancelPrompt();
 		void OpenSettings();
 
-		// Right-column Context panel refreshers (pure UI, driven by accumulated state).
+		// Git panel refreshers.
+		void RefreshGitChanges();
+		void RefreshBranchInfo();
 		void RefreshUsage();
-		void RefreshActivity();
-		void RefreshOpenFiles();
 
-		void CollectFilePath(nlohmann::json const& args);
+		void CollectGitChange(nlohmann::json const& args);
 
 		static std::wstring ToWide(std::string_view text);
 		static std::wstring FormatTokenCount(std::int64_t tokens);
@@ -63,13 +59,14 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		std::unique_ptr<::codeharness::desktop_app::DesktopCoreService> m_core;
 		bool m_running = false;
 
-		// Context panel accumulated state. All updated from the event callback and
-		// reset on NewChat(). The 128k denominator is a hardcoded stand-in until
-		// the core exposes per-model maxContextTokens.
-		std::int64_t m_totalTokens = 0;          // cumulative across turns
-		int m_currentSteps = 0;                  // live step counter for the active turn
-		std::vector<ToolActivityEntry> m_activity;   // most-recent-first, capped at 20
-		std::vector<std::wstring> m_openFiles;        // deduped, most-recent-first
+		// Token / step counters (the right-side usage panel was removed, but
+		// the counters are still maintained internally for future use).
+		std::int64_t m_totalTokens = 0;
+		std::int64_t m_currentSteps = 0;
+
+		// Git panel state.  Updated from the event callback and reset on NewChat().
+		std::wstring m_currentBranch = L"main";
+		std::vector<GitChangeEntry> m_gitChanges; // most-recent-first, capped at 50
 	};
 
 } // namespace winrt::CodeHarness::Desktop::Views::implementation

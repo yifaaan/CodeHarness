@@ -7,13 +7,62 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
-        <Border Grid.Row="0"
-                Padding="20,12,20,12"
+        <!-- Tab bar: session title + workspace + branch -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Session title tab -->
+            <TextBlock x:Name="PageTitleText"
+                       Grid.Column="0"
+                       Text="新对话"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
+                       VerticalAlignment="Center"
+                       Margin="20,10,16,0" />
+
+            <!-- Workspace / branch tab (pill) -->
+            <Border Grid.Column="1"
+                    CornerRadius="6"
+                    Padding="10,3,10,3"
+                    Background="{ThemeResource CodeHarnessAccentTintBrush}"
+                    BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+                    BorderThickness="1"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Margin="0,10,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                               Foreground="{ThemeResource CodeHarnessAccentBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="WorkspaceTabText"
+                               Text="CodeHarness"
+                               FontSize="12" FontWeight="Medium"
+                               Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="&#xE727;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="BranchTabText"
+                               Text="main"
+                               FontSize="12"
+                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Toolbar: model pill + status + actions -->
+        <Border Grid.Row="1"
+                Padding="20,8,20,8"
                 BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
                 BorderThickness="0,0,0,1">
             <Grid>
@@ -21,20 +70,20 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Ellipse Width="7" Height="7" VerticalAlignment="Center"
                                  Fill="{ThemeResource CodeHarnessAccentBrush}" />
-                        <TextBlock Text="ChatGLM" VerticalAlignment="Center" />
+                        <TextBlock Text="CodeHarness" VerticalAlignment="Center" />
                         <TextBlock Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" FontSize="9"
                                    Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
                 <TextBlock x:Name="StatusText"
-                           Text="Ready"
+                           Text="就绪"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            FontSize="12"
                            Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
                 <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Content="Share" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Content="分享" />
                     <Button Style="{StaticResource ToolbarButtonStyle}" Content="&#xE81C;"
                             FontFamily="Segoe MDL2 Assets" />
                     <Button Style="{StaticResource ToolbarButtonStyle}" Content="&#xE712;"
@@ -60,9 +109,9 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
                 <StackPanel Spacing="6" HorizontalAlignment="Center">
-                    <TextBlock Text="How can I help you today?" Style="{StaticResource HeroTextStyle}"
+                    <TextBlock Text="今天我能帮你做些什么?" Style="{StaticResource HeroTextStyle}"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="Ask anything about your codebase, or pick a starting point below."
+                    <TextBlock Text="向我提问关于代码库的任何问题,或从下面的建议开始。"
                                Style="{StaticResource HeroSubTextStyle}"
                                HorizontalAlignment="Center" />
                 </StackPanel>
@@ -72,33 +121,33 @@
                             Style="{StaticResource SuggestionChipStyle}"
                             HorizontalAlignment="Stretch"
                             Click="OnSuggestionClick"
-                            Tag="Explain the architecture of this project">
+                            Tag="解释这个项目的架构">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                        Foreground="{ThemeResource CodeHarnessAccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Explain the architecture of this project" VerticalAlignment="Center" />
+                            <TextBlock Text="解释这个项目的架构" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button x:Name="SuggestionFixBugs"
                             Style="{StaticResource SuggestionChipStyle}"
                             HorizontalAlignment="Stretch"
                             Click="OnSuggestionClick"
-                            Tag="Find and fix bugs in my code">
+                            Tag="查找并修复代码中的 bug">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="&#xE943;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                        Foreground="{ThemeResource CodeHarnessAccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Find and fix bugs in my code" VerticalAlignment="Center" />
+                            <TextBlock Text="查找并修复代码中的 bug" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                     <Button x:Name="SuggestionAddTests"
                             Style="{StaticResource SuggestionChipStyle}"
                             HorizontalAlignment="Stretch"
                             Click="OnSuggestionClick"
-                            Tag="Add unit tests for the engine module">
+                            Tag="为 engine 模块添加单元测试">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="&#xE9D9;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                        Foreground="{ThemeResource CodeHarnessAccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock Text="Add unit tests for the engine module" VerticalAlignment="Center" />
+                            <TextBlock Text="为 engine 模块添加单元测试" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>

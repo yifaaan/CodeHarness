@@ -7,5 +7,9 @@ namespace CodeHarness.Desktop.Controls
 
 		void SetRunning(Boolean running);
 		void FocusPrompt();
+
+		String SelectedModel{ get; };
+		void SetSelectedModel(String model);
+		Boolean IsThinkingEnabled{ get; };
 	}
 }
