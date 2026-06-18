@@ -230,4 +230,19 @@
         <Setter Property="FontSize" Value="13" />
     </Style>
 
+    <!-- ===== Tool call cards (collapsible rows in the transcript) ===== -->
+    <Style x:Key="ToolCardBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessToolBubbleBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CodeHarnessBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="12,9,12,9" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <Style x:Key="ToolCardErrorBorderStyle" TargetType="Border" BasedOn="{StaticResource ToolCardBorderStyle}">
+        <Setter Property="Background" Value="#FFFFF4F4" />
+        <Setter Property="BorderBrush" Value="#FFF5C6C6" />
+    </Style>
+
 </ResourceDictionary>

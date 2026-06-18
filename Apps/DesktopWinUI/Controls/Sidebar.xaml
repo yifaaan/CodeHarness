@@ -2,5 +2,105 @@
     x:Class="CodeHarness.Desktop.Controls.Sidebar"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid />
+
+    <Border Background="{ThemeResource CodeHarnessSidebarBrush}"
+            BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+            BorderThickness="0,0,1,0">
+        <Grid Padding="0,16,0,14">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Brand -->
+            <Grid Margin="18,0,18,4" Height="34">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <Border Width="26" Height="26" CornerRadius="7"
+                            Background="{ThemeResource CodeHarnessAccentBrush}">
+                        <TextBlock Text="C" Foreground="#FFFFFFFF" FontSize="15" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="ChatGLM" Style="{StaticResource BrandTextStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+
+            <!-- New chat -->
+            <StackPanel Grid.Row="1" Margin="0,8,0,4">
+                <Button x:Name="NewChatButton"
+                        Style="{StaticResource NewChatButtonStyle}"
+                        HorizontalContentAlignment="Left"
+                        Click="OnNewChatClick">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="+" FontSize="16" FontWeight="Bold"
+                                   Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="New chat" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Style="{StaticResource SidebarButtonStyle}" Content="Search" />
+            </StackPanel>
+
+            <!-- Project label -->
+            <StackPanel Grid.Row="2" Margin="0,14,0,6">
+                <TextBlock Text="PROJECT" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,4" />
+                <TextBlock x:Name="WorkdirText" Text="CodeHarness" Style="{StaticResource ProjectTextStyle}" />
+            </StackPanel>
+
+            <!-- Sessions list -->
+            <ScrollViewer Grid.Row="3" Margin="0,4,0,0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollMode="Disabled"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Text="TODAY" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,8" />
+                    <ListView x:Name="SessionsList"
+                              Margin="4,0,4,4"
+                              SelectionMode="Single"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              Padding="0"
+                              DoubleTapped="OnSessionDoubleTapped" />
+
+                    <TextBlock Text="PREVIOUS 7 DAYS" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,14,18,8" />
+                    <StackPanel x:Name="Previous7Group" Margin="4,0,4,4" />
+
+                    <TextBlock Text="PREVIOUS 30 DAYS" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,14,18,8" />
+                    <StackPanel x:Name="Previous30Group" Margin="4,0,4,4" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Footer -->
+            <Border Grid.Row="4"
+                    Margin="10,0,10,0"
+                    Padding="10,9,10,9"
+                    BorderBrush="{ThemeResource CodeHarnessHairlineBrush}"
+                    BorderThickness="0,1,0,0">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Border Width="24" Height="24" CornerRadius="12"
+                                Background="{ThemeResource CodeHarnessAccentSoftBrush}">
+                            <TextBlock Text="U" Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
+                                       FontSize="11" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Spacing="-1">
+                            <TextBlock Text="Guest" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+                            <TextBlock Text="Manual mode" FontSize="11"
+                                       Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Button Style="{StaticResource IconButtonStyle}"
+                            HorizontalAlignment="Right"
+                            Content="&#xE713;"
+                            FontFamily="Segoe MDL2 Assets"
+                            Width="28" Height="28"
+                            Click="OnSettingsClick" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
 </UserControl>

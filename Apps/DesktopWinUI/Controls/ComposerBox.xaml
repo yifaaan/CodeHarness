@@ -2,5 +2,56 @@
     x:Class="CodeHarness.Desktop.Controls.ComposerBox"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid />
+
+    <Border MaxWidth="820"
+            HorizontalAlignment="Center"
+            Margin="20,0,20,18"
+            Background="{ThemeResource CodeHarnessComposerBrush}"
+            BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="20"
+            Padding="14,12,12,12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBox x:Name="PromptBox"
+                     PlaceholderText="Ask ChatGLM anything. Type @ to mention files or plugins."
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     MinHeight="24"
+                     BorderThickness="0"
+                     Background="Transparent"
+                     Padding="2,4,2,4"
+                     FontSize="14"
+                     KeyDown="OnPromptKeyDown" />
+
+            <Grid Grid.Row="1" Margin="0,10,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Style="{StaticResource IconButtonStyle}" Content="+" FontSize="18" />
+                    <Border CornerRadius="999" Padding="9,3,9,3"
+                            VerticalAlignment="Center"
+                            Background="{ThemeResource CodeHarnessAccentTintBrush}">
+                        <TextBlock Text="Manual permission mode" FontSize="11"
+                                   Foreground="{ThemeResource CodeHarnessAccentHoverBrush}" />
+                    </Border>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button x:Name="CancelButton"
+                            Style="{StaticResource CancelRoundButtonStyle}"
+                            Content="&#xE711;"
+                            FontFamily="Segoe MDL2 Assets"
+                            Click="OnCancelClick"
+                            IsEnabled="False" />
+                    <Button x:Name="SendButton"
+                            Style="{StaticResource SendButtonStyle}"
+                            Content="&#xE72A;"
+                            FontFamily="Segoe MDL2 Assets"
+                            Click="OnSendClick" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
 </UserControl>

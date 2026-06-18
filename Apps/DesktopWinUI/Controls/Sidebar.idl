@@ -4,5 +4,9 @@ namespace CodeHarness.Desktop.Controls
 	runtimeclass Sidebar : Microsoft.UI.Xaml.Controls.UserControl
 	{
 		Sidebar();
+
+		void SetSessions(Windows.Foundation.Collections.IVectorView<String> sessions);
+		void SetWorkdir(String workdir);
+		void Focus();
 	}
 }
