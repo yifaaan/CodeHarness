@@ -21,6 +21,7 @@ CMakeUserPresets.json
 out/
 graphify-out
 .codegraph/
+vcpkg_installed/
 # Claude/AGENTS
 .claude
 .codex
