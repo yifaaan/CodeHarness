@@ -80,6 +80,11 @@ namespace codeharness::tui
 		ftxui::Component MakeModelPicker();
 		ftxui::Component MakeSessionPicker();
 		ftxui::Component MakeSettingsDialog();
+		ftxui::Component MakeSettingsModelDialog();
+		ftxui::Component MakeSettingsPermissionDialog();
+		ftxui::Component MakeSettingsThemeDialog();
+		ftxui::Component MakeSettingsEditorDialog();
+		ftxui::Component MakeSettingsUsageDialog();
 
 		// Input handlers
 

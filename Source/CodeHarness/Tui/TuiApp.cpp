@@ -32,6 +32,7 @@
 #include "Tui/Components/ApprovalPanel.h"
 #include "Tui/Components/Banner.h"
 #include "Tui/Components/ChatPane.h"
+#include "Tui/Components/ChoicePicker.h"
 #include "Tui/Components/CompactionIndicator.h"
 #include "Tui/Components/ModalOverlay.h"
 #include "Tui/Components/HelpDialog.h"
@@ -86,6 +87,30 @@ namespace codeharness::tui
 				.kind = TranscriptEntry::Kind::System,
 				.text = std::move(text),
 			});
+		}
+
+		config::PermissionMode PermissionModeFromId(const std::string& id)
+		{
+			if (id == "auto")
+			{
+				return config::PermissionMode::Auto;
+			}
+			if (id == "yolo")
+			{
+				return config::PermissionMode::Yolo;
+			}
+			return config::PermissionMode::Manual;
+		}
+
+		std::string UsageText(const llm::TokenUsage& usage)
+		{
+			return fmt::format(
+				"{} tokens  input={} output={} cache-read={} cache-create={}",
+				TotalTokens(usage),
+				usage.inputOther,
+				usage.output,
+				usage.inputCacheRead,
+				usage.inputCacheCreation);
 		}
 
 	} // namespace
@@ -344,20 +369,30 @@ namespace codeharness::tui
 			status,
 		});
 
-		auto gatedRoot = Maybe(root, [this] {
-			std::lock_guard lk(state->mutex);
-			return state->activeModal == ModalKind::None;
+		auto stacked = Renderer(root, [root, modal] {
+			return dbox({
+				root->Render(),
+				modal->Render(),
+			});
 		});
-		auto app = Container::Stacked({gatedRoot, modal});
 
-		auto withInput = CatchEvent(app, [this](Event event) -> bool {
-			std::lock_guard lk(state->mutex);
-			if (state->activeModal != ModalKind::None)
+		auto withInput = CatchEvent(stacked, [this, modal](Event event) -> bool {
+			bool modalActive = false;
 			{
+				std::lock_guard lk(state->mutex);
+				modalActive = state->activeModal != ModalKind::None;
+			}
+			if (modalActive)
+			{
+				if (modal->OnEvent(event))
+				{
+					return true;
+				}
 				if (event == Event::Escape || event == Event::CtrlC || event == Event::CtrlD)
 				{
 					return true;
 				}
+				return false;
 			}
 			return HandleInput(event);
 		});
@@ -652,6 +687,11 @@ namespace codeharness::tui
 		auto modelPicker = MakeModelPicker();
 		auto sessionPicker = MakeSessionPicker();
 		auto settings = MakeSettingsDialog();
+		auto settingsModel = MakeSettingsModelDialog();
+		auto settingsPermission = MakeSettingsPermissionDialog();
+		auto settingsTheme = MakeSettingsThemeDialog();
+		auto settingsEditor = MakeSettingsEditorDialog();
+		auto settingsUsage = MakeSettingsUsageDialog();
 
 		auto modalWithGuard = Container::Tab({
 			Maybe(approval, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Approval; }),
@@ -660,6 +700,11 @@ namespace codeharness::tui
 			Maybe(modelPicker, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::ModelPicker; }),
 			Maybe(sessionPicker, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SessionPicker; }),
 			Maybe(settings, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::Settings; }),
+			Maybe(settingsModel, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SettingsModel; }),
+			Maybe(settingsPermission, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SettingsPermission; }),
+			Maybe(settingsTheme, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SettingsTheme; }),
+			Maybe(settingsEditor, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SettingsEditor; }),
+			Maybe(settingsUsage, [this] { std::lock_guard lk(state->mutex); return state->activeModal == ModalKind::SettingsUsage; }),
 		}, &activeModalIndex);
 
 		return ModalOverlay::Create(
@@ -685,6 +730,21 @@ namespace codeharness::tui
 					return true;
 				case ModalKind::Settings:
 					activeModalIndex = 5;
+					return true;
+				case ModalKind::SettingsModel:
+					activeModalIndex = 6;
+					return true;
+				case ModalKind::SettingsPermission:
+					activeModalIndex = 7;
+					return true;
+				case ModalKind::SettingsTheme:
+					activeModalIndex = 8;
+					return true;
+				case ModalKind::SettingsEditor:
+					activeModalIndex = 9;
+					return true;
+				case ModalKind::SettingsUsage:
+					activeModalIndex = 10;
 					return true;
 				case ModalKind::None:
 				default:
@@ -941,11 +1001,11 @@ namespace codeharness::tui
 							{
 								state->availableModels.push_back(m.alias);
 							}
-							state->activeModal = ModalKind::ModelPicker;
+							state->activeModal = ModalKind::SettingsModel;
 						}
 						else
 						{
-							state->activeModal = ModalKind::None;
+							state->activeModal = ModalKind::Settings;
 							state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Error: {}", models.status().message())});
 						}
 						PostRender();
@@ -954,37 +1014,191 @@ namespace codeharness::tui
 				}
 				if (selection == SettingsSelection::Permission)
 				{
-					config::PermissionMode newMode;
-					{
-						std::lock_guard lk(state->mutex);
-						newMode = state->permissionMode == config::PermissionMode::Yolo ? config::PermissionMode::Manual : config::PermissionMode::Yolo;
-						state->permissionMode = newMode;
-						state->activeModal = ModalKind::None;
-						state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Mode: {}", PermissionModeLabel(newMode))});
-					}
-					(void)api->SetPermissionMode(state->sessionId, newMode);
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::SettingsPermission;
 					PostRender();
 					return;
 				}
 				if (selection == SettingsSelection::Usage)
 				{
 					std::lock_guard lk(state->mutex);
-					state->activeModal = ModalKind::None;
-					state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("usage={} tokens", TotalTokens(state->lastUsage))});
+					state->activeModal = ModalKind::SettingsUsage;
 					PostRender();
 					return;
 				}
+				if (selection == SettingsSelection::Theme)
 				{
 					std::lock_guard lk(state->mutex);
-					state->activeModal = ModalKind::None;
-					state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = "This settings page is not implemented yet."});
+					state->activeModal = ModalKind::SettingsTheme;
+					PostRender();
+					return;
 				}
+				if (selection == SettingsSelection::Editor)
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::SettingsEditor;
+					PostRender();
+					return;
+				}
+				PushSystemMessage(state, "This settings page is not implemented yet.");
 				PostRender();
 			},
 			.onCancel = [this] {
 				{
 					std::lock_guard lk(state->mutex);
 					state->activeModal = ModalKind::None;
+				}
+				PostRender();
+			},
+			});
+	}
+
+	ftxui::Component TuiApp::MakeSettingsModelDialog()
+	{
+		return ChoicePicker::Create(ChoicePickerOptions{
+			.title = "Model",
+			.subtitle = "Choose the active model",
+			.rowSource = [this] {
+				std::lock_guard lk(state->mutex);
+				std::vector<ChoicePickerRow> rows;
+				for (const auto& model : state->availableModels)
+				{
+					rows.push_back(ChoicePickerRow{
+						.id = model,
+						.label = model,
+						.description = model == state->model ? "Current model" : "Switch to this model",
+						.current = model == state->model,
+					});
+				}
+				return rows;
+			},
+			.onSelect = [this](ChoicePickerRow row) {
+				std::thread([this, target = row.id] {
+					std::string sessionId;
+					{
+						std::lock_guard lk(state->mutex);
+						sessionId = state->sessionId;
+					}
+					auto status = api->SetModel(sessionId, target);
+					{
+						std::lock_guard lk(state->mutex);
+						if (status.ok())
+						{
+							state->model = target;
+							state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Model switched to: {}", target)});
+						}
+						else
+						{
+							state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Error: {}", status.message())});
+						}
+						state->activeModal = ModalKind::Settings;
+					}
+					PostRender();
+				}).detach();
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::Settings;
+				}
+				PostRender();
+			},
+		});
+	}
+
+	ftxui::Component TuiApp::MakeSettingsPermissionDialog()
+	{
+		return ChoicePicker::Create(ChoicePickerOptions{
+			.title = "Permission",
+			.subtitle = "Choose how tool actions are approved",
+			.rowSource = [this] {
+				std::lock_guard lk(state->mutex);
+				auto mode = state->permissionMode;
+				return std::vector<ChoicePickerRow>{
+					ChoicePickerRow{.id = "manual", .label = "Manual", .description = "Ask before mutating tool actions", .current = mode == config::PermissionMode::Manual},
+					ChoicePickerRow{.id = "auto", .label = "Auto", .description = "Parsed mode; currently falls back to Manual policy", .current = mode == config::PermissionMode::Auto},
+					ChoicePickerRow{.id = "yolo", .label = "YOLO", .description = "Approve all tool actions without prompting", .current = mode == config::PermissionMode::Yolo},
+				};
+			},
+			.onSelect = [this](ChoicePickerRow row) {
+				auto newMode = PermissionModeFromId(row.id);
+				std::string sessionId;
+				{
+					std::lock_guard lk(state->mutex);
+					sessionId = state->sessionId;
+				}
+				(void)api->SetPermissionMode(sessionId, newMode);
+				{
+					std::lock_guard lk(state->mutex);
+					state->permissionMode = newMode;
+					state->activeModal = ModalKind::Settings;
+					state->transcript.push_back({.kind = TranscriptEntry::Kind::System, .text = fmt::format("Mode: {}", PermissionModeLabel(newMode))});
+				}
+				PostRender();
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::Settings;
+				}
+				PostRender();
+			},
+		});
+	}
+
+	ftxui::Component TuiApp::MakeSettingsThemeDialog()
+	{
+		return ChoicePicker::Create(ChoicePickerOptions{
+			.title = "Theme",
+			.subtitle = "Theme selection is not implemented yet",
+			.rows = {
+				ChoicePickerRow{.id = "system", .label = "System", .description = "Follow detected terminal background", .current = true, .disabled = true},
+				ChoicePickerRow{.id = "dark", .label = "Dark", .description = "Dark theme", .disabled = true},
+				ChoicePickerRow{.id = "light", .label = "Light", .description = "Light theme", .disabled = true},
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::Settings;
+				}
+				PostRender();
+			},
+		});
+	}
+
+	ftxui::Component TuiApp::MakeSettingsEditorDialog()
+	{
+		return ChoicePicker::Create(ChoicePickerOptions{
+			.title = "Editor",
+			.subtitle = "Editor selection is not implemented yet",
+			.rows = {
+				ChoicePickerRow{.id = "external", .label = "External editor", .description = "Configure editor command in config", .disabled = true},
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::Settings;
+				}
+				PostRender();
+			},
+		});
+	}
+
+	ftxui::Component TuiApp::MakeSettingsUsageDialog()
+	{
+		return ChoicePicker::Create(ChoicePickerOptions{
+			.title = "Usage",
+			.subtitle = "Session token usage",
+			.rowSource = [this] {
+				std::lock_guard lk(state->mutex);
+				return std::vector<ChoicePickerRow>{
+					ChoicePickerRow{.id = "usage", .label = UsageText(state->lastUsage), .description = "Last completed turn usage", .current = true, .disabled = true},
+				};
+			},
+			.onCancel = [this] {
+				{
+					std::lock_guard lk(state->mutex);
+					state->activeModal = ModalKind::Settings;
 				}
 				PostRender();
 			},

@@ -1,4 +1,5 @@
 #include "Tui/Components/ApprovalPanel.h"
+#include "Tui/Components/ChoicePicker.h"
 #include "Tui/Components/HelpDialog.h"
 #include "Tui/Components/ModalOverlay.h"
 #include "Tui/Components/QuestionDialog.h"
@@ -154,10 +155,52 @@ TEST_CASE("SettingsDialog: renders top-level settings and selects entries")
 
 	auto out = RenderComponent(component);
 	CHECK(out.find("Model") != std::string::npos);
-	CHECK(out.find("Switch the active model") != std::string::npos);
+	CHECK(out.find("Current: gpt-5.5") != std::string::npos);
+	CHECK(out.find("Permission") != std::string::npos);
+	CHECK(out.find("Current: Manual") != std::string::npos);
 	CHECK(component->OnEvent(ftxui::Event::Return));
 	REQUIRE(selection.has_value());
 	CHECK(*selection == codeharness::tui::SettingsSelection::Model);
+	selection.reset();
+	for (int i = 0; i < 4; ++i)
+	{
+		CHECK(component->OnEvent(ftxui::Event::ArrowDown));
+	}
+	CHECK(component->OnEvent(ftxui::Event::Return));
+	REQUIRE(selection.has_value());
+	CHECK(*selection == codeharness::tui::SettingsSelection::Usage);
+	CHECK(component->OnEvent(ftxui::Event::Escape));
+	CHECK(cancelled);
+}
+
+TEST_CASE("ChoicePicker: renders selector rows and ignores disabled selections")
+{
+	std::optional<std::string> selected;
+	bool cancelled = false;
+	auto component = codeharness::tui::ChoicePicker::Create({
+		.title = "Permission",
+		.subtitle = "Choose how tool actions are approved",
+		.rows = {
+			codeharness::tui::ChoicePickerRow{.id = "manual", .label = "Manual", .description = "Ask before mutating tool actions", .current = true},
+			codeharness::tui::ChoicePickerRow{.id = "auto", .label = "Auto", .description = "Parsed mode; currently falls back to Manual policy"},
+			codeharness::tui::ChoicePickerRow{.id = "theme", .label = "Theme", .description = "Theme selection", .disabled = true},
+		},
+		.onSelect = [&](codeharness::tui::ChoicePickerRow row) { selected = row.id; },
+		.onCancel = [&] { cancelled = true; },
+	});
+
+	auto out = RenderComponent(component);
+	CHECK(out.find("Permission") != std::string::npos);
+	CHECK(out.find("* Manual") != std::string::npos);
+	CHECK(out.find("Ask before mutating tool actions") != std::string::npos);
+	CHECK(component->OnEvent(ftxui::Event::ArrowDown));
+	CHECK(component->OnEvent(ftxui::Event::Return));
+	REQUIRE(selected.has_value());
+	CHECK(*selected == "auto");
+	selected.reset();
+	CHECK(component->OnEvent(ftxui::Event::ArrowDown));
+	CHECK(component->OnEvent(ftxui::Event::Return));
+	CHECK_FALSE(selected.has_value());
 	CHECK(component->OnEvent(ftxui::Event::Escape));
 	CHECK(cancelled);
 }

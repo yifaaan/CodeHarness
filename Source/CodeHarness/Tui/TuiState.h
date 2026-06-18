@@ -126,6 +126,11 @@ namespace codeharness::tui
 		ModelPicker,
 		SessionPicker,
 		Settings,
+		SettingsModel,
+		SettingsPermission,
+		SettingsTheme,
+		SettingsEditor,
+		SettingsUsage,
 	};
 
 	// ─── Theme palette ──────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ add_library(codeharness_tui
   Components/QuestionDialog.cpp
   Components/StatusBar.cpp
   Components/SidePanel.cpp
+  Components/ChoicePicker.cpp
   Components/CompactionIndicator.cpp
   Components/HelpDialog.cpp
   Components/SessionPicker.cpp
