@@ -1,6 +1,8 @@
 #include "Controls/Sidebar.xaml.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cwctype>
 #include <winrt/base.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
@@ -136,27 +138,36 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 
 	void Sidebar::SetSessions(winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> sessions)
 	{
-		auto todayGroup = this->TodayGroup();
-		auto weekGroup = this->WeekGroup();
-		auto monthGroup = this->MonthGroup();
-		auto earlierGroup = this->EarlierGroup();
-		ClearAllGroups(todayGroup, weekGroup, monthGroup, earlierGroup);
-
+		// No timestamps provided: cache the titles with "now" as createdAt so they
+		// all land in the Today group, then render.
+		auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
+		m_allSessions.clear();
 		for (auto const& title : sessions)
 		{
-			std::wstring t{title.c_str(), title.size()};
-			auto item = MakeSessionItem(t, {}, m_onResume);
-			todayGroup.Children().Append(item);
+			m_allSessions.push_back({ std::wstring{title.c_str(), title.size()}, nowMs });
 		}
-
-		UpdateGroupHeaders(
-			this->TodayHeader(), this->WeekHeader(), this->MonthHeader(), this->EarlierHeader(),
-			todayGroup.Children().Size() > 0, false, false, false);
+		RebuildSessionList();
 	}
 
 	void Sidebar::SetSessionsWithTimestamps(
 		winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> titles,
 		winrt::Windows::Foundation::Collections::IVectorView<std::int64_t> createdAtMs)
+	{
+		m_allSessions.clear();
+		auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::system_clock::now().time_since_epoch()).count();
+		auto count = titles.Size();
+		for (uint32_t i = 0; i < count; ++i)
+		{
+			std::wstring t{titles.GetAt(i).c_str(), titles.GetAt(i).size()};
+			std::int64_t ts = (i < createdAtMs.Size()) ? createdAtMs.GetAt(i) : nowMs;
+			m_allSessions.push_back({ std::move(t), ts });
+		}
+		RebuildSessionList();
+	}
+
+	void Sidebar::RebuildSessionList()
 	{
 		auto todayGroup = this->TodayGroup();
 		auto weekGroup = this->WeekGroup();
@@ -164,40 +175,61 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		auto earlierGroup = this->EarlierGroup();
 		ClearAllGroups(todayGroup, weekGroup, monthGroup, earlierGroup);
 
+		// Active search query (empty when the search box is hidden/cleared).
+		std::wstring query;
+		if (m_searchVisible)
+		{
+			auto boxText = this->SearchBox().Text();
+			query = std::wstring{boxText.c_str(), boxText.size()};
+		}
+		// Case-insensitive substring match helper.
+		auto matches = [&query](std::wstring const& title) {
+			if (query.empty()) return true;
+			if (title.size() < query.size()) return false;
+			auto it = std::search(title.begin(), title.end(), query.begin(), query.end(),
+				[](wchar_t a, wchar_t b) { return std::towlower(a) == std::towlower(b); });
+			return it != title.end();
+		};
+
 		auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
 			std::chrono::system_clock::now().time_since_epoch()).count();
 
-		auto count = titles.Size();
-		for (uint32_t i = 0; i < count; ++i)
+		bool hasToday = false, hasWeek = false, hasMonth = false, hasEarlier = false;
+
+		for (auto const& entry : m_allSessions)
 		{
-			std::wstring t{titles.GetAt(i).c_str(), titles.GetAt(i).size()};
-			std::int64_t ts = (i < createdAtMs.Size()) ? createdAtMs.GetAt(i) : nowMs;
-			auto group = ClassifyByTimestamp(ts, nowMs);
+			if (!matches(entry.title)) continue;
+			auto group = ClassifyByTimestamp(entry.createdAtMs, nowMs);
 
-			// Format timestamp as relative string.
+			// Relative timestamp label: show concrete elapsed time ("刚刚"/"3小时前"/"2天前")
+			// rather than broad bucket names, to match the reference layout.
 			std::wstring tsStr;
-			auto diffMs = nowMs - ts;
-			if (diffMs < kOneDayMs) tsStr = L"今天";
-			else if (diffMs < kSevenDaysMs) tsStr = L"最近";
-			else if (diffMs < kThirtyDaysMs) tsStr = L"更早";
-			else tsStr = L"归档";
+			auto diffMs = nowMs - entry.createdAtMs;
+			if (diffMs < 0) diffMs = 0;
+			auto diffMins = diffMs / 60000;
+			if (diffMins < 1) tsStr = L"刚刚";
+			else if (diffMins < 60) tsStr = std::to_wstring(diffMins) + L"分钟前";
+			else if (diffMins < 60 * 24) tsStr = std::to_wstring(diffMins / 60) + L"小时前";
+			else
+			{
+				auto days = diffMins / (60 * 24);
+				if (days < 30) tsStr = std::to_wstring(days) + L"天前";
+				else tsStr = std::to_wstring(days / 30) + L"个月前";
+			}
 
-			auto item = MakeSessionItem(t, tsStr, m_onResume);
+			auto item = MakeSessionItem(entry.title, tsStr, m_onResume);
 			switch (group)
 			{
-			case TimeGroup::Today:   todayGroup.Children().Append(item); break;
-			case TimeGroup::Week:    weekGroup.Children().Append(item);  break;
-			case TimeGroup::Month:   monthGroup.Children().Append(item); break;
-			case TimeGroup::Earlier: earlierGroup.Children().Append(item); break;
+			case TimeGroup::Today:   todayGroup.Children().Append(item); hasToday = true; break;
+			case TimeGroup::Week:    weekGroup.Children().Append(item);  hasWeek = true;  break;
+			case TimeGroup::Month:   monthGroup.Children().Append(item); hasMonth = true; break;
+			case TimeGroup::Earlier: earlierGroup.Children().Append(item); hasEarlier = true; break;
 			}
 		}
 
 		UpdateGroupHeaders(
 			this->TodayHeader(), this->WeekHeader(), this->MonthHeader(), this->EarlierHeader(),
-			todayGroup.Children().Size() > 0,
-			weekGroup.Children().Size() > 0,
-			monthGroup.Children().Size() > 0,
-			earlierGroup.Children().Size() > 0);
+			hasToday, hasWeek, hasMonth, hasEarlier);
 	}
 
 	void Sidebar::SetWorkdir(winrt::hstring workdir)
@@ -246,6 +278,43 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		{
 			m_onOpenSettings();
 		}
+	}
+
+	void Sidebar::OnSearchClick(winrt::Windows::Foundation::IInspectable const&,
+	                            winrt::Microsoft::UI::Xaml::RoutedEventArgs const&)
+	{
+		// Toggle the search input panel.
+		m_searchVisible = !m_searchVisible;
+		auto panel = this->SearchBoxPanel();
+		panel.Visibility(m_searchVisible ? winrt::Microsoft::UI::Xaml::Visibility::Visible
+		                                 : winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+		if (m_searchVisible)
+		{
+			this->SearchBox().Focus(winrt::Microsoft::UI::Xaml::FocusState::Programmatic);
+		}
+		else
+		{
+			this->SearchBox().Text(L"");
+		}
+		RebuildSessionList();
+	}
+
+	void Sidebar::OnSearchTextChanged(winrt::Windows::Foundation::IInspectable const&,
+	                                  winrt::Microsoft::UI::Xaml::Controls::TextChangedEventArgs const&)
+	{
+		if (m_searchVisible)
+		{
+			RebuildSessionList();
+		}
+	}
+
+	void Sidebar::OnSearchClose(winrt::Windows::Foundation::IInspectable const&,
+	                            winrt::Microsoft::UI::Xaml::RoutedEventArgs const&)
+	{
+		m_searchVisible = false;
+		this->SearchBoxPanel().Visibility(winrt::Microsoft::UI::Xaml::Visibility::Collapsed);
+		this->SearchBox().Text(L"");
+		RebuildSessionList();
 	}
 
 } // namespace winrt::CodeHarness::Desktop::Controls::implementation

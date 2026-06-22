@@ -34,6 +34,9 @@ namespace codeharness::llm
 		std::string ModelName() const override;
 		std::optional<ThinkingEffort> ThinkingEffortLevel() const override;
 
+		// Runtime thinking toggle (session-scoped). std::nullopt disables thinking.
+		void SetThinkingEffort(std::optional<ThinkingEffort> effort);
+
 		absl::Status Generate(std::string_view systemPrompt, std::span<const Tool> tools, std::span<const Message> history, const StreamCallbacks& callbacks, std::stop_token stopToken = {}) override;
 
 	private:

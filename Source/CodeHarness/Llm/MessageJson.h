@@ -25,6 +25,7 @@ namespace codeharness::llm
 	struct StreamChunk
 	{
 		std::optional<std::string> content;
+		std::optional<std::string> reasoning; // thinking/reasoning text (delta.reasoning / delta.reasoning_content)
 		std::optional<int> toolCallIndex;
 		std::optional<std::string> toolCallId;
 		std::optional<std::string> toolCallName;

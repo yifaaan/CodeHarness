@@ -82,13 +82,12 @@
                            VerticalAlignment="Center"
                            FontSize="12"
                            Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
-                <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Content="分享" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Content="&#xE81C;"
-                            FontFamily="Segoe MDL2 Assets" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Content="&#xE712;"
-                            FontFamily="Segoe MDL2 Assets" />
-                </StackPanel>
+                <TextBlock x:Name="UsageText"
+                           Text=""
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
             </Grid>
         </Border>
 

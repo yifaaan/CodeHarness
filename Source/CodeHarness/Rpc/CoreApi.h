@@ -1,12 +1,14 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
 #include "Agent/AgentTypes.h"
+#include "Llm/Types.h"
 #include "Rpc/RpcTypes.h"
 #include "Session/SessionTypes.h"
 #include "absl/status/status.h"
@@ -49,6 +51,10 @@ namespace codeharness::rpc
 		absl::Status SetModel(std::string_view sessionId, std::string_view model);
 		absl::Status SetPermissionMode(std::string_view sessionId, config::PermissionMode permissionMode);
 		absl::Status SetPlanMode(std::string_view sessionId, bool enabled);
+		// Toggle extended thinking on the active session's provider. Only the
+		// OpenAI-compatible provider family honors this today; other providers
+		// return UnimplementedError. effort == nullopt disables thinking.
+		absl::Status SetThinking(std::string_view sessionId, std::optional<llm::ThinkingEffort> effort);
 		absl::Status ActivateSkill(std::string_view sessionId, std::string_view name, std::string_view args = {});
 		absl::StatusOr<std::vector<ModelInfo>> ListModels();
 		absl::StatusOr<std::vector<ToolInfo>> ListTools(std::string_view sessionId);

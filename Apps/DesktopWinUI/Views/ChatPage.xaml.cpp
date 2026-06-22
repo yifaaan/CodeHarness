@@ -78,6 +78,19 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		this->BranchTabText().Text(branch);
 	}
 
+	void ChatPage::SetWorkspaceName(winrt::hstring name)
+	{
+		this->WorkspaceTabText().Text(name);
+	}
+
+	void ChatPage::SetUsage(winrt::hstring text)
+	{
+		if (auto usage = this->UsageText())
+		{
+			usage.Text(text);
+		}
+	}
+
 	// ──────────────────────── User messages ────────────────────────
 
 	void ChatPage::AppendUserMessage(winrt::hstring text)

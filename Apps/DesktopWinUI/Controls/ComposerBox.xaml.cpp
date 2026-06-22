@@ -88,13 +88,32 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		}
 	}
 
+	void ComposerBox::SetAvailableModels(std::vector<std::wstring> models)
+	{
+		m_models = std::move(models);
+		if (m_models.empty())
+		{
+			return;
+		}
+		// If the current selection isn't in the new list, snap to the first entry.
+		bool found = false;
+		for (auto const& m : m_models)
+		{
+			if (m == m_selectedModel) { found = true; break; }
+		}
+		if (!found)
+		{
+			SetSelectedModel(winrt::hstring{ m_models.front().c_str(),
+			                                 static_cast<uint32_t>(m_models.front().size()) });
+		}
+	}
+
 	void ComposerBox::OnModelSelectorClick(winrt::Windows::Foundation::IInspectable const&,
 	                                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const&)
 	{
 		auto flyout = winrt::Microsoft::UI::Xaml::Controls::MenuFlyout{};
 
-		std::vector<std::wstring> models = { L"GLM 5.2", L"GLM 5.1", L"GLM 4" };
-		for (auto const& m : models)
+		for (auto const& m : m_models)
 		{
 			auto item = winrt::Microsoft::UI::Xaml::Controls::MenuFlyoutItem{};
 			item.Text(winrt::hstring{ m.c_str(), static_cast<uint32_t>(m.size()) });

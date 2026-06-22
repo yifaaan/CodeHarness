@@ -193,6 +193,17 @@ namespace codeharness::llm
 			chunk.content = delta["content"].get<std::string>();
 		}
 
+		// Reasoning/thinking text. Different providers spell it differently
+		// (`reasoning`, `reasoning_content`); accept either when present and non-null.
+		for (const char* key : {"reasoning", "reasoning_content"})
+		{
+			if (delta.contains(key) && !delta[key].is_null() && delta[key].is_string())
+			{
+				chunk.reasoning = delta[key].get<std::string>();
+				break;
+			}
+		}
+
 		if (delta.contains("tool_calls") && delta["tool_calls"].is_array() && !delta["tool_calls"].empty())
 		{
 			const auto& tc = delta["tool_calls"][0];

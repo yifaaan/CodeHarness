@@ -67,6 +67,11 @@ namespace codeharness::llm
 		return config.thinking;
 	}
 
+	void OpenAiProvider::SetThinkingEffort(std::optional<ThinkingEffort> effort)
+	{
+		config.thinking = effort;
+	}
+
 	absl::Status OpenAiProvider::Generate(std::string_view systemPrompt, std::span<const Tool> tools, std::span<const Message> history, const StreamCallbacks& callbacks, std::stop_token stopToken)
 	{
 		spdlog::debug("openai: Generate start model={} host={} port={} tls={} path={} system_len={} history={} tools={}",
@@ -145,6 +150,12 @@ namespace codeharness::llm
 				{
 					spdlog::trace("openai: text delta bytes={}", chunk->content->size());
 					callbacks.onText(*chunk->content);
+				}
+
+				if (chunk->reasoning && callbacks.onThink)
+				{
+					spdlog::trace("openai: reasoning delta bytes={}", chunk->reasoning->size());
+					callbacks.onThink(*chunk->reasoning);
 				}
 
 				if (chunk->toolCallIndex)

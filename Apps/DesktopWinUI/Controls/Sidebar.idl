@@ -10,5 +10,13 @@ namespace CodeHarness.Desktop.Controls
 		                               Windows.Foundation.Collections.IVectorView<Int64> createdAtMs);
 		void SetWorkdir(String workdir);
 		void Focus();
+
+		// XAML-wired event handlers.
+		void OnNewChatClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnSessionDoubleTapped(Object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args);
+		void OnSettingsClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnSearchClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnSearchTextChanged(Object sender, Microsoft.UI.Xaml.Controls.TextChangedEventArgs args);
+		void OnSearchClose(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
 	}
 }

@@ -18,6 +18,7 @@
 #include "Engine/Tool.h"
 #include "Host/Host.h"
 #include "Llm/ChatProvider.h"
+#include "Llm/OpenAiProvider.h"
 #include "Mcp/McpConnectionManager.h"
 #include "Mcp/McpTypes.h"
 #include "Records/RecordJson.h"
@@ -917,6 +918,28 @@ namespace codeharness::rpc
 			return absl::OkStatus();
 		}
 		return absl::UnimplementedError("switching the provider of an active session is not implemented yet");
+	}
+
+	absl::Status CoreApi::SetThinking(std::string_view sessionId, std::optional<llm::ThinkingEffort> effort)
+	{
+		auto runtime = FindOpenRuntime(sessionId);
+		if (!runtime.ok())
+		{
+			return runtime.status();
+		}
+		auto* provider = (*runtime)->provider;
+		if (provider == nullptr)
+		{
+			return absl::InternalError("session has no provider");
+		}
+		// Only the OpenAI-compatible family supports a runtime thinking toggle today.
+		auto* openai = dynamic_cast<llm::OpenAiProvider*>(provider);
+		if (openai == nullptr)
+		{
+			return absl::UnimplementedError("this provider does not support a runtime thinking toggle");
+		}
+		openai->SetThinkingEffort(effort);
+		return absl::OkStatus();
 	}
 
 	absl::Status CoreApi::SetPermissionMode(std::string_view sessionId, config::PermissionMode permissionMode)

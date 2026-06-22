@@ -38,6 +38,8 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		void FocusComposer();
 		void SetPageTitle(winrt::hstring title);
 		void SetBranchName(winrt::hstring branch);
+		void SetWorkspaceName(winrt::hstring name);
+		void SetUsage(winrt::hstring text);
 
 		// C++-only callbacks for composer + suggestion interactions.
 		void OnSubmit(std::function<void(std::wstring)> cb);

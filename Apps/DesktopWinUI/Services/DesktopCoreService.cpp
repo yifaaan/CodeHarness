@@ -206,6 +206,82 @@ namespace codeharness::desktop_app
 		return config::PermissionMode::Manual;
 	}
 
+	std::vector<std::string> DesktopCoreService::ListModels()
+	{
+		auto models = api.ListModels();
+		if (!models.ok())
+		{
+			return {};
+		}
+		std::vector<std::string> out;
+		out.reserve(models->size());
+		for (const auto& model : *models)
+		{
+			// Prefer the alias (what SetModel consumes); fall back to the raw model id.
+			out.push_back(model.alias.empty() ? model.model : model.alias);
+		}
+		return out;
+	}
+
+	bool DesktopCoreService::SetModel(std::string model)
+	{
+		std::string sessionId;
+		{
+			std::lock_guard lock(mutex);
+			sessionId = activeSessionId;
+		}
+		if (sessionId.empty())
+		{
+			return false;
+		}
+		return api.SetModel(sessionId, model).ok();
+	}
+
+	bool DesktopCoreService::SetThinking(bool enabled)
+	{
+		std::string sessionId;
+		{
+			std::lock_guard lock(mutex);
+			sessionId = activeSessionId;
+		}
+		if (sessionId.empty())
+		{
+			return false;
+		}
+		// Map the boolean toggle to a medium effort level (on) vs disabled (off).
+		auto effort = enabled ? std::make_optional(llm::ThinkingEffort::Medium) : std::nullopt;
+		return api.SetThinking(sessionId, effort).ok();
+	}
+
+	std::string DesktopCoreService::CurrentWorkdir() const
+	{
+		auto cwd = host.GetCwd();
+		return cwd.ok() ? *cwd : std::string{};
+	}
+
+	std::string DesktopCoreService::CurrentBranch()
+	{
+		// Run `git rev-parse --abbrev-ref HEAD` in the current workdir. Returns an
+		// empty string if this isn't a git repo or git isn't available.
+		auto proc = host.ExecWithEnv(
+			{"git", "rev-parse", "--abbrev-ref", "HEAD"},
+			/*cwd=*/"",
+			/*env=*/{});
+		if (!proc.ok() || !*proc)
+		{
+			return {};
+		}
+		auto drain = (*proc)->Drain(/*timeoutMs=*/3000, {});
+		if (!drain.ok() || !drain->finished || drain->exitCode != 0)
+		{
+			return {};
+		}
+		auto& out = drain->out;
+		// Trim trailing whitespace/newlines.
+		auto end = out.find_last_not_of(" \t\r\n");
+		return (end == std::string::npos) ? std::string{} : out.substr(0, end + 1);
+	}
+
 	rpc::CreateSessionOptions DesktopCoreService::MakeSessionOptions(std::string title) const
 	{
 		auto cwd = host.GetCwd();

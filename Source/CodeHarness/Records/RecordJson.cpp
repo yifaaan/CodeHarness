@@ -199,6 +199,8 @@ namespace codeharness::records
 					obj["StepCompleted"] = {{"step", e.step}};
 				else if constexpr (std::is_same_v<T, engine::AssistantDeltaEvent>)
 					obj["AssistantDelta"] = {{"text", e.text}};
+				else if constexpr (std::is_same_v<T, engine::ThinkingDeltaEvent>)
+					obj["ThinkingDelta"] = {{"text", e.text}};
 				else if constexpr (std::is_same_v<T, engine::ToolCallStartedEvent>)
 				{
 					nlohmann::json inner = {{"id", e.id}, {"name", e.name}};
@@ -255,6 +257,12 @@ namespace codeharness::records
 			if (key == "AssistantDelta")
 			{
 				engine::AssistantDeltaEvent e;
+				e.text = inner.value("text", "");
+				return e;
+			}
+			if (key == "ThinkingDelta")
+			{
+				engine::ThinkingDeltaEvent e;
 				e.text = inner.value("text", "");
 				return e;
 			}
