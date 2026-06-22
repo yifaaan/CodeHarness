@@ -56,6 +56,13 @@ namespace codeharness::engine
 		std::string text;
 	};
 
+	// Streaming reasoning/thinking text (separate from the visible assistant text).
+	// Emitted when the provider parses a `reasoning` / `reasoning_content` delta.
+	struct ThinkingDeltaEvent
+	{
+		std::string text;
+	};
+
 	struct ToolCallStartedEvent
 	{
 		std::string id;
@@ -93,7 +100,7 @@ namespace codeharness::engine
 		std::string message;
 	};
 
-	using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent, ToolCallStartedEvent, ToolResultEvent, PermissionRequestedEvent, PermissionDeniedEvent, ErrorEvent>;
+	using LoopEvent = std::variant<StepStartedEvent, StepCompletedEvent, AssistantDeltaEvent, ThinkingDeltaEvent, ToolCallStartedEvent, ToolResultEvent, PermissionRequestedEvent, PermissionDeniedEvent, ErrorEvent>;
 
 	using EventDispatcher = std::function<void(const LoopEvent&)>;
 

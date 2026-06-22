@@ -21,5 +21,7 @@ namespace CodeHarness.Desktop.Views
 
 		void SetPageTitle(String title);
 		void SetBranchName(String branch);
+		void SetWorkspaceName(String name);
+		void SetUsage(String text);
 	}
 }

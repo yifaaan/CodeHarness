@@ -10,6 +10,7 @@
 #include "Desktop/DesktopEventJson.h"
 #include "Host/LocalHost.h"
 #include "Llm/BeastHttpClient.h"
+#include "Llm/Types.h"
 #include "Rpc/CoreApi.h"
 #include "Tools/AskUser.h"
 
@@ -41,6 +42,15 @@ namespace codeharness::desktop_app
 		void Prompt(std::string text, ErrorCallback onError);
 		void Cancel();
 		void CloseActiveSession();
+
+		// Session-scoped runtime controls (no-ops if no active session).
+		std::vector<std::string> ListModels();
+		bool SetModel(std::string model);
+		bool SetThinking(bool enabled);
+
+		// Read-only environment info (independent of any session).
+		std::string CurrentWorkdir() const;
+		std::string CurrentBranch();
 
 	private:
 		config::PermissionMode PermissionMode() const;

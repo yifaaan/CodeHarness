@@ -34,13 +34,9 @@
 
                 <!-- Header -->
                 <Grid Grid.Row="0" Padding="18,16,18,12">
-                    <TextBlock Text="Git 工具" FontSize="14" FontWeight="SemiBold"
+                    <TextBlock Text="变更" FontSize="14" FontWeight="SemiBold"
                                Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
                                VerticalAlignment="Center" />
-                    <Button Style="{StaticResource IconButtonStyle}"
-                            HorizontalAlignment="Right"
-                            Content="&#xE713;" FontFamily="Segoe MDL2 Assets"
-                            Width="28" Height="28" />
                 </Grid>
 
                 <!-- Tab Headers: 变更 / 文件 -->
@@ -100,32 +96,6 @@
                                            Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
                                            VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis" />
-                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
-                                    <Button x:Name="GitAddButton"
-                                            Style="{StaticResource ToolbarButtonStyle}"
-                                            Content="Add"
-                                            FontSize="11"
-                                            Padding="6,3,6,3"
-                                            CornerRadius="6" />
-                                    <Button x:Name="GitCommitButton"
-                                            Style="{StaticResource ToolbarButtonStyle}"
-                                            Content="Commit"
-                                            FontSize="11"
-                                            Padding="6,3,6,3"
-                                            CornerRadius="6" />
-                                    <Button x:Name="GitPushButton"
-                                            Style="{StaticResource ToolbarButtonStyle}"
-                                            Content="Push"
-                                            FontSize="11"
-                                            Padding="6,3,6,3"
-                                            CornerRadius="6" />
-                                    <Button x:Name="GitPullButton"
-                                            Style="{StaticResource ToolbarButtonStyle}"
-                                            Content="Pull"
-                                            FontSize="11"
-                                            Padding="6,3,6,3"
-                                            CornerRadius="6" />
-                                </StackPanel>
                             </Grid>
                         </Border>
 
@@ -144,6 +114,13 @@
                                        Style="{StaticResource ContextItemMetaTextStyle}"
                                        Margin="0,8,0,0" />
                         </StackPanel>
+
+                        <!-- Progress / completed steps (populated by C++) -->
+                        <TextBlock x:Name="ProgressHeader"
+                                   Text="进度"
+                                   Style="{StaticResource SidebarSectionTextStyle}"
+                                   Margin="0,16,0,4" />
+                        <StackPanel x:Name="ProgressList" Spacing="2" />
                     </StackPanel>
 
                     <!-- FILES TAB (hidden by default) -->

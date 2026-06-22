@@ -1,5 +1,6 @@
 #include "Views/ShellPage.xaml.h"
 #include "Controls/Sidebar.xaml.h"
+#include "Controls/ComposerBox.xaml.h"
 #include "Views/ChatPage.xaml.h"
 
 #include <algorithm>
@@ -41,6 +42,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		WireCoreCallbacks();
 		WireSidebarCallbacks();
 		WireChatCallbacks();
+		RefreshEnvironment();
 		LoadSessions();
 	}
 
@@ -54,31 +56,49 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		auto queue = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
 		auto chat = this->Chat();
 
-		m_core->SetEventCallback([this, queue, chat](const desktop::DesktopEvent& event) {
-			queue.TryEnqueue([this, chat, event]() {
-				if (event.type == "loop")
-				{
-					auto loop = event.payload.value("loop_event", nlohmann::json::object());
-					if (loop.contains("AssistantDelta"))
+			m_core->SetEventCallback([this, queue, chat](const desktop::DesktopEvent& event) {
+				queue.TryEnqueue([this, chat, event]() {
+					if (event.type == "loop")
 					{
-						chat.AppendAssistantDelta(winrt::hstring{ ToWide(loop["AssistantDelta"].value("text", "")) });
-					}
-					else if (loop.contains("StepStarted"))
-					{
-						m_currentSteps = loop["StepStarted"].value("step", m_currentSteps);
-						RefreshUsage();
-					}
-					else if (loop.contains("ToolCallStarted"))
-					{
-						auto tool = loop["ToolCallStarted"];
-						auto name = ToWide(tool.value("name", ""));
-						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ L"running\u2026" }, false, winrt::hstring{});
-						// Collect git-related file changes for the Git panel.
-						if (tool.contains("args"))
+						auto loop = event.payload.value("loop_event", nlohmann::json::object());
+						if (loop.contains("ThinkingDelta"))
 						{
-							CollectGitChange(tool["args"]);
+							// Accumulate reasoning text; rendered when the thinking block ends.
+							m_currentThinking += ToWide(loop["ThinkingDelta"].value("text", ""));
 						}
-					}
+						else if (loop.contains("AssistantDelta"))
+						{
+							// The assistant's visible text has started: flush any pending
+							// thinking block before appending the first text bubble.
+							if (!m_currentThinking.empty())
+							{
+								chat.AppendThinkingBlock(winrt::hstring{ m_currentThinking }, 0);
+								m_currentThinking.clear();
+							}
+							chat.AppendAssistantDelta(winrt::hstring{ ToWide(loop["AssistantDelta"].value("text", "")) });
+						}
+						else if (loop.contains("StepStarted"))
+						{
+							m_currentSteps = loop["StepStarted"].value("step", m_currentSteps);
+							RefreshUsage();
+						}
+						else if (loop.contains("ToolCallStarted"))
+						{
+							// Flush any pending thinking block before the tool card.
+							if (!m_currentThinking.empty())
+							{
+								chat.AppendThinkingBlock(winrt::hstring{ m_currentThinking }, 0);
+								m_currentThinking.clear();
+							}
+							auto tool = loop["ToolCallStarted"];
+							auto name = ToWide(tool.value("name", ""));
+							chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ L"running\u2026" }, false, winrt::hstring{});
+							// Collect git-related file changes for the Git panel.
+							if (tool.contains("args"))
+							{
+								CollectGitChange(tool["args"]);
+							}
+						}
 					else if (loop.contains("ToolResult"))
 					{
 						auto tool = loop["ToolResult"];
@@ -88,6 +108,13 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 						bool isError = (status == "error");
 						auto output = ToWide(tool.value("output", ""));
 						chat.AppendToolCard(winrt::hstring{ name }, winrt::hstring{ detail }, isError, winrt::hstring{ output });
+						// Record the completed step for the right-panel Progress section.
+						if (!isError)
+						{
+							m_completedSteps.insert(m_completedSteps.begin(), name);
+							if (m_completedSteps.size() > 50) m_completedSteps.resize(50);
+							RefreshProgress();
+						}
 						RefreshGitChanges();
 					}
 					else if (loop.contains("PermissionDenied"))
@@ -101,6 +128,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 				{
 					m_running = true;
 					m_currentSteps = 0;
+					m_currentThinking.clear();
 					chat.SetRunning(true);
 					RefreshUsage();
 				}
@@ -108,6 +136,15 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 				{
 					m_running = false;
 					chat.SetRunning(false);
+					// Flush any trailing thinking block (e.g. a turn that only produced
+					// reasoning and no visible assistant text).
+					if (!m_currentThinking.empty())
+					{
+						chat.AppendThinkingBlock(winrt::hstring{ m_currentThinking }, 0);
+						m_currentThinking.clear();
+					}
+					// Upgrade the streamed assistant bubble to rendered markdown.
+					chat.AppendAssistantComplete();
 					auto result = event.payload.value("result", nlohmann::json::object());
 					auto usage = result.value("usage", nlohmann::json::object());
 					std::int64_t turnTokens = 0;
@@ -117,7 +154,8 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 					turnTokens += usage.value("input_cache_creation", static_cast<std::int64_t>(0));
 					m_totalTokens += turnTokens;
 					m_currentSteps = 0;
-					RefreshUsage();
+					// Surface the cumulative token count in the toolbar.
+					chat.SetUsage(winrt::hstring{ L"\u7D2F\u8BA1 " + FormatTokenCount(m_totalTokens) });
 				}
 				else if (event.type == "error")
 				{
@@ -188,19 +226,46 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		}
 		chat->OnSubmit([this](std::wstring text) { SendText(std::move(text)); });
 		chat->OnCancel([this]() { CancelPrompt(); });
+
+		// Wire the composer: inject the model list from the backend and forward
+		// model/thinking changes back to the core service.
+		auto composerImpl = chat->Composer().try_as<winrt::CodeHarness::Desktop::Controls::implementation::ComposerBox>();
+		if (composerImpl)
+		{
+			std::vector<std::wstring> wideModels;
+			for (const auto& model : m_core->ListModels())
+			{
+				wideModels.push_back(ToWide(model));
+			}
+			if (!wideModels.empty())
+			{
+				composerImpl->SetAvailableModels(wideModels);
+			}
+			composerImpl->OnModelSelected([this](std::wstring model) {
+				std::string utf8 = winrt::to_string(winrt::hstring{ model.c_str(), static_cast<uint32_t>(model.size()) });
+				m_core->SetModel(utf8);
+			});
+			composerImpl->OnThinkingToggled([this](bool enabled) {
+				m_core->SetThinking(enabled);
+			});
+		}
 	}
 
 	void ShellPage::LoadSessions()
 	{
 		auto sessions = m_core->ListSessions();
-		winrt::Windows::Foundation::Collections::IVector<winrt::hstring> titles =
-			winrt::single_threaded_vector<winrt::hstring>();
+		auto titles = winrt::single_threaded_vector<winrt::hstring>();
+		auto timestamps = winrt::single_threaded_vector<std::int64_t>();
 		for (const auto& session : sessions)
 		{
 			auto title = session.title.empty() ? session.sessionId : session.title;
 			titles.Append(winrt::hstring{ ToWide(title) });
+			// updatedAt (fallback to createdAt, then now) drives the time-bucketing.
+			std::int64_t ts = session.updatedAt != 0 ? session.updatedAt
+				: (session.createdAt != 0 ? session.createdAt : 0);
+			timestamps.Append(ts);
 		}
-		this->SidebarControl().SetSessions(titles.GetView());
+		this->SidebarControl().SetSessionsWithTimestamps(titles.GetView(), timestamps.GetView());
 	}
 
 	void ShellPage::SendText(std::wstring text)
@@ -247,11 +312,12 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		// Reset accumulated state for the fresh session.
 		m_totalTokens = 0;
 		m_currentSteps = 0;
-		m_currentBranch = L"main";
 		m_gitChanges.clear();
+		m_completedSteps.clear();
+		RefreshEnvironment();
 		RefreshUsage();
 		RefreshGitChanges();
-		RefreshBranchInfo();
+		RefreshProgress();
 		LoadSessions();
 	}
 
@@ -259,18 +325,21 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	{
 		auto sessions = m_core->ListSessions();
 		std::string targetId;
+		std::string targetTitle;
 		for (const auto& session : sessions)
 		{
 			auto title = session.title.empty() ? session.sessionId : session.title;
 			if (ToWide(title) == titleHint)
 			{
 				targetId = session.sessionId;
+				targetTitle = title;
 				break;
 			}
 		}
 		if (targetId.empty() && !sessions.empty())
 		{
 			targetId = sessions.front().sessionId;
+			targetTitle = sessions.front().title.empty() ? sessions.front().sessionId : sessions.front().title;
 		}
 		if (targetId.empty())
 		{
@@ -278,6 +347,12 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		}
 		auto resumed = m_core->ResumeSession(targetId);
 		this->Chat().SetStatus(winrt::hstring{ resumed.empty() ? L"\u6062\u590D\u5931\u8D25" : L"\u4F1A\u8BDD\u5DF2\u6062\u590D" });
+		// Reflect the resumed session's title + current branch in the UI.
+		if (!targetTitle.empty())
+		{
+			this->Chat().SetPageTitle(winrt::hstring{ ToWide(targetTitle) });
+		}
+		RefreshEnvironment();
 	}
 
 	void ShellPage::CancelPrompt()
@@ -292,12 +367,38 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		panel.Spacing(12);
 		panel.Padding(Thickness{0, 8, 0, 0});
 
-		TextBlock model;
-		model.Text(L"\u6A21\u578B: ChatGLM");
-		model.FontSize(14);
-		model.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
-		panel.Children().Append(model);
+		// Workdir (read-only).
+		auto workdir = m_core->CurrentWorkdir();
+		TextBlock workdirBlock;
+		workdirBlock.Text(L"\u5DE5\u4F5C\u533A: " + ToWide(workdir));
+		workdirBlock.FontSize(14);
+		workdirBlock.TextWrapping(TextWrapping::Wrap);
+		workdirBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
+		panel.Children().Append(workdirBlock);
 
+		// Available models from the backend, with the active one marked.
+		auto models = m_core->ListModels();
+		std::wstring modelLine = L"\u53EF\u7528\u6A21\u578B: ";
+		if (models.empty())
+		{
+			modelLine += L"\uFF08\u672A\u914D\u7F6E\uFF09";
+		}
+		else
+		{
+			for (size_t i = 0; i < models.size(); ++i)
+			{
+				if (i > 0) modelLine += L"\u3001";
+				modelLine += ToWide(models[i]);
+			}
+		}
+		TextBlock modelBlock;
+		modelBlock.Text(modelLine);
+		modelBlock.FontSize(14);
+		modelBlock.TextWrapping(TextWrapping::Wrap);
+		modelBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
+		panel.Children().Append(modelBlock);
+
+		// Permission mode (the desktop always runs in Manual today; be honest).
 		TextBlock perm;
 		perm.Text(L"\u6743\u9650\u6A21\u5F0F: \u624B\u52A8\u5BA1\u6279\u6BCF\u4E2A\u5DE5\u5177");
 		perm.FontSize(14);
@@ -329,8 +430,30 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 	void ShellPage::RefreshUsage()
 	{
-		// Usage display removed from the right panel (Git tools only).
-		// Token counting is kept internally for future use.
+		// Surfaced via ChatPage::SetUsage in the turn_ended handler; nothing to do here.
+	}
+
+	void ShellPage::RefreshEnvironment()
+	{
+		// Workdir label in the sidebar and the chat header workspace pill.
+		auto workdir = m_core->CurrentWorkdir();
+		if (!workdir.empty())
+		{
+			this->SidebarControl().SetWorkdir(winrt::hstring{ ToWide(workdir) });
+			// The workspace pill shows the folder name (basename), not the full path.
+			std::wstring wworkdir = ToWide(workdir);
+			auto lastSep = wworkdir.find_last_of(L"\\/");
+			auto folderName = (lastSep != std::wstring::npos && lastSep + 1 < wworkdir.size())
+				? wworkdir.substr(lastSep + 1)
+				: wworkdir;
+			this->Chat().SetWorkspaceName(winrt::hstring{ folderName });
+		}
+
+		// Real git branch (empty if not a repo).
+		auto branch = m_core->CurrentBranch();
+		m_currentBranch = branch.empty() ? L"main" : std::wstring{ ToWide(branch) };
+		this->Chat().SetBranchName(winrt::hstring{ m_currentBranch });
+		RefreshBranchInfo();
 	}
 
 	void ShellPage::RefreshGitChanges()
@@ -409,6 +532,58 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	void ShellPage::RefreshBranchInfo()
 	{
 		this->GitBranchText().Text(winrt::hstring{ L"\u5206\u652F: " + m_currentBranch });
+	}
+
+	void ShellPage::RefreshProgress()
+	{
+		auto list = this->ProgressList();
+		auto header = this->ProgressHeader();
+		auto children = list.Children();
+		children.Clear();
+
+		// Hide the section entirely when there's nothing to show.
+		auto noProgress = m_completedSteps.empty();
+		header.Visibility(noProgress ? Visibility::Collapsed : Visibility::Visible);
+
+		if (noProgress)
+		{
+			return;
+		}
+
+		for (auto const& step : m_completedSteps)
+		{
+			Grid row;
+			ColumnDefinition checkCol;
+			checkCol.Width(GridLength{18, GridUnitType::Pixel});
+			ColumnDefinition labelCol;
+			labelCol.Width(GridLength{1, GridUnitType::Star});
+			row.ColumnDefinitions().Append(checkCol);
+			row.ColumnDefinitions().Append(labelCol);
+			row.ColumnSpacing(6);
+			row.Padding(Thickness{0, 2, 0, 2});
+
+			// Green check glyph.
+			TextBlock check;
+			check.Text(L"\uE73E");
+			check.FontFamily(Media::FontFamily(L"Segoe MDL2 Assets"));
+			check.FontSize(11);
+			check.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 22, 163, 74}));
+			check.VerticalAlignment(VerticalAlignment::Center);
+			Grid::SetColumn(check, 0);
+			row.Children().Append(check);
+
+			// Step label.
+			TextBlock label;
+			label.Text(winrt::hstring{ step });
+			label.FontSize(12);
+			label.TextTrimming(TextTrimming::CharacterEllipsis);
+			label.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
+			label.VerticalAlignment(VerticalAlignment::Center);
+			Grid::SetColumn(label, 1);
+			row.Children().Append(label);
+
+			children.Append(row);
+		}
 	}
 
 	void ShellPage::CollectGitChange(nlohmann::json const& args)

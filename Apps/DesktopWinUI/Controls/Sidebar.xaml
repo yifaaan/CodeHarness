@@ -31,7 +31,8 @@
             <StackPanel Grid.Row="1" Margin="0,8,0,4">
                 <Button x:Name="NewChatBtn"
                         Style="{StaticResource NewChatButtonStyle}"
-                        HorizontalContentAlignment="Left">
+                        HorizontalContentAlignment="Left"
+                        Click="OnNewChatClick">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="+" FontSize="16" FontWeight="Bold"
                                    Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
@@ -44,7 +45,7 @@
                 <Button x:Name="SearchBtn"
                         Style="{StaticResource SidebarButtonStyle}"
                         HorizontalContentAlignment="Left"
-                        Visibility="Visible">
+                        Click="OnSearchClick">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="&#xE71D;" FontFamily="Segoe MDL2 Assets" FontSize="13"
                                    VerticalAlignment="Center" />
@@ -78,14 +79,16 @@
                                  Background="Transparent"
                                  FontSize="13"
                                  VerticalAlignment="Center"
-                                 Padding="0" />
+                                 Padding="0"
+                                 TextChanged="OnSearchTextChanged" />
                         <Button x:Name="SearchCloseBtn"
                                 Grid.Column="2"
                                 Style="{StaticResource IconButtonStyle}"
                                 Content="&#xE711;"
                                 FontFamily="Segoe MDL2 Assets"
                                 Width="24" Height="24"
-                                FontSize="10" />
+                                FontSize="10"
+                                Click="OnSearchClose" />
                     </Grid>
                 </Border>
             </StackPanel>
@@ -161,7 +164,8 @@
                             HorizontalAlignment="Right"
                             Content="&#xE713;"
                             FontFamily="Segoe MDL2 Assets"
-                            Width="28" Height="28" />
+                            Width="28" Height="28"
+                            Click="OnSettingsClick" />
                 </Grid>
             </Border>
         </Grid>

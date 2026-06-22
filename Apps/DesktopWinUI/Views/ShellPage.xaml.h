@@ -48,13 +48,16 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		void RefreshGitChanges();
 		void RefreshBranchInfo();
 		void RefreshUsage();
+		void RefreshProgress();
+
+		// Populate the sidebar workdir, chat title/branch pills, and the Git panel
+		// branch from the live backend (workdir, git rev-parse).
+		void RefreshEnvironment();
 
 		void CollectGitChange(nlohmann::json const& args);
 
 		static std::wstring ToWide(std::string_view text);
 		static std::wstring FormatTokenCount(std::int64_t tokens);
-		static std::wstring BaseName(std::wstring const& path);
-		static std::wstring ExtensionLabel(std::wstring const& path);
 
 		std::unique_ptr<::codeharness::desktop_app::DesktopCoreService> m_core;
 		bool m_running = false;
@@ -63,6 +66,15 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		// the counters are still maintained internally for future use).
 		std::int64_t m_totalTokens = 0;
 		std::int64_t m_currentSteps = 0;
+
+		// Accumulated reasoning text for the in-flight thinking block. Flushed to
+		// ChatPage::AppendThinkingBlock when the assistant's visible text starts
+		// (first AssistantDelta) or the turn ends.
+		std::wstring m_currentThinking;
+
+		// Completed tool-call labels for the right-panel Progress section.
+		// most-recent-first, capped at 50.
+		std::vector<std::wstring> m_completedSteps;
 
 		// Git panel state.  Updated from the event callback and reset on NewChat().
 		std::wstring m_currentBranch = L"main";

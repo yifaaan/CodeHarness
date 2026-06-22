@@ -56,6 +56,7 @@ namespace codeharness::engine
 			Dispatch(input, StepStartedEvent{step});
 
 			std::string assistantText;
+			std::string thinkingText;
 			std::vector<llm::ToolCall> pendingCalls;
 			llm::FinishReason finishReason = llm::FinishReason::Other;
 			llm::TokenUsage stepUsage{};
@@ -66,7 +67,11 @@ namespace codeharness::engine
 						assistantText += text;
 						Dispatch(input, AssistantDeltaEvent{std::string(text)});
 					},
-				.onThink = {},
+				.onThink =
+					[&](std::string_view text) {
+						thinkingText += text;
+						Dispatch(input, ThinkingDeltaEvent{std::string(text)});
+					},
 				.onToolCallStart =
 					[&](int idx, std::string_view id, std::string_view name) {
 						if (idx < 0 || idx >= kMaxToolCallIndex)
@@ -153,6 +158,10 @@ namespace codeharness::engine
 
 			llm::Message assistantMsg;
 			assistantMsg.role = llm::Role::Assistant;
+			if (!thinkingText.empty())
+			{
+				assistantMsg.content.push_back(llm::ThinkPart{std::move(thinkingText), std::nullopt});
+			}
 			if (!assistantText.empty())
 			{
 				assistantMsg.content.push_back(llm::TextPart{std::move(assistantText)});

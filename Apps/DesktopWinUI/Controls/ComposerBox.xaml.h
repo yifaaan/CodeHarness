@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 namespace winrt::CodeHarness::Desktop::Controls::implementation
 {
@@ -20,6 +21,9 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		winrt::hstring SelectedModel();
 		void SetSelectedModel(winrt::hstring model);
 		bool IsThinkingEnabled();
+
+		// C++-only: populate the model picker from the backend (called by ShellPage).
+		void SetAvailableModels(std::vector<std::wstring> models);
 
 		// C++-only callbacks (sibling XAML pages set these directly).
 		void OnSubmit(std::function<void(std::wstring)> cb) { m_onSubmit = std::move(cb); }
@@ -49,6 +53,9 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		bool m_running = false;
 		bool m_thinkingEnabled = false;
 		std::wstring m_selectedModel{ L"GLM 5.2" };
+		// Model list shown in the picker. Defaults to a sensible placeholder until
+		// ShellPage injects the real list from the backend.
+		std::vector<std::wstring> m_models{ L"GLM 5.2", L"GLM 4.6", L"GLM 4.5" };
 	};
 
 } // namespace winrt::CodeHarness::Desktop::Controls::implementation

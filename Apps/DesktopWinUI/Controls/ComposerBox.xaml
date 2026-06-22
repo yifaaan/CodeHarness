@@ -34,8 +34,13 @@
                     <Border CornerRadius="999" Padding="9,3,9,3"
                             VerticalAlignment="Center"
                             Background="{ThemeResource CodeHarnessAccentTintBrush}">
-                        <TextBlock Text="手动授权模式" FontSize="11"
-                                   Foreground="{ThemeResource CodeHarnessAccentHoverBrush}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" FontSize="10"
+                                       Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="手动授权" FontSize="11"
+                                       Foreground="{ThemeResource CodeHarnessAccentHoverBrush}" />
+                        </StackPanel>
                     </Border>
 
                     <!-- Model selector button -->
