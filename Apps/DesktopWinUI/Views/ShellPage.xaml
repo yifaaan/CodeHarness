@@ -5,135 +5,424 @@
     xmlns:controls="using:CodeHarness.Desktop.Controls"
     xmlns:views="using:CodeHarness.Desktop.Views">
 
-    <Grid Background="{ThemeResource CodeHarnessBackgroundBrush}"
+    <Grid x:Name="ShellRoot"
+          Background="{ThemeResource CodeHarnessWindowBrush}"
           MinWidth="1040"
           MinHeight="640">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="300" />
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <!-- COLUMN 0 · LEFT SIDEBAR -->
-        <controls:Sidebar x:Name="SidebarControl" Grid.Column="0" />
+        <Grid Grid.Row="0"
+              Padding="16,0,16,0"
+              Background="{ThemeResource CodeHarnessTopBarBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-        <!-- COLUMN 1 · CHAT -->
-        <views:ChatPage x:Name="Chat" Grid.Column="1" />
-
-        <!-- COLUMN 2 · GIT TOOLS PANEL -->
-        <Border Grid.Column="2"
-                Background="{ThemeResource CodeHarnessContextPanelBrush}"
-                BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
-                BorderThickness="1,0,0,0">
-            <Grid Padding="0,0,0,14">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <!-- Header -->
-                <Grid Grid.Row="0" Padding="18,16,18,12">
-                    <TextBlock Text="变更" FontSize="14" FontWeight="SemiBold"
-                               Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
-                               VerticalAlignment="Center" />
-                </Grid>
-
-                <!-- Tab Headers: 变更 / 文件 -->
-                <Grid Grid.Row="1" Margin="18,0,18,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Border x:Name="ChangesTabHeader" Grid.Column="0"
-                            Padding="0,8,0,8"
-                            BorderBrush="{ThemeResource CodeHarnessAccentBrush}"
-                            BorderThickness="0,0,0,2">
-                        <TextBlock Text="变更" HorizontalAlignment="Center"
-                                   FontSize="13" FontWeight="SemiBold"
-                                   Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" />
-                    </Border>
-                    <Border x:Name="FilesTabHeader" Grid.Column="1"
-                            Padding="0,8,0,8"
-                            BorderBrush="Transparent"
-                            BorderThickness="0,0,0,2">
-                        <TextBlock Text="文件" HorizontalAlignment="Center"
-                                   FontSize="13"
-                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
-                    </Border>
-                </Grid>
-
-                <!-- Content: Changes tab (default visible) / Files tab (hidden) -->
-                <ScrollViewer Grid.Row="2"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollMode="Disabled"
-                              HorizontalScrollBarVisibility="Disabled">
-
-                    <StackPanel>
-                    <!-- CHANGES TAB -->
-                    <StackPanel x:Name="ChangesTabContent" Margin="18,0,18,0">
-
-                        <!-- Branch pill + merge/commit/push/pull buttons -->
-                        <Border Margin="0,12,0,12"
-                                CornerRadius="8"
-                                Padding="10,8,10,8"
-                                Background="{ThemeResource CodeHarnessCardBrush}"
-                                BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
-                                BorderThickness="1">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="&#xE727;"
-                                           FontFamily="Segoe MDL2 Assets" FontSize="13"
-                                           Foreground="{ThemeResource CodeHarnessAccentBrush}"
-                                           VerticalAlignment="Center" Margin="0,0,8,0" />
-                                <TextBlock x:Name="GitBranchText" Grid.Column="1"
-                                           Text="分支: main"
-                                           FontSize="12" FontWeight="Medium"
-                                           Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" />
-                            </Grid>
-                        </Border>
-
-                        <!-- Diff summary text (populated by C++) -->
-                        <TextBlock x:Name="GitDiffText"
-                                   Text=""
+            <StackPanel Grid.Column="0"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        VerticalAlignment="Center">
+                <Button Style="{StaticResource TopBarIconButtonStyle}"
+                        Content="&#xE8A7;"
+                        FontFamily="Segoe MDL2 Assets"
+                        Click="OnSidebarToggleClick" />
+                <TextBlock x:Name="TopTitleText"
+                           Text="新对话"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           MaxWidth="280" />
+                <Button x:Name="TopSessionMenuButton"
+                        Style="{StaticResource TopBarIconButtonStyle}"
+                        Width="26"
+                        Height="26"
+                        Content="&#xE712;"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="13"
+                        Click="OnTopSessionMenuClick" />
+                <Button Style="{StaticResource TopBarPillButtonStyle}"
+                        Click="OnTopGitClick">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock x:Name="TopProjectText"
+                                   Text="CodeHarness"
                                    FontSize="12"
                                    Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
-                                   Margin="0,0,0,8"
-                                   TextWrapping="Wrap" />
-
-                        <!-- File change list (populated by C++) -->
-                        <StackPanel x:Name="GitFileList" Spacing="2">
-                            <!-- Empty state -->
-                            <TextBlock Text="暂无变更"
-                                       Style="{StaticResource ContextItemMetaTextStyle}"
-                                       Margin="0,8,0,0" />
-                        </StackPanel>
-
-                        <!-- Progress / completed steps (populated by C++) -->
-                        <TextBlock x:Name="ProgressHeader"
-                                   Text="进度"
-                                   Style="{StaticResource SidebarSectionTextStyle}"
-                                   Margin="0,16,0,4" />
-                        <StackPanel x:Name="ProgressList" Spacing="2" />
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="220" />
                     </StackPanel>
+                </Button>
+            </StackPanel>
 
-                    <!-- FILES TAB (hidden by default) -->
-                    <StackPanel x:Name="FilesTabContent"
+            <TextBlock x:Name="TopStatusText"
+                       Grid.Column="1"
+                       Text="就绪"
+                       FontSize="12"
+                       Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Visibility="Collapsed" />
+
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="6"
+                        VerticalAlignment="Center">
+                <Button Style="{StaticResource TopBarPillButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="&#xE725;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="13"
+                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                   VerticalAlignment="Center" />
+                        <TextBlock x:Name="TopBranchText"
+                                   Text="main"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource CodeHarnessSecondaryTextBrush}"
+                                   VerticalAlignment="Center" />
+                        <Border x:Name="TopDirtyBadge"
                                 Visibility="Collapsed"
-                                Margin="18,12,18,0"
-                                Spacing="4">
-                        <TextBlock Text="工作区文件"
-                                   Style="{StaticResource ContextItemMetaTextStyle}" />
+                                CornerRadius="8"
+                                Padding="5,1,5,1"
+                                Background="{ThemeResource CodeHarnessAccentBrush}">
+                            <TextBlock x:Name="TopDirtyText"
+                                       Text="0"
+                                       FontSize="10"
+                                       Foreground="#FFFFFFFF" />
+                        </Border>
                     </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
-            </Grid>
-        </Border>
+                </Button>
+                <TextBlock x:Name="TopUsageText"
+                           Text=""
+                           FontSize="11"
+                           Foreground="{ThemeResource CodeHarnessFaintTextBrush}"
+                           VerticalAlignment="Center" />
+                <Button Style="{StaticResource TopBarIconButtonStyle}"
+                        Content="&#xE8B7;"
+                        FontFamily="Segoe MDL2 Assets"
+                        Click="OnTopFilesClick" />
+                <Button x:Name="WorkspaceToggleButton"
+                        Style="{StaticResource TopBarActiveIconButtonStyle}"
+                        Content="&#xE8A7;"
+                        FontFamily="Segoe MDL2 Assets"
+                        Click="OnWorkspaceToggleClick" />
+                <Button Style="{StaticResource TopBarIconButtonStyle}"
+                        Content="&#xE713;"
+                        FontFamily="Segoe MDL2 Assets"
+                        Click="OnSettingsClick" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1"
+              Padding="16,0,16,16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="240" />
+                <ColumnDefinition x:Name="SidebarGutterColumn" Width="8" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="WorkspaceGutterColumn" Width="8" />
+                <ColumnDefinition x:Name="WorkspaceColumn" Width="320" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="SidebarFrame"
+                    Grid.Column="0"
+                    Style="{StaticResource FloatingSidebarSurfaceStyle}"
+                    Translation="0,0,16">
+                <controls:Sidebar x:Name="SidebarControl" />
+            </Border>
+
+            <Border x:Name="SidebarGutter"
+                    Grid.Column="1"
+                    Style="{StaticResource ResizeGutterStyle}"
+                    PointerPressed="OnSidebarGutterPointerPressed"
+                    PointerMoved="OnSidebarGutterPointerMoved"
+                    PointerReleased="OnSidebarGutterPointerReleased"
+                    PointerCanceled="OnSidebarGutterPointerCanceled"
+                    DoubleTapped="OnSidebarGutterDoubleTapped">
+                <Border Style="{StaticResource ResizeGutterLineStyle}" />
+            </Border>
+
+            <Border Grid.Column="2"
+                    Style="{StaticResource FloatingCardSurfaceStyle}"
+                    Translation="0,0,16">
+                <views:ChatPage x:Name="Chat" />
+            </Border>
+
+            <Border x:Name="WorkspaceGutter"
+                    Grid.Column="3"
+                    Style="{StaticResource ResizeGutterStyle}"
+                    PointerPressed="OnWorkspaceGutterPointerPressed"
+                    PointerMoved="OnWorkspaceGutterPointerMoved"
+                    PointerReleased="OnWorkspaceGutterPointerReleased"
+                    PointerCanceled="OnWorkspaceGutterPointerCanceled"
+                    DoubleTapped="OnWorkspaceGutterDoubleTapped">
+                <Border Style="{StaticResource ResizeGutterLineStyle}" />
+            </Border>
+
+            <Border x:Name="WorkspaceFrame"
+                    Grid.Column="4"
+                    Style="{StaticResource FloatingWorkspaceSurfaceStyle}"
+                    Translation="0,0,16">
+                <Grid Padding="0,0,0,14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Padding="8,6,8,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="2"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="WorkspaceGitTabButton"
+                                    Style="{StaticResource WorkspaceTabActiveButtonStyle}"
+                                    Click="OnWorkspaceGitTabClick">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="&#xE725;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Git" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="WorkspaceProgressTabButton"
+                                    Style="{StaticResource WorkspaceTabButtonStyle}"
+                                    Click="OnWorkspaceProgressTabClick">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="&#xE9D9;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Progress" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="WorkspaceFilesTabButton"
+                                    Style="{StaticResource WorkspaceTabButtonStyle}"
+                                    Click="OnWorkspaceFilesTabClick">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="&#xE8B7;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="13"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="Files" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Style="{StaticResource TopBarIconButtonStyle}"
+                                Width="28"
+                                Height="28"
+                                Content="&#xE711;"
+                                FontFamily="Segoe MDL2 Assets"
+                                Click="OnWorkspaceToggleClick" />
+                    </Grid>
+
+                    <Grid Grid.Row="1">
+                        <ScrollViewer x:Name="WorkspaceGitTabContent"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollMode="Disabled"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="16,0,16,0" Spacing="12">
+                                <Border Style="{StaticResource GitBranchPillStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0"
+                                                   Text="&#xE725;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="13"
+                                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,8,0" />
+                                        <TextBlock x:Name="GitBranchText"
+                                                   Grid.Column="1"
+                                                   Text="分支: main"
+                                                   FontSize="12"
+                                                   FontWeight="Medium"
+                                                   Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </Border>
+
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="变更"
+                                               Style="{StaticResource ContextSectionTextStyle}" />
+                                    <TextBlock x:Name="GitDiffText"
+                                               Text=""
+                                               FontSize="12"
+                                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                               TextWrapping="Wrap" />
+                                    <StackPanel x:Name="GitFileList" Spacing="2">
+                                        <TextBlock Text="暂无文件变更。开始对话后，Git 命令的结果将在此显示。"
+                                                   Style="{StaticResource ContextItemMetaTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <ScrollViewer x:Name="WorkspaceProgressTabContent"
+                                      Visibility="Collapsed"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollMode="Disabled"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="16,0,16,0" Spacing="8">
+                                <TextBlock x:Name="ProgressHeader"
+                                           Text="Progress"
+                                           Style="{StaticResource ContextSectionTextStyle}" />
+                                <TextBlock x:Name="ProgressEmptyText"
+                                           Text="工具调用和完成的步骤会显示在这里。"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                           TextWrapping="Wrap" />
+                                <StackPanel x:Name="ProgressList" Spacing="2" />
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <ScrollViewer x:Name="WorkspaceFilesTabContent"
+                                      Visibility="Collapsed"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollMode="Disabled"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="12,0,12,0" Spacing="8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="FilesRootText"
+                                               Text="."
+                                               FontSize="11"
+                                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="2">
+                                        <Button Style="{StaticResource TopBarIconButtonStyle}"
+                                                Width="28"
+                                                Height="28"
+                                                Content="&#xE710;"
+                                                FontFamily="Segoe MDL2 Assets"
+                                                Click="OnFilesNewFileClick" />
+                                        <Button Style="{StaticResource TopBarIconButtonStyle}"
+                                                Width="28"
+                                                Height="28"
+                                                Content="&#xE8F4;"
+                                                FontFamily="Segoe MDL2 Assets"
+                                                Click="OnFilesNewFolderClick" />
+                                        <Button Style="{StaticResource TopBarIconButtonStyle}"
+                                                Width="28"
+                                                Height="28"
+                                                Content="&#xE72C;"
+                                                FontFamily="Segoe MDL2 Assets"
+                                                Click="OnFilesRefreshClick" />
+                                    </StackPanel>
+                                </Grid>
+                                <Border x:Name="FilesNewItemPanel"
+                                        Visibility="Collapsed"
+                                        Background="{ThemeResource CodeHarnessSubtleCardBrush}"
+                                        BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="10,8,10,8">
+                                    <StackPanel Spacing="6">
+                                        <TextBlock x:Name="FilesNewItemPathText"
+                                                   Text="./"
+                                                   FontSize="10"
+                                                   FontFamily="Consolas"
+                                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="FilesNewItemKindText"
+                                                       Text="File"
+                                                       FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{ThemeResource CodeHarnessSecondaryTextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,8,0" />
+                                            <TextBox x:Name="FilesNewItemBox"
+                                                     Grid.Column="1"
+                                                     Height="30"
+                                                     FontSize="12"
+                                                     Padding="8,4,8,4"
+                                                     BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+                                                     Background="{ThemeResource CodeHarnessCardBrush}"
+                                                     KeyDown="OnFilesNewItemKeyDown" />
+                                            <Button Grid.Column="2"
+                                                    Style="{StaticResource GitActionButtonStyle}"
+                                                    Margin="6,0,0,0"
+                                                    Content="创建"
+                                                    Click="OnFilesCreateItemClick" />
+                                            <Button Grid.Column="3"
+                                                    Style="{StaticResource TopBarIconButtonStyle}"
+                                                    Width="28"
+                                                    Height="28"
+                                                    Content="&#xE711;"
+                                                    FontFamily="Segoe MDL2 Assets"
+                                                    Click="OnFilesCancelNewItemClick" />
+                                        </Grid>
+                                        <TextBlock x:Name="FilesNewItemErrorText"
+                                                   Visibility="Collapsed"
+                                                   FontSize="11"
+                                                   Foreground="#FFB91C1C"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="{ThemeResource CodeHarnessSubtleCardBrush}"
+                                        CornerRadius="10"
+                                        Padding="8,2,8,2"
+                                        Height="34">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="&#xE721;"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12"
+                                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="2,0,6,0" />
+                                        <TextBox x:Name="FilesSearchBox"
+                                                 Grid.Column="1"
+                                                 PlaceholderText="搜索文件..."
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 FontSize="12"
+                                                 Padding="0"
+                                                 VerticalAlignment="Center"
+                                                 TextChanged="OnFilesSearchTextChanged" />
+                                    </Grid>
+                                </Border>
+                                <TextBlock x:Name="FilesEmptyText"
+                                           Text="暂无可显示文件。"
+                                           FontSize="12"
+                                           Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                           TextWrapping="Wrap" />
+                                <StackPanel x:Name="FilesList" Spacing="1" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Page>

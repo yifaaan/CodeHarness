@@ -36,6 +36,8 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		void AppendTimestamp(winrt::hstring text);
 		void ResetTranscript();
 		void FocusComposer();
+		void InsertComposerText(winrt::hstring text);
+		void AddComposerAttachment(winrt::hstring path, bool directory);
 		void SetPageTitle(winrt::hstring title);
 		void SetBranchName(winrt::hstring branch);
 		void SetWorkspaceName(winrt::hstring name);
@@ -52,6 +54,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	private:
 		void ScrollMessagesToBottom();
 		void ShowStatus(std::wstring const& text);
+		void UpdateWelcomeText();
 		std::wstring ToStd(winrt::hstring const& text) const;
 		winrt::hstring ToHstring(std::wstring const& text) const;
 		void RenderMarkdownToRichText(winrt::Microsoft::UI::Xaml::Controls::RichTextBlock const& rtb,
@@ -64,6 +67,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		bool m_running = false;
 		bool m_assistantBubbleOpen = false;
 		bool m_thinkingBubbleOpen = false;
+		std::wstring m_workspaceName = L"CodeHarness";
 		std::wstring m_currentAssistantText;
 		std::vector<winrt::Microsoft::UI::Xaml::Controls::Border> m_assistantBubbles;
 		winrt::Microsoft::UI::Xaml::Controls::Expander m_currentThinkingExpander{ nullptr };

@@ -7,5 +7,31 @@ namespace CodeHarness.Desktop.Views
 
 		void Initialize();
 		void FocusComposer();
+		void OnTopSessionMenuClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnTopGitClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnTopFilesClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnSidebarToggleClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnWorkspaceToggleClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnWorkspaceGitTabClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnWorkspaceProgressTabClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnWorkspaceFilesTabClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnFilesNewFileClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnFilesNewFolderClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnFilesCreateItemClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnFilesCancelNewItemClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnFilesNewItemKeyDown(Object sender, Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args);
+		void OnFilesRefreshClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
+		void OnFilesSearchTextChanged(Object sender, Microsoft.UI.Xaml.Controls.TextChangedEventArgs args);
+		void OnSidebarGutterPointerPressed(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnSidebarGutterPointerMoved(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnSidebarGutterPointerReleased(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnSidebarGutterPointerCanceled(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnSidebarGutterDoubleTapped(Object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args);
+		void OnWorkspaceGutterPointerPressed(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnWorkspaceGutterPointerMoved(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnWorkspaceGutterPointerReleased(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnWorkspaceGutterPointerCanceled(Object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args);
+		void OnWorkspaceGutterDoubleTapped(Object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs args);
+		void OnSettingsClick(Object sender, Microsoft.UI.Xaml.RoutedEventArgs args);
 	}
 }

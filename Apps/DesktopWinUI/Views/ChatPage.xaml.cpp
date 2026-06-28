@@ -1,6 +1,8 @@
 #include "Views/ChatPage.xaml.h"
 #include "Controls/ComposerBox.xaml.h"
 
+#include <chrono>
+#include <memory>
 #include <winrt/base.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
@@ -21,6 +23,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	ChatPage::ChatPage()
 	{
 		this->InitializeComponent();
+		UpdateWelcomeText();
 
 		// Forward composer signals to whoever owns the chat (ShellPage).
 		auto composerImpl = this->Composer()
@@ -56,11 +59,18 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		if (auto panel = this->EmptyStatePanel())
 		{
 			panel.Visibility(empty ? Visibility::Visible : Visibility::Collapsed);
+			if (empty)
+			{
+				UpdateWelcomeText();
+			}
 		}
 		if (auto scroll = this->MessagesScroll())
 		{
 			scroll.Visibility(empty ? Visibility::Collapsed : Visibility::Visible);
 		}
+		Grid::SetRow(this->Composer(), empty ? 0 : 2);
+		this->Composer().VerticalAlignment(empty ? VerticalAlignment::Center : VerticalAlignment::Bottom);
+		this->Composer().Margin(empty ? Thickness{0, 124, 0, 0} : Thickness{0, 0, 0, 0});
 	}
 
 	void ChatPage::SetStatus(winrt::hstring status)
@@ -81,6 +91,12 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	void ChatPage::SetWorkspaceName(winrt::hstring name)
 	{
 		this->WorkspaceTabText().Text(name);
+		m_workspaceName = std::wstring{ name.c_str(), name.size() };
+		if (m_workspaceName.empty())
+		{
+			m_workspaceName = L"CodeHarness";
+		}
+		UpdateWelcomeText();
 	}
 
 	void ChatPage::SetUsage(winrt::hstring text)
@@ -95,18 +111,37 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 	void ChatPage::AppendUserMessage(winrt::hstring text)
 	{
-		AppendStatusMessage(text);
+		Border bubble;
+		winrt::Microsoft::UI::Xaml::CornerRadius radius{16, 16, 16, 16};
+		bubble.CornerRadius(radius);
+		bubble.Padding(Thickness{14, 10, 14, 10});
+		bubble.MaxWidth(680);
+		bubble.HorizontalAlignment(HorizontalAlignment::Right);
+		bubble.Background(Media::SolidColorBrush(Windows::UI::Color{255, 245, 245, 244}));
+
+		TextBlock textBlock;
+		textBlock.Text(text);
+		textBlock.TextWrapping(TextWrapping::Wrap);
+		textBlock.FontSize(14);
+		textBlock.IsTextSelectionEnabled(true);
+		textBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 36, 36, 36}));
+		bubble.Child(textBlock);
+		this->MessagesPanel().Children().Append(bubble);
+		ScrollMessagesToBottom();
+		m_assistantBubbleOpen = false;
 	}
 
 	void ChatPage::AppendStatusMessage(winrt::hstring text)
 	{
 		Border bubble;
-		winrt::Microsoft::UI::Xaml::CornerRadius radius{12, 12, 12, 12};
+		winrt::Microsoft::UI::Xaml::CornerRadius radius{14, 14, 14, 14};
 		bubble.CornerRadius(radius);
-		bubble.Padding(Thickness{14, 10, 14, 10});
-		bubble.MaxWidth(760);
-		bubble.HorizontalAlignment(HorizontalAlignment::Right);
-		bubble.Background(Media::SolidColorBrush(Windows::UI::Color{255, 234, 247, 239}));
+		bubble.Padding(Thickness{12, 9, 12, 9});
+		bubble.MaxWidth(680);
+		bubble.HorizontalAlignment(HorizontalAlignment::Stretch);
+		bubble.Background(Media::SolidColorBrush(Windows::UI::Color{255, 246, 246, 244}));
+		bubble.BorderBrush(Media::SolidColorBrush(Windows::UI::Color{255, 229, 229, 226}));
+		bubble.BorderThickness(Thickness{1});
 
 		TextBlock textBlock;
 		textBlock.Text(text);
@@ -134,12 +169,13 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 			CloseToolCard();
 
 			Border bubble;
-			winrt::Microsoft::UI::Xaml::CornerRadius radius{12, 12, 12, 12};
+			winrt::Microsoft::UI::Xaml::CornerRadius radius{0, 0, 0, 0};
 			bubble.CornerRadius(radius);
-			bubble.Padding(Thickness{14, 10, 14, 10});
+			bubble.Padding(Thickness{0, 0, 0, 0});
 			bubble.MaxWidth(760);
 			bubble.HorizontalAlignment(HorizontalAlignment::Stretch);
-			bubble.Background(Media::SolidColorBrush(Windows::UI::Color{255, 246, 246, 245}));
+			bubble.Background(Media::SolidColorBrush(Windows::UI::Color{0, 255, 255, 255}));
+			bubble.BorderThickness(Thickness{0});
 
 			TextBlock textBlock;
 			textBlock.Text(ToHstring(m_currentAssistantText));
@@ -280,6 +316,9 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		m_assistantBubbleOpen = false;
 		m_currentAssistantText.clear();
 		CloseToolCard();
+		auto detailText = std::wstring{ detail.c_str(), detail.size() };
+		auto isRunning = detailText.find(L"running") != std::wstring::npos;
+		auto hasOutput = !fullOutput.empty();
 
 		// Outer card border.
 		Border card;
@@ -313,12 +352,12 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		Grid headerGrid;
 		{
 			ColumnDefinition chevronCol;
-			chevronCol.Width(GridLength{20, GridUnitType::Pixel});
+			chevronCol.Width(GridLength{16, GridUnitType::Pixel});
 			headerGrid.ColumnDefinitions().Append(chevronCol);
 		}
 		{
 			ColumnDefinition iconCol;
-			iconCol.Width(GridLength{22, GridUnitType::Pixel});
+			iconCol.Width(GridLength{18, GridUnitType::Pixel});
 			headerGrid.ColumnDefinitions().Append(iconCol);
 		}
 		{
@@ -333,12 +372,14 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		}
 		headerGrid.ColumnSpacing(6);
 		headerGrid.VerticalAlignment(VerticalAlignment::Center);
-		headerGrid.Margin(Thickness{2, 4, 2, 4});
+		headerGrid.MinHeight(28);
+		headerGrid.Margin(Thickness{0, 0, 0, 0});
+		headerGrid.Background(Media::SolidColorBrush(Windows::UI::Color{0, 255, 255, 255}));
 		Grid::SetRow(headerGrid, 0);
 
 		// Expand/collapse chevron.
 		TextBlock chevron;
-		chevron.Text(L"\uE70D");
+		chevron.Text(hasOutput ? L"\uE70D" : L"");
 		chevron.FontFamily(Media::FontFamily(L"Segoe MDL2 Assets"));
 		chevron.FontSize(9);
 		chevron.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 138, 138, 134}));
@@ -349,11 +390,13 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 		// Status icon.
 		TextBlock icon;
-		icon.Text(isError ? L"\uE783" : L"\uE9D9");
+		icon.Text(isError ? L"\uE783" : (isRunning ? L"\uE895" : L"\uE73E"));
 		icon.FontFamily(Media::FontFamily(L"Segoe MDL2 Assets"));
 		icon.FontSize(12);
-		icon.Foreground(Media::SolidColorBrush(isError ? Windows::UI::Color{255, 191, 22, 22}
-		                                               : Windows::UI::Color{255, 22, 163, 74}));
+		icon.Foreground(Media::SolidColorBrush(isError
+			? Windows::UI::Color{255, 191, 22, 22}
+			: (isRunning ? Windows::UI::Color{255, 133, 133, 125}
+			             : Windows::UI::Color{255, 22, 163, 74})));
 		icon.VerticalAlignment(VerticalAlignment::Center);
 		Grid::SetColumn(icon, 1);
 		headerGrid.Children().Append(icon);
@@ -361,8 +404,8 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		// Tool name.
 		TextBlock nameBlock;
 		nameBlock.Text(name);
-		nameBlock.FontSize(13);
-		nameBlock.FontWeight(Windows::UI::Text::FontWeight{600});
+		nameBlock.FontSize(12);
+		nameBlock.FontWeight(Windows::UI::Text::FontWeight{500});
 		nameBlock.TextTrimming(TextTrimming::CharacterEllipsis);
 		nameBlock.Foreground(Media::SolidColorBrush(Windows::UI::Color{255, 31, 31, 30}));
 		nameBlock.VerticalAlignment(VerticalAlignment::Center);
@@ -372,7 +415,7 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		// Status indicator.
 		TextBlock statusBlock;
 		statusBlock.Text(detail);
-		statusBlock.FontSize(12);
+		statusBlock.FontSize(11);
 		statusBlock.Foreground(Media::SolidColorBrush(isError ? Windows::UI::Color{255, 191, 22, 22}
 		                                                      : Windows::UI::Color{255, 138, 138, 134}));
 		statusBlock.VerticalAlignment(VerticalAlignment::Center);
@@ -386,6 +429,10 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 		outputBorder.Visibility(Visibility::Collapsed);
 		outputBorder.Margin(Thickness{24, 4, 4, 4});
 		outputBorder.MaxWidth(700);
+		winrt::Microsoft::UI::Xaml::CornerRadius outputRadius{8, 8, 8, 8};
+		outputBorder.CornerRadius(outputRadius);
+		outputBorder.Padding(Thickness{10, 8, 10, 8});
+		outputBorder.Background(Media::SolidColorBrush(Windows::UI::Color{255, 245, 245, 244}));
 
 		TextBlock outputText;
 		outputText.Text(fullOutput);
@@ -400,12 +447,18 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 
 		// Bind Tapped on the header to toggle expand/collapse.
 		m_currentToolCard = grid;
-		headerGrid.Tapped([this, outputBorder, chevron](Windows::Foundation::IInspectable const&,
-		                                                 Input::TappedRoutedEventArgs const&)
+		auto expanded = std::make_shared<bool>(false);
+		headerGrid.Tapped([expanded, outputBorder, chevron, hasOutput](Windows::Foundation::IInspectable const&,
+		                                                               Input::TappedRoutedEventArgs const& args)
 		{
-			m_toolCardExpanded = !m_toolCardExpanded;
-			outputBorder.Visibility(m_toolCardExpanded ? Visibility::Visible : Visibility::Collapsed);
-			chevron.Text(m_toolCardExpanded ? L"\uE70E" : L"\uE70D");
+			args.Handled(true);
+			if (!hasOutput)
+			{
+				return;
+			}
+			*expanded = !*expanded;
+			outputBorder.Visibility(*expanded ? Visibility::Visible : Visibility::Collapsed);
+			chevron.Text(*expanded ? L"\uE70E" : L"\uE70D");
 		});
 
 		card.Child(grid);
@@ -451,6 +504,16 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	void ChatPage::FocusComposer()
 	{
 		this->Composer().FocusPrompt();
+	}
+
+	void ChatPage::InsertComposerText(winrt::hstring text)
+	{
+		this->Composer().InsertPromptText(text);
+	}
+
+	void ChatPage::AddComposerAttachment(winrt::hstring path, bool directory)
+	{
+		this->Composer().AddContextAttachment(path, directory);
 	}
 
 	void ChatPage::OnSubmit(std::function<void(std::wstring)> cb)
@@ -632,6 +695,55 @@ namespace winrt::CodeHarness::Desktop::Views::implementation
 	void ChatPage::ShowStatus(std::wstring const& text)
 	{
 		this->StatusText().Text(winrt::hstring{ text.c_str(), static_cast<uint32_t>(text.size()) });
+	}
+
+	void ChatPage::UpdateWelcomeText()
+	{
+		auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+		tm localTime{};
+		localtime_s(&localTime, &now);
+
+		std::wstring salutation;
+		auto hour = localTime.tm_hour;
+		if (hour >= 5 && hour < 12)
+		{
+			salutation = L"早上好";
+		}
+		else if (hour >= 12 && hour < 18)
+		{
+			salutation = L"下午好";
+		}
+		else if (hour >= 18 && hour < 23)
+		{
+			salutation = L"晚上好";
+		}
+		else
+		{
+			salutation = L"夜深了";
+		}
+
+		std::wstring question;
+		if (m_workspaceName.empty() || m_workspaceName == L"CodeHarness")
+		{
+			question = L"今天想让 CodeHarness 做什么？";
+		}
+		else
+		{
+			switch (hour % 3)
+			{
+			case 0:
+				question = L"想在 " + m_workspaceName + L" 里推进什么？";
+				break;
+			case 1:
+				question = L"今天要让 " + m_workspaceName + L" 变好一点吗？";
+				break;
+			default:
+				question = L"想检查、修改还是探索 " + m_workspaceName + L"？";
+				break;
+			}
+		}
+
+		this->WelcomeText().Text(winrt::hstring{ salutation + L"，" + question });
 	}
 
 	std::wstring ChatPage::ToStd(winrt::hstring const& text) const

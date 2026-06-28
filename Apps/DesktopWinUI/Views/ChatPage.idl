@@ -18,6 +18,8 @@ namespace CodeHarness.Desktop.Views
 		void AppendTimestamp(String text);
 		void ResetTranscript();
 		void FocusComposer();
+		void InsertComposerText(String text);
+		void AddComposerAttachment(String path, Boolean directory);
 
 		void SetPageTitle(String title);
 		void SetBranchName(String branch);

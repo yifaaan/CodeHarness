@@ -38,6 +38,9 @@ namespace codeharness::desktop_app
 		std::vector<desktop::DesktopSessionItem> ListSessions();
 		std::string CreateSession(std::string title);
 		std::string ResumeSession(std::string sessionId);
+		bool RenameSession(std::string sessionId, std::string title);
+		std::string ForkSession(std::string sessionId, std::string title = {});
+		bool RemoveSession(std::string sessionId);
 		bool HasActiveSession() const;
 		void Prompt(std::string text, ErrorCallback onError);
 		void Cancel();

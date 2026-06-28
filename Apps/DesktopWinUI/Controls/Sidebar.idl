@@ -8,6 +8,10 @@ namespace CodeHarness.Desktop.Controls
 		void SetSessions(Windows.Foundation.Collections.IVectorView<String> sessions);
 		void SetSessionsWithTimestamps(Windows.Foundation.Collections.IVectorView<String> titles,
 		                               Windows.Foundation.Collections.IVectorView<Int64> createdAtMs);
+		void SetSessionItems(Windows.Foundation.Collections.IVectorView<String> titles,
+		                     Windows.Foundation.Collections.IVectorView<String> sessionIds,
+		                     Windows.Foundation.Collections.IVectorView<Int64> createdAtMs);
+		void SetActiveSession(String title);
 		void SetWorkdir(String workdir);
 		void Focus();
 

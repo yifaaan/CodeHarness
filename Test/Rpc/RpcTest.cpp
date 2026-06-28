@@ -217,6 +217,25 @@ TEST_CASE("CoreApi: ListSessions returns created sessions")
 	CHECK(sessions->front().sessionId == *sessionId);
 }
 
+TEST_CASE("CoreApi: RemoveSession deletes active stored session")
+{
+	TmpDirFixture f;
+	MockChatProvider provider;
+	auto api = MakeCoreApi(f.host, provider);
+
+	auto sessionId = api.CreateSession(YoloSession(f.tmpDir.string()));
+	REQUIRE(sessionId.ok());
+	CHECK(api.RemoveSession(*sessionId).ok());
+
+	auto sessions = api.ListSessions(f.tmpDir.string());
+	REQUIRE(sessions.ok());
+	CHECK(sessions->empty());
+
+	auto info = api.GetSessionInfo(*sessionId);
+	CHECK_FALSE(info.ok());
+	CHECK(absl::IsNotFound(info.status()));
+}
+
 TEST_CASE("CoreApi: prompt emits turn and assistant events")
 {
 	TmpDirFixture f;

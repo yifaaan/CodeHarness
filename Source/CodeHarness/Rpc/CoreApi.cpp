@@ -769,6 +769,36 @@ namespace codeharness::rpc
 		return sessionStore->RenameTitle(meta->workdir, dir->sessionId, title);
 	}
 
+	absl::Status CoreApi::RemoveSession(std::string_view sessionId)
+	{
+		auto dir = FindSessionDir(sessionId);
+		if (!dir.ok())
+		{
+			return dir.status();
+		}
+		auto meta = sessionStore->ReadMeta(dir->path);
+		if (!meta.ok())
+		{
+			return meta.status();
+		}
+
+		auto active = sessions.find(dir->sessionId);
+		if (active != sessions.end())
+		{
+			if (!active->second->closed)
+			{
+				auto close = CloseSession(dir->sessionId);
+				if (!close.ok())
+				{
+					return close;
+				}
+			}
+			sessions.erase(active);
+		}
+
+		return sessionStore->Remove(meta->workdir, dir->sessionId);
+	}
+
 	absl::StatusOr<std::string> CoreApi::ForkSession(std::string_view sessionId, std::string_view title)
 	{
 		auto dir = FindSessionDir(sessionId);

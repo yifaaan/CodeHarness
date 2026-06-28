@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace winrt::CodeHarness::Desktop::Controls::implementation
@@ -18,6 +19,8 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		// IDL-projected surface.
 		void SetRunning(bool running);
 		void FocusPrompt();
+		void InsertPromptText(winrt::hstring text);
+		void AddContextAttachment(winrt::hstring path, bool directory);
 		winrt::hstring SelectedModel();
 		void SetSelectedModel(winrt::hstring model);
 		bool IsThinkingEnabled();
@@ -38,13 +41,29 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		                 winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
 		void OnCancelClick(winrt::Windows::Foundation::IInspectable const& sender,
 		                   winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+		void OnActionMenuClick(winrt::Windows::Foundation::IInspectable const& sender,
+		                       winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+		void OnModeSelectorClick(winrt::Windows::Foundation::IInspectable const& sender,
+		                         winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
 		void OnModelSelectorClick(winrt::Windows::Foundation::IInspectable const& sender,
 		                           winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
+		void OnPermissionSelectorClick(winrt::Windows::Foundation::IInspectable const& sender,
+		                               winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
 		void OnThinkingClick(winrt::Windows::Foundation::IInspectable const& sender,
 		                      winrt::Microsoft::UI::Xaml::RoutedEventArgs const& args);
 
 	private:
+		struct ContextAttachment
+		{
+			std::wstring path;
+			bool directory = false;
+		};
+
 		void SubmitCurrent();
+		void InsertPromptToken(std::wstring_view token);
+		void RemoveContextAttachment(std::wstring const& path, bool directory);
+		void RebuildAttachmentChips();
+		std::wstring BuildAttachmentPrefix() const;
 
 		std::function<void(std::wstring)> m_onSubmit;
 		std::function<void()> m_onCancel;
@@ -53,6 +72,7 @@ namespace winrt::CodeHarness::Desktop::Controls::implementation
 		bool m_running = false;
 		bool m_thinkingEnabled = false;
 		std::wstring m_selectedModel{ L"GLM 5.2" };
+		std::vector<ContextAttachment> m_contextAttachments;
 		// Model list shown in the picker. Defaults to a sensible placeholder until
 		// ShellPage injects the real list from the backend.
 		std::vector<std::wstring> m_models{ L"GLM 5.2", L"GLM 4.6", L"GLM 4.5" };

@@ -41,6 +41,7 @@ namespace codeharness::rpc
 		absl::StatusOr<std::vector<session::SessionInfo>> ListSessions(std::string_view workdir = {});
 		absl::StatusOr<CoreSessionInfo> GetSessionInfo(std::string_view sessionId);
 		absl::Status RenameSession(std::string_view sessionId, std::string_view title);
+		absl::Status RemoveSession(std::string_view sessionId);
 		absl::StatusOr<std::string> ForkSession(std::string_view sessionId, std::string_view title = {});
 		absl::StatusOr<std::string> ExportSessionZip(std::string_view sessionId, std::string_view outputPath = {});
 

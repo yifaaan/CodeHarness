@@ -7,6 +7,8 @@ namespace CodeHarness.Desktop.Controls
 
 		void SetRunning(Boolean running);
 		void FocusPrompt();
+		void InsertPromptText(String text);
+		void AddContextAttachment(String path, Boolean directory);
 
 		String SelectedModel{ get; };
 		void SetSelectedModel(String model);

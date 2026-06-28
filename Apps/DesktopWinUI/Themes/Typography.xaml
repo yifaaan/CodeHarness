@@ -3,8 +3,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <Style x:Key="HeroTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="28" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="30" />
+        <Setter Property="FontWeight" Value="Medium" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
     </Style>
 

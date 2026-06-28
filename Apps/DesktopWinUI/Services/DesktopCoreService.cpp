@@ -138,6 +138,63 @@ namespace codeharness::desktop_app
 		return activeSessionId;
 	}
 
+	bool DesktopCoreService::RenameSession(std::string sessionId, std::string title)
+	{
+		if (sessionId.empty() || title.empty())
+		{
+			return false;
+		}
+		return api.RenameSession(sessionId, title).ok();
+	}
+
+	std::string DesktopCoreService::ForkSession(std::string sessionId, std::string title)
+	{
+		if (sessionId.empty())
+		{
+			return {};
+		}
+		auto forked = api.ForkSession(sessionId, title);
+		if (!forked.ok())
+		{
+			return {};
+		}
+		return *forked;
+	}
+
+	bool DesktopCoreService::RemoveSession(std::string sessionId)
+	{
+		if (sessionId.empty())
+		{
+			return false;
+		}
+
+		bool deletingActive = false;
+		{
+			std::lock_guard lock(mutex);
+			deletingActive = activeSessionId == sessionId;
+		}
+		if (deletingActive && promptTask.valid())
+		{
+			promptTask.wait();
+		}
+
+		auto removed = api.RemoveSession(sessionId);
+		if (!removed.ok())
+		{
+			return false;
+		}
+
+		if (deletingActive)
+		{
+			std::lock_guard lock(mutex);
+			if (activeSessionId == sessionId)
+			{
+				activeSessionId.clear();
+			}
+		}
+		return true;
+	}
+
 	bool DesktopCoreService::HasActiveSession() const
 	{
 		std::lock_guard lock(mutex);

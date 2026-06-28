@@ -3,171 +3,267 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Border Background="{ThemeResource CodeHarnessSidebarBrush}"
-            BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
-            BorderThickness="0,0,1,0">
-        <Grid Padding="0,16,0,14">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+    <Grid Padding="0,8,0,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-            <!-- Brand -->
-            <Grid Margin="18,0,18,4" Height="34">
-                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <Border Width="26" Height="26" CornerRadius="7"
-                            Background="{ThemeResource CodeHarnessAccentBrush}">
-                        <TextBlock Text="C" Foreground="#FFFFFFFF" FontSize="15" FontWeight="Bold"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+        <!-- Quick actions -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,6" Spacing="1">
+            <Button x:Name="NewChatBtn"
+                    Style="{StaticResource NewChatButtonStyle}"
+                    HorizontalContentAlignment="Left"
+                    Click="OnNewChatClick">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <TextBlock Text="&#xE710;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="新建会话" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+
+            <Button x:Name="SearchBtn"
+                    Style="{StaticResource SidebarButtonStyle}"
+                    HorizontalContentAlignment="Left"
+                    Click="OnSearchClick">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <TextBlock Text="&#xE721;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="搜索会话" VerticalAlignment="Center" />
+                    <Border Margin="8,0,0,0"
+                            Padding="5,1,5,1"
+                            CornerRadius="4"
+                            Background="{ThemeResource CodeHarnessSubtleCardBrush}">
+                        <TextBlock Text="Ctrl K"
+                                   FontSize="10"
+                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
                     </Border>
-                    <TextBlock Text="CodeHarness" Style="{StaticResource BrandTextStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    HorizontalContentAlignment="Left"
+                    IsEnabled="False">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <TextBlock Text="&#xECAA;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="插件" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    HorizontalContentAlignment="Left"
+                    IsEnabled="False">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <TextBlock Text="&#xEB9F;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="图库" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+
+            <Border x:Name="SearchBoxPanel"
+                    Visibility="Collapsed"
+                    Margin="8,5,8,3"
+                    Background="{ThemeResource CodeHarnessCardBrush}"
+                    BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="8,2,8,2"
+                    Height="36">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0"
+                               Text="&#xE721;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                               VerticalAlignment="Center"
+                               Margin="4,0,6,0" />
+                    <TextBox x:Name="SearchBox"
+                             Grid.Column="1"
+                             PlaceholderText="搜索会话..."
+                             BorderThickness="0"
+                             Background="Transparent"
+                             FontSize="13"
+                             VerticalAlignment="Center"
+                             Padding="0"
+                             TextChanged="OnSearchTextChanged" />
+                    <Button x:Name="SearchCloseBtn"
+                            Grid.Column="2"
+                            Style="{StaticResource IconButtonStyle}"
+                            Content="&#xE711;"
+                            FontFamily="Segoe MDL2 Assets"
+                            Width="24"
+                            Height="24"
+                            FontSize="10"
+                            Click="OnSearchClose" />
+                </Grid>
+            </Border>
+        </StackPanel>
+
+        <!-- Project section -->
+        <StackPanel Grid.Row="1" Margin="0,2,0,4" Spacing="1">
+            <Grid Margin="10,0,10,0" Height="28">
+                <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                    <TextBlock Text="项目"
+                               Style="{StaticResource SidebarSectionTextStyle}"
+                               Margin="0" />
+                    <TextBlock Text="&#xE70D;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="10"
+                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                               VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
 
-            <!-- New chat + Search -->
-            <StackPanel Grid.Row="1" Margin="0,8,0,4">
-                <Button x:Name="NewChatBtn"
-                        Style="{StaticResource NewChatButtonStyle}"
-                        HorizontalContentAlignment="Left"
-                        Click="OnNewChatClick">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="+" FontSize="16" FontWeight="Bold"
-                                   Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text="新建会话" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <!-- Search toggle button -->
-                <Button x:Name="SearchBtn"
-                        Style="{StaticResource SidebarButtonStyle}"
-                        HorizontalContentAlignment="Left"
-                        Click="OnSearchClick">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="&#xE71D;" FontFamily="Segoe MDL2 Assets" FontSize="13"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text="搜索" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
-                <!-- Search input (hidden by default, toggled by SearchBtn) -->
-                <Border x:Name="SearchBoxPanel"
-                        Visibility="Collapsed"
-                        Margin="8,4,8,4"
-                        Background="{ThemeResource CodeHarnessCardBrush}"
-                        BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="8,2,8,2"
-                        Height="34">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="&#xE71D;" FontFamily="Segoe MDL2 Assets"
-                                   FontSize="13" Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
-                                   VerticalAlignment="Center" Margin="4,0,6,0" />
-                        <TextBox x:Name="SearchBox"
-                                 Grid.Column="1"
-                                 PlaceholderText="搜索会话..."
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 FontSize="13"
-                                 VerticalAlignment="Center"
-                                 Padding="0"
-                                 TextChanged="OnSearchTextChanged" />
-                        <Button x:Name="SearchCloseBtn"
-                                Grid.Column="2"
-                                Style="{StaticResource IconButtonStyle}"
-                                Content="&#xE711;"
-                                FontFamily="Segoe MDL2 Assets"
-                                Width="24" Height="24"
-                                FontSize="10"
-                                Click="OnSearchClose" />
-                    </Grid>
-                </Border>
-            </StackPanel>
-
-            <!-- Project -->
-            <StackPanel Grid.Row="2" Margin="0,14,0,6">
-                <TextBlock Text="工作区" Style="{StaticResource SidebarSectionTextStyle}" Margin="18,0,18,4" />
-                <TextBlock x:Name="WorkdirText" Text="CodeHarness" Style="{StaticResource ProjectTextStyle}" />
-            </StackPanel>
-
-            <!-- Session groups -->
-            <ScrollViewer Grid.Row="3" Margin="0,4,0,0"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollMode="Disabled"
-                          HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
-                    <!-- TODAY -->
-                    <TextBlock x:Name="TodayHeader"
-                               Text="今天"
-                               Style="{StaticResource SidebarSectionTextStyle}"
-                               Margin="18,0,18,8" />
-                    <StackPanel x:Name="TodayGroup" Margin="4,0,4,4" />
-
-                    <!-- PREVIOUS 7 DAYS -->
-                    <TextBlock x:Name="WeekHeader"
-                               Text="最近7天"
-                               Style="{StaticResource SidebarSectionTextStyle}"
-                               Margin="18,14,18,8"
-                               Visibility="Collapsed" />
-                    <StackPanel x:Name="WeekGroup" Margin="4,0,4,4" />
-
-                    <!-- PREVIOUS 30 DAYS -->
-                    <TextBlock x:Name="MonthHeader"
-                               Text="最近30天"
-                               Style="{StaticResource SidebarSectionTextStyle}"
-                               Margin="18,14,18,8"
-                               Visibility="Collapsed" />
-                    <StackPanel x:Name="MonthGroup" Margin="4,0,4,4" />
-
-                    <!-- EARLIER -->
-                    <TextBlock x:Name="EarlierHeader"
-                               Text="更早"
-                               Style="{StaticResource SidebarSectionTextStyle}"
-                               Margin="18,14,18,8"
-                               Visibility="Collapsed" />
-                    <StackPanel x:Name="EarlierGroup" Margin="4,0,4,4" />
+            <Button Style="{StaticResource SidebarButtonStyle}"
+                    HorizontalContentAlignment="Left"
+                    IsTabStop="False">
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <TextBlock Text="&#xE8F4;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="新建项目" VerticalAlignment="Center" />
                 </StackPanel>
-            </ScrollViewer>
+            </Button>
 
-            <!-- Footer -->
-            <Border Grid.Row="4"
-                    Margin="10,0,10,0"
-                    Padding="10,9,10,9"
-                    BorderBrush="{ThemeResource CodeHarnessHairlineBrush}"
-                    BorderThickness="0,1,0,0">
-                <Grid>
-                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                        <Border Width="24" Height="24" CornerRadius="12"
-                                Background="{ThemeResource CodeHarnessAccentSoftBrush}">
-                            <TextBlock Text="U" Foreground="{ThemeResource CodeHarnessAccentHoverBrush}"
-                                       FontSize="11" FontWeight="SemiBold"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <StackPanel Spacing="-1">
-                            <TextBlock Text="用户" FontSize="12" FontWeight="SemiBold"
-                                       Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" />
-                            <TextBlock Text="手动模式" FontSize="11"
-                                       Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
-                        </StackPanel>
-                    </StackPanel>
-                    <Button x:Name="SettingsBtn"
-                            Style="{StaticResource IconButtonStyle}"
-                            HorizontalAlignment="Right"
-                            Content="&#xE713;"
-                            FontFamily="Segoe MDL2 Assets"
-                            Width="28" Height="28"
-                            Click="OnSettingsClick" />
-                </Grid>
+            <Border Margin="8,0,8,0"
+                    Padding="10,7,10,7"
+                    CornerRadius="12"
+                    Background="Transparent">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="&#xE8B7;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="13"
+                               Foreground="{ThemeResource CodeHarnessSecondaryTextBrush}"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="WorkdirText"
+                               Text="CodeHarness"
+                               Style="{StaticResource ProjectTextStyle}"
+                               Margin="0"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
             </Border>
+        </StackPanel>
+
+        <!-- Session groups -->
+        <ScrollViewer Grid.Row="2"
+                      Margin="0,4,0,0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollMode="Disabled"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Border x:Name="SplitGroupPanel"
+                        Visibility="Collapsed"
+                        Margin="8,0,8,8"
+                        Padding="6"
+                        CornerRadius="10"
+                        Background="{ThemeResource CodeHarnessSubtleCardBrush}"
+                        BorderBrush="{ThemeResource CodeHarnessBorderBrush}"
+                        BorderThickness="1">
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="6"
+                                    Padding="8,4,8,2">
+                            <TextBlock Text="&#xE8A7;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="12"
+                                       Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="&#x5206;&#x5C4F;"
+                                       Style="{StaticResource SidebarSectionTextStyle}"
+                                       Margin="0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel x:Name="SplitGroupRows" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock x:Name="TodayHeader"
+                           Text="今天"
+                           Style="{StaticResource SidebarSectionTextStyle}"
+                           Margin="14,6,14,7" />
+                <StackPanel x:Name="TodayGroup" Margin="4,0,4,4" />
+
+                <TextBlock x:Name="WeekHeader"
+                           Text="最近 7 天"
+                           Style="{StaticResource SidebarSectionTextStyle}"
+                           Margin="14,14,14,7"
+                           Visibility="Collapsed" />
+                <StackPanel x:Name="WeekGroup" Margin="4,0,4,4" />
+
+                <TextBlock x:Name="MonthHeader"
+                           Text="最近 30 天"
+                           Style="{StaticResource SidebarSectionTextStyle}"
+                           Margin="14,14,14,7"
+                           Visibility="Collapsed" />
+                <StackPanel x:Name="MonthGroup" Margin="4,0,4,4" />
+
+                <TextBlock x:Name="EarlierHeader"
+                           Text="更早"
+                           Style="{StaticResource SidebarSectionTextStyle}"
+                           Margin="14,14,14,7"
+                           Visibility="Collapsed" />
+                <StackPanel x:Name="EarlierGroup" Margin="4,0,4,4" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <Grid Grid.Row="3" Margin="8,8,8,0">
+            <Button x:Name="SettingsBtn"
+                    Style="{StaticResource SidebarButtonStyle}"
+                    HorizontalContentAlignment="Left"
+                    Click="OnSettingsClick">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="24"
+                            Height="24"
+                            CornerRadius="12"
+                            Background="{ThemeResource CodeHarnessSubtleCardBrush}">
+                        <TextBlock Text="U"
+                                   Foreground="{ThemeResource CodeHarnessSecondaryTextBrush}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="用户"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+                        <TextBlock Text="手动模式"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource CodeHarnessMutedTextBrush}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2"
+                               Text="&#xE713;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="14"
+                               Foreground="{ThemeResource CodeHarnessMutedTextBrush}"
+                               VerticalAlignment="Center" />
+                </Grid>
+            </Button>
         </Grid>
-    </Border>
+    </Grid>
 </UserControl>

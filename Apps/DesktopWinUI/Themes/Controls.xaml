@@ -122,34 +122,94 @@
         </Border>
     </ControlTemplate>
 
+    <ThemeShadow x:Key="FloatingCardShadow" />
+
+    <!-- ===== Floating shell cards ===== -->
+    <Style x:Key="FloatingCardSurfaceStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessMainSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CodeHarnessFloatingBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="Shadow" Value="{StaticResource FloatingCardShadow}" />
+    </Style>
+
+    <Style x:Key="FloatingSidebarSurfaceStyle" TargetType="Border" BasedOn="{StaticResource FloatingCardSurfaceStyle}">
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessSidebarBrush}" />
+    </Style>
+
+    <Style x:Key="FloatingWorkspaceSurfaceStyle" TargetType="Border" BasedOn="{StaticResource FloatingCardSurfaceStyle}">
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessContextPanelBrush}" />
+    </Style>
+
+    <Style x:Key="ResizeGutterStyle" TargetType="Border">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <Style x:Key="ResizeGutterLineStyle" TargetType="Border">
+        <Setter Property="Width" Value="2" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
+        <Setter Property="Opacity" Value="0.16" />
+    </Style>
+
+    <!-- ===== Top bar / shell buttons ===== -->
+    <Style x:Key="TopBarIconButtonStyle" TargetType="Button">
+        <Setter Property="Template" Value="{StaticResource PlainButtonTemplate}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Padding" Value="6,6,6,6" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessMutedTextBrush}" />
+    </Style>
+
+    <Style x:Key="TopBarActiveIconButtonStyle" TargetType="Button" BasedOn="{StaticResource TopBarIconButtonStyle}">
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessSubtleCardBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+    </Style>
+
+    <Style x:Key="TopBarPillButtonStyle" TargetType="Button">
+        <Setter Property="Template" Value="{StaticResource PlainButtonTemplate}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="8,5,8,5" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessSecondaryTextBrush}" />
+    </Style>
+
     <!-- ===== Sidebar nav / action buttons ===== -->
     <Style x:Key="SidebarButtonStyle" TargetType="Button">
         <Setter Property="Template" Value="{StaticResource PlainButtonTemplate}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="Margin" Value="8,2,8,2" />
+        <Setter Property="Margin" Value="8,1,8,1" />
         <Setter Property="Padding" Value="10,8,10,8" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
         <Setter Property="FontSize" Value="13" />
     </Style>
 
     <!-- "+ New chat" — green-tint primary in the sidebar header -->
     <Style x:Key="NewChatButtonStyle" TargetType="Button">
-        <Setter Property="Template" Value="{StaticResource GreenTintButtonTemplate}" />
+        <Setter Property="Template" Value="{StaticResource PlainButtonTemplate}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="Margin" Value="8,2,8,2" />
-        <Setter Property="Padding" Value="10,9,10,9" />
-        <Setter Property="Background" Value="{ThemeResource CodeHarnessAccentTintBrush}" />
+        <Setter Property="Margin" Value="8,1,8,1" />
+        <Setter Property="Padding" Value="10,8,10,8" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessAccentHoverBrush}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+        <Setter Property="FontWeight" Value="Normal" />
         <Setter Property="FontSize" Value="13" />
     </Style>
 
@@ -166,13 +226,13 @@
 
     <Style x:Key="ModelPillButtonStyle" TargetType="Button">
         <Setter Property="Template" Value="{StaticResource PlainButtonTemplate}" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessSubtleCardBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
         <Setter Property="BorderBrush" Value="{ThemeResource CodeHarnessBorderBrush}" />
-        <Setter Property="CornerRadius" Value="999" />
-        <Setter Property="Padding" Value="12,5,10,5" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Padding" Value="10,6,9,6" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="Medium" />
     </Style>
 
@@ -181,7 +241,7 @@
         <Setter Property="Template" Value="{StaticResource PlainButtonTemplate}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="CornerRadius" Value="9" />
         <Setter Property="Padding" Value="6,6,6,6" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessSecondaryTextBrush}" />
         <Setter Property="FontSize" Value="16" />
@@ -223,25 +283,44 @@
         <Setter Property="Background" Value="{ThemeResource CodeHarnessCardBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource CodeHarnessBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="CornerRadius" Value="12" />
         <Setter Property="Padding" Value="14,10,14,10" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
         <Setter Property="FontSize" Value="13" />
     </Style>
 
+    <!-- ===== Workspace sidebar tabs ===== -->
+    <Style x:Key="WorkspaceTabButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Padding" Value="11,7,11,7" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <Style x:Key="WorkspaceTabActiveButtonStyle" TargetType="Button" BasedOn="{StaticResource WorkspaceTabButtonStyle}">
+        <Setter Property="Background" Value="{ThemeResource CodeHarnessSubtleCardBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessPrimaryTextBrush}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+
+    <Style x:Key="WorkspaceTabDisabledButtonStyle" TargetType="Button" BasedOn="{StaticResource WorkspaceTabButtonStyle}">
+        <Setter Property="Foreground" Value="{ThemeResource CodeHarnessFaintTextBrush}" />
+        <Setter Property="IsEnabled" Value="False" />
+    </Style>
+
     <!-- ===== Tool call cards (collapsible rows in the transcript) ===== -->
     <Style x:Key="ToolCardBorderStyle" TargetType="Border">
-        <Setter Property="Background" Value="{ThemeResource CodeHarnessToolBubbleBrush}" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="{ThemeResource CodeHarnessBorderBrush}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="10" />
-        <Setter Property="Padding" Value="12,9,12,9" />
+        <Setter Property="BorderThickness" Value="2,0,0,0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="Padding" Value="8,0,0,0" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
 
     <Style x:Key="ToolCardErrorBorderStyle" TargetType="Border" BasedOn="{StaticResource ToolCardBorderStyle}">
-        <Setter Property="Background" Value="#FFFFF4F4" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="#FFF5C6C6" />
     </Style>
 
